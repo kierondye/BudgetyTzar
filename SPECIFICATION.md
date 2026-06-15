@@ -410,8 +410,9 @@ Responsibilities:
 
 Suggested implementation:
 
-- .NET: ASP.NET Core Identity or external identity provider integration.
-- Go: OIDC integration with an external provider.
+- Use an external identity provider with OpenID Connect.
+- Both the .NET and Go implementations should validate tokens issued by the same provider.
+- The application should not implement its own password storage or identity management.
 
 ### 9.2 Budgeting Service
 
@@ -741,13 +742,16 @@ Use consumer groups per service:
 
 ### 16.4 Event Schema Management
 
-Use one of:
+Use JSON Schema for event contracts.
 
-- JSON Schema with a schema registry.
-- Avro with a schema registry.
-- Protobuf with schema versioning.
+Reasons:
 
-For portfolio clarity, JSON Schema is easiest to inspect. Avro or Protobuf may better demonstrate enterprise event streaming experience.
+- It is quick to understand and inspect.
+- It works naturally with JSON event payloads.
+- It demonstrates schema ownership, versioning, validation, and compatibility without pretending to have operated a large enterprise schema platform.
+- It keeps the project focused on showing practical understanding and delivery speed.
+
+The system should store event schemas in source control and validate events in tests. A schema registry can be added later if it becomes useful, but it is not required for the first implementation.
 
 ## 17. Implementation Strategy
 
@@ -1025,4 +1029,3 @@ The smallest useful version should include:
 - Rules engine for transaction assignment.
 - Anomaly detection.
 - Scenario planning.
-
