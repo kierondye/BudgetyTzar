@@ -99,10 +99,12 @@ Examples:
 - Salary
 - Bonus
 
-Budget lines have a direction:
+Budget lines have a planning direction:
 
 - `Debit`: used for planned and actual spending.
 - `Credit`: used for planned and actual income or other incoming money.
+
+The planning direction defines how the line is budgeted and reported, but it does not prevent assigning a transaction with the opposite direction. Opposite-direction assignments are allowed when they naturally offset the line. For example, a debit medical expenses line may receive debit transactions for up-front payments and credit transactions for insurance reimbursements.
 
 Budget lines have a rollover type:
 
@@ -197,7 +199,9 @@ Acceptance criteria:
 - Imported transaction details remain visible after assignment.
 - Debit transactions reduce available debit budget line balances.
 - Credit transactions assigned to credit budget lines increase actual credit totals.
-- Transaction assignments can be empty, single-line, or split across multiple matching-direction budget lines.
+- Credit transactions assigned to debit budget lines reduce net spending for those lines, such as refunds or reimbursements.
+- Debit transactions assigned to credit budget lines reduce net credit for those lines, such as reversals or corrections.
+- Transaction assignments can be empty, single-line, or split across multiple budget lines.
 
 ### 6.3 Budget Tracking
 
@@ -289,7 +293,7 @@ Acceptance criteria:
 2. System parses and previews transactions.
 3. System flags possible duplicates.
 4. User commits the import.
-5. User assigns each transaction to one or more matching-direction budget lines, or leaves it unassigned.
+5. User assigns each transaction to one or more budget lines, or leaves it unassigned.
 6. System updates projected budget balances.
 
 ### 7.3 Cover Overspending
@@ -633,9 +637,11 @@ Reports should include:
 - Transactions must never be deleted once committed; they may be corrected, ignored, or superseded.
 - Budget reallocations must not change actual spending.
 - Credit totals must not be mixed into debit spending totals.
-- Debit transactions may only be assigned to debit budget lines.
-- Credit transactions may only be assigned to credit budget lines.
-- Transactions may be unassigned, assigned to one budget line, or split across multiple matching-direction budget lines.
+- Debit transactions assigned to debit budget lines increase spending against those lines.
+- Credit transactions assigned to debit budget lines reduce net spending against those lines.
+- Credit transactions assigned to credit budget lines increase actual credit against those lines.
+- Debit transactions assigned to credit budget lines reduce net credit against those lines.
+- Transactions may be unassigned, assigned to one budget line, or split across multiple budget lines.
 - Period reset debit budget lines do not carry forward unused balances by default.
 - Cumulative debit budget lines carry forward closing balances.
 - Periods do not have open or closed status in the first version; retrospective changes are allowed and should be visible through audit/history.
@@ -752,6 +758,7 @@ Deliver:
 - Budget lines.
 - Manual transactions.
 - Transaction assignment.
+- Opposite-direction assignments for refunds, reimbursements, reversals, and corrections.
 - Budget reallocations.
 - Period summary.
 - PostgreSQL persistence.

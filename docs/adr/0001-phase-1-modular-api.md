@@ -8,7 +8,7 @@ Accepted
 
 The specification calls for a portfolio architecture with separate services, Kafka, PostgreSQL, Kubernetes, and equivalent .NET and Go implementations. Phase 1 is scoped to a local MVP with .NET, PostgreSQL persistence, and tests.
 
-The product model has been refined so budgets are the root resource. Budget lines represent both debit and credit planning, transactions belong to budgets, transaction dates determine their budget period, and each budget has one currency.
+The product model has been refined so budgets are the root resource. Budget lines represent debit and credit planning, transactions belong to budgets, transaction dates determine their budget period, and each budget has one currency. Budget line direction describes planning/reporting intent rather than a hard assignment boundary, so refunds, reimbursements, reversals, and corrections can be assigned to the budget line they offset.
 
 ## Decision
 
@@ -21,3 +21,4 @@ Implement Phase 1 as a single ASP.NET Core API backed by PostgreSQL. Keep explic
 - Kafka, outbox records, audit timeline events, and service-owned schemas remain future Phase 2 work.
 - Startup uses `EnsureCreated` for local schema creation until migrations can be generated with the .NET SDK.
 - The first version intentionally avoids separate income-source modelling and mixed-currency budget complexity.
+- Transaction assignment validation must allow opposite-direction assignments where they offset the selected budget line.
