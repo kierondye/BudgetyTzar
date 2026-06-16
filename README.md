@@ -58,3 +58,5 @@ dotnet test
 Phase 1 is intentionally a local modular MVP. It keeps the language, domain model, and API surface aligned with the later event-driven service architecture from `SPECIFICATION.md`, while deferring Kafka, outbox publishing, containerised services, Kubernetes, and the Go implementation to later phases.
 
 Budgets are the root resource. Budget periods cannot overlap within a budget, transactions belong to a budget, and a transaction's date determines which period reports include it in. Budget lines can be debit or credit lines, and debit lines can either reset each period or carry cumulative balances forward. A budget has one currency, and all child amounts use that currency.
+
+The Phase 1 audit timeline is a lightweight operational view over current transaction assignment and reallocation records. Durable event-sourced audit history, outbox records, and projection-backed timelines are Phase 2 concerns.

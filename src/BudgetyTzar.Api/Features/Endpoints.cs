@@ -544,17 +544,6 @@ public static class Endpoints
                 return Results.NotFound();
             }
 
-            var requiredDirection = transaction.Direction == TransactionDirection.Debit
-                ? BudgetLineDirection.Debit
-                : BudgetLineDirection.Credit;
-            if (budgetLines.Any(x => x.Direction != requiredDirection))
-            {
-                return Results.ValidationProblem(new Dictionary<string, string[]>
-                {
-                    [nameof(request.Assignments)] = ["Transaction assignments must match the transaction direction."]
-                });
-            }
-
             var totalAssigned = request.Assignments.Sum(x => x.Amount);
             if (totalAssigned > transaction.Amount)
             {
@@ -638,11 +627,36 @@ public static class Endpoints
             }
 
             var lineIds = new[] { request.FromBudgetLineId, request.ToBudgetLineId };
-            var validLineCount = await db.BudgetLines
-                .CountAsync(x => lineIds.Contains(x.Id) && x.BudgetId == budgetId && !x.IsArchived, ct);
-            if (validLineCount != lineIds.Length)
+            var budgetLines = await db.BudgetLines
+                .AsNoTracking()
+                .Where(x => lineIds.Contains(x.Id) && x.BudgetId == budgetId && !x.IsArchived)
+                .ToListAsync(ct);
+            if (budgetLines.Count != lineIds.Length)
             {
                 return Results.NotFound();
+            }
+
+            var nonDebitLineIds = budgetLines
+                .Where(x => x.Direction != BudgetLineDirection.Debit)
+                .Select(x => x.Id)
+                .ToArray();
+            if (nonDebitLineIds.Length > 0)
+            {
+                var errors = new Dictionary<string, string[]>
+                {
+                    [nameof(request)] = ["Budget reallocations can only be created between debit budget lines."]
+                };
+                if (nonDebitLineIds.Contains(request.FromBudgetLineId))
+                {
+                    errors[nameof(request.FromBudgetLineId)] = ["Source budget line must be a debit line."];
+                }
+
+                if (nonDebitLineIds.Contains(request.ToBudgetLineId))
+                {
+                    errors[nameof(request.ToBudgetLineId)] = ["Target budget line must be a debit line."];
+                }
+
+                return Results.ValidationProblem(errors);
             }
 
             var reallocation = new BudgetReallocation

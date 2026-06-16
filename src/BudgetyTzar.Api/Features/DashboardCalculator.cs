@@ -62,6 +62,7 @@ public static class DashboardCalculator
             var periodTransactions = transactions
                 .Where(x => !x.IsIgnored && x.TransactionDate >= currentPeriod.StartDate && x.TransactionDate <= currentPeriod.EndDate)
                 .ToList();
+            var periodTransactionsById = periodTransactions.ToDictionary(x => x.Id);
             var periodTransactionIds = periodTransactions.Select(x => x.Id).ToHashSet();
             var periodAssignments = assignments
                 .Where(x => periodTransactionIds.Contains(x.TransactionId))
@@ -90,7 +91,7 @@ public static class DashboardCalculator
                         .Sum(x => x.Amount);
                     var actualAmount = periodAssignments
                         .Where(x => x.BudgetLineId == line.Id)
-                        .Sum(x => x.Amount);
+                        .Sum(x => SignedAssignmentAmount(x, line, periodTransactionsById[x.TransactionId]));
                     var closingBalance = line.Direction == BudgetLineDirection.Debit
                         ? openingBalance + allocated + reallocationIn - reallocationOut - actualAmount
                         : actualAmount - allocated;
@@ -167,6 +168,21 @@ public static class DashboardCalculator
             partiallyAssignedDebit,
             partiallyAssignedCredit,
             lineSnapshots);
+    }
+
+    private static decimal SignedAssignmentAmount(
+        TransactionAssignment assignment,
+        BudgetLine line,
+        FinancialTransaction transaction)
+    {
+        var sameDirection = line.Direction switch
+        {
+            BudgetLineDirection.Debit => transaction.Direction == TransactionDirection.Debit,
+            BudgetLineDirection.Credit => transaction.Direction == TransactionDirection.Credit,
+            _ => false
+        };
+
+        return sameDirection ? assignment.Amount : -assignment.Amount;
     }
 }
 
