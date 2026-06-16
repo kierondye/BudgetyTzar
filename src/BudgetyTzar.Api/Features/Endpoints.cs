@@ -7,20 +7,19 @@ namespace BudgetyTzar.Api.Features;
 public sealed record CreateBudgetRequest(string Name, string Currency);
 public sealed record CreateBudgetPeriodRequest(string Name, DateOnly StartDate, DateOnly EndDate);
 public sealed record CreateBudgetLineRequest(string Name, BudgetLineDirection Direction, BudgetLineRolloverType RolloverType);
-public sealed record BudgetLineAllocationItem(Guid BudgetLineId, decimal Amount, string Currency);
+public sealed record BudgetLineAllocationItem(Guid BudgetLineId, decimal Amount);
 public sealed record ReplaceBudgetLineAllocationsRequest(IReadOnlyList<BudgetLineAllocationItem> Allocations);
 public sealed record CreateTransactionRequest(
     DateOnly TransactionDate,
     string Description,
     decimal Amount,
-    string Currency,
     TransactionDirection Direction,
     string? SourceAccount,
     string? ExternalReference,
     string? Notes);
-public sealed record TransactionAssignmentItem(Guid BudgetLineId, decimal Amount, string Currency);
+public sealed record TransactionAssignmentItem(Guid BudgetLineId, decimal Amount);
 public sealed record ReplaceTransactionAssignmentsRequest(IReadOnlyList<TransactionAssignmentItem> Assignments);
-public sealed record CreateBudgetReallocationRequest(Guid FromBudgetLineId, Guid ToBudgetLineId, decimal Amount, string Currency, string Reason);
+public sealed record CreateBudgetReallocationRequest(Guid FromBudgetLineId, Guid ToBudgetLineId, decimal Amount, string Reason);
 public sealed record TransactionDetail(FinancialTransaction Transaction, IReadOnlyList<TransactionAssignment> Assignments);
 public sealed record AuditTimelineItem(DateTimeOffset OccurredAt, string EventType, Guid EntityId, string Description);
 
@@ -61,7 +60,6 @@ public sealed class ReplaceBudgetLineAllocationsValidator : AbstractValidator<Re
         {
             item.RuleFor(x => x.BudgetLineId).NotEmpty();
             item.RuleFor(x => x.Amount).PositiveAmount();
-            item.RuleFor(x => x.Currency).Currency();
         });
     }
 }
@@ -72,7 +70,6 @@ public sealed class CreateTransactionValidator : AbstractValidator<CreateTransac
     {
         RuleFor(x => x.Description).NotEmpty().MaximumLength(240);
         RuleFor(x => x.Amount).PositiveAmount();
-        RuleFor(x => x.Currency).Currency();
         RuleFor(x => x.Direction).IsInEnum();
         RuleFor(x => x.SourceAccount).MaximumLength(120);
         RuleFor(x => x.ExternalReference).MaximumLength(160);
@@ -89,7 +86,6 @@ public sealed class ReplaceTransactionAssignmentsValidator : AbstractValidator<R
         {
             item.RuleFor(x => x.BudgetLineId).NotEmpty();
             item.RuleFor(x => x.Amount).PositiveAmount();
-            item.RuleFor(x => x.Currency).Currency();
         });
     }
 }
@@ -101,7 +97,6 @@ public sealed class CreateBudgetReallocationValidator : AbstractValidator<Create
         RuleFor(x => x.FromBudgetLineId).NotEmpty();
         RuleFor(x => x.ToBudgetLineId).NotEmpty().NotEqual(x => x.FromBudgetLineId);
         RuleFor(x => x.Amount).PositiveAmount();
-        RuleFor(x => x.Currency).Currency();
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
     }
 }
@@ -353,8 +348,7 @@ public static class Endpoints
             {
                 BudgetPeriodId = periodId,
                 BudgetLineId = x.BudgetLineId,
-                Amount = x.Amount,
-                Currency = x.Currency
+                Amount = x.Amount
             }));
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
@@ -467,7 +461,6 @@ public static class Endpoints
                 TransactionDate = request.TransactionDate,
                 Description = request.Description.Trim(),
                 Amount = request.Amount,
-                Currency = request.Currency,
                 Direction = request.Direction,
                 SourceAccount = request.SourceAccount,
                 ExternalReference = request.ExternalReference,
@@ -579,8 +572,7 @@ public static class Endpoints
             {
                 TransactionId = transactionId,
                 BudgetLineId = x.BudgetLineId,
-                Amount = x.Amount,
-                Currency = x.Currency
+                Amount = x.Amount
             }));
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
@@ -659,7 +651,6 @@ public static class Endpoints
                 FromBudgetLineId = request.FromBudgetLineId,
                 ToBudgetLineId = request.ToBudgetLineId,
                 Amount = request.Amount,
-                Currency = request.Currency,
                 Reason = request.Reason.Trim()
             };
             db.BudgetReallocations.Add(reallocation);
@@ -708,7 +699,7 @@ public static class Endpoints
                     x.CreatedAt,
                     "TransactionAssigned",
                     x.Id,
-                    $"Assigned {x.Amount} {x.Currency} to budget line {x.BudgetLineId}"))
+                    $"Assigned {x.Amount} to budget line {x.BudgetLineId}"))
                 .ToListAsync(ct);
 
             var reallocationItems = await db.BudgetReallocations
@@ -718,7 +709,7 @@ public static class Endpoints
                     x.CreatedAt,
                     "BudgetReallocationRecorded",
                     x.Id,
-                    $"Reallocated {x.Amount} {x.Currency} from budget line {x.FromBudgetLineId} to budget line {x.ToBudgetLineId}: {x.Reason}"))
+                    $"Reallocated {x.Amount} from budget line {x.FromBudgetLineId} to budget line {x.ToBudgetLineId}: {x.Reason}"))
                 .ToListAsync(ct);
 
             return Results.Ok(assignmentItems

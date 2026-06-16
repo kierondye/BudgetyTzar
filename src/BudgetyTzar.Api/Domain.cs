@@ -60,7 +60,6 @@ public sealed class BudgetLineAllocation
     public Guid BudgetPeriodId { get; set; }
     public Guid BudgetLineId { get; set; }
     public decimal Amount { get; set; }
-    public required string Currency { get; set; }
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
 }
 
@@ -71,7 +70,6 @@ public sealed class FinancialTransaction
     public DateOnly TransactionDate { get; set; }
     public required string Description { get; set; }
     public decimal Amount { get; set; }
-    public required string Currency { get; set; }
     public TransactionDirection Direction { get; set; }
     public string? SourceAccount { get; set; }
     public string? ExternalReference { get; set; }
@@ -86,7 +84,6 @@ public sealed class TransactionAssignment
     public Guid TransactionId { get; set; }
     public Guid BudgetLineId { get; set; }
     public decimal Amount { get; set; }
-    public required string Currency { get; set; }
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
 }
 
@@ -97,7 +94,6 @@ public sealed class BudgetReallocation
     public Guid FromBudgetLineId { get; set; }
     public Guid ToBudgetLineId { get; set; }
     public decimal Amount { get; set; }
-    public required string Currency { get; set; }
     public required string Reason { get; set; }
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
 }

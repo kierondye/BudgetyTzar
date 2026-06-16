@@ -182,8 +182,7 @@ public sealed class DashboardCalculationTests
     {
         BudgetPeriodId = period.Id,
         BudgetLineId = line.Id,
-        Amount = amount,
-        Currency = Currency
+        Amount = amount
     };
 
     private static FinancialTransaction Transaction(Budget budget, DateOnly date, decimal amount, TransactionDirection direction) => new()
@@ -192,7 +191,6 @@ public sealed class DashboardCalculationTests
         TransactionDate = date,
         Description = $"{direction} transaction",
         Amount = amount,
-        Currency = Currency,
         Direction = direction
     };
 
@@ -200,8 +198,7 @@ public sealed class DashboardCalculationTests
     {
         TransactionId = transaction.Id,
         BudgetLineId = line.Id,
-        Amount = amount,
-        Currency = Currency
+        Amount = amount
     };
 
     private static BudgetReallocation Reallocation(BudgetPeriod period, BudgetLine from, BudgetLine to, decimal amount) => new()
@@ -210,7 +207,6 @@ public sealed class DashboardCalculationTests
         FromBudgetLineId = from.Id,
         ToBudgetLineId = to.Id,
         Amount = amount,
-        Currency = Currency,
         Reason = "Rebalance period budget"
     };
 }
