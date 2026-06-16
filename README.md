@@ -1,6 +1,6 @@
 # BudgetyTzar
 
-BudgetyTzar is a personal budgeting MVP that replaces a monthly spreadsheet with a PostgreSQL-backed HTTP API. Phase 1 focuses on the local .NET implementation: budgets, budget periods, budget lines, manual transactions, transaction assignment, budget reallocations, and a period summary projection.
+BudgetyTzar is a personal budgeting MVP that replaces a monthly spreadsheet with a PostgreSQL-backed HTTP API. Phase 1 focuses on the local .NET implementation: budgets, budget periods, budget lines, durable audit records, manual and imported transactions, transaction assignment, budget reallocations, adjustments, reconciliation, basic multi-period reports, and CSV export.
 
 ## Phase 1 API
 
@@ -16,6 +16,9 @@ BudgetyTzar is a personal budgeting MVP that replaces a monthly spreadsheet with
 - `POST /api/budgets/{budgetId}/budget-lines/{lineId}/archive`
 - `PUT /api/budgets/{budgetId}/periods/{periodId}/allocations`
 - `GET /api/budgets/{budgetId}/periods/{periodId}/allocations`
+- `POST /api/budgets/{budgetId}/transaction-imports/preview`
+- `POST /api/budgets/{budgetId}/transaction-imports/{importBatchId}/commit`
+- `GET /api/budgets/{budgetId}/transaction-imports/{importBatchId}`
 - `POST /api/budgets/{budgetId}/transactions`
 - `GET /api/budgets/{budgetId}/transactions?periodId={periodId}`
 - `GET /api/budgets/{budgetId}/transactions?from={date}&to={date}&assignmentStatus={status}`
@@ -26,8 +29,14 @@ BudgetyTzar is a personal budgeting MVP that replaces a monthly spreadsheet with
 - `DELETE /api/budgets/{budgetId}/transactions/{transactionId}/assignments`
 - `POST /api/budgets/{budgetId}/periods/{periodId}/reallocations`
 - `GET /api/budgets/{budgetId}/periods/{periodId}/reallocations`
+- `POST /api/budgets/{budgetId}/periods/{periodId}/adjustments`
+- `GET /api/budgets/{budgetId}/periods/{periodId}/adjustments`
 - `GET /api/budgets/{budgetId}/reports/period-summary?periodId={periodId}`
+- `GET /api/budgets/{budgetId}/reports/budget-line-trends?budgetLineId={lineId}&from={date}&to={date}`
+- `GET /api/budgets/{budgetId}/reports/credit-variance?from={date}&to={date}`
+- `GET /api/budgets/{budgetId}/reports/reconciliation?periodId={periodId}`
 - `GET /api/budgets/{budgetId}/reports/audit-timeline?periodId={periodId}`
+- `GET /api/budgets/{budgetId}/reports/period-summary.csv?periodId={periodId}`
 
 ## Local Development
 
@@ -55,8 +64,8 @@ dotnet test
 
 ## Architecture Notes
 
-Phase 1 is intentionally a local modular MVP. It keeps the language, domain model, and API surface aligned with the later event-driven service architecture from `SPECIFICATION.md`, while deferring Kafka, outbox publishing, containerised services, Kubernetes, and the Go implementation to later phases.
+Phase 1 is intentionally a local modular MVP. It keeps the language, domain model, audit vocabulary, and API surface aligned with the later event-driven service architecture from `SPECIFICATION.md`, while deferring Kafka, outbox publishing, service decomposition, projection-backed reporting, containerised services, Kubernetes, and the Go implementation to later phases.
 
-Budgets are the root resource. Budget periods cannot overlap within a budget, transactions belong to a budget, and a transaction's date determines which period reports include it in. Budget lines can be debit or credit lines, and debit lines can either reset each period or carry cumulative balances forward. A budget has one currency, and all child amounts use that currency.
+Budgets are the root resource. Budget periods cannot overlap within a budget, transactions belong to a budget, and a transaction's date determines which period reports include it in. Budget lines can be debit or credit lines, and debit lines can either reset each period or carry cumulative balances forward. Archived budget lines remain visible in historical periods. A budget has one currency, and all child amounts use that currency.
 
-The Phase 1 audit timeline is a lightweight operational view over current transaction assignment and reallocation records. Durable event-sourced audit history, outbox records, and projection-backed timelines are Phase 2 concerns.
+The Phase 1 audit timeline is backed by durable local audit records for imports, assignment changes, splits, ignores, reallocations, adjustments, and budget line archival. Kafka-published audit events, outbox records, service-owned schemas, and projection-backed reporting are Phase 2 concerns.

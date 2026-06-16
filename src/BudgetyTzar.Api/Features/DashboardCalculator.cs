@@ -12,8 +12,10 @@ public sealed record BudgetLineSummary(
     decimal ReallocationIn,
     decimal ReallocationOut,
     decimal ActualAmount,
+    decimal AdjustmentAmount,
     decimal ClosingBalance,
-    bool IsOverBudget);
+    bool IsOverBudget,
+    bool IsArchived);
 
 public sealed record PeriodSummary(
     Guid BudgetId,
@@ -43,8 +45,10 @@ public static class DashboardCalculator
         IReadOnlyCollection<BudgetLineAllocation> allocations,
         IReadOnlyCollection<FinancialTransaction> transactions,
         IReadOnlyCollection<TransactionAssignment> assignments,
-        IReadOnlyCollection<BudgetReallocation> reallocations)
+        IReadOnlyCollection<BudgetReallocation> reallocations,
+        IReadOnlyCollection<BudgetAdjustment>? adjustments = null)
     {
+        adjustments ??= [];
         var orderedPeriods = periods
             .Where(x => x.BudgetId == period.BudgetId && x.EndDate <= period.EndDate)
             .OrderBy(x => x.StartDate)
@@ -70,9 +74,11 @@ public static class DashboardCalculator
             var periodReallocations = reallocations
                 .Where(x => x.BudgetPeriodId == currentPeriod.Id)
                 .ToList();
+            var periodAdjustments = adjustments
+                .Where(x => x.BudgetPeriodId == currentPeriod.Id)
+                .ToList();
 
             lineSnapshots = budgetLines
-                .Where(x => !x.IsArchived)
                 .OrderBy(x => x.Direction)
                 .ThenBy(x => x.Name)
                 .Select(line =>
@@ -92,9 +98,12 @@ public static class DashboardCalculator
                     var actualAmount = periodAssignments
                         .Where(x => x.BudgetLineId == line.Id)
                         .Sum(x => SignedAssignmentAmount(x, line, periodTransactionsById[x.TransactionId]));
+                    var adjustmentAmount = periodAdjustments
+                        .Where(x => x.BudgetLineId == line.Id)
+                        .Sum(x => x.Amount);
                     var closingBalance = line.Direction == BudgetLineDirection.Debit
-                        ? openingBalance + allocated + reallocationIn - reallocationOut - actualAmount
-                        : actualAmount - allocated;
+                        ? openingBalance + allocated + reallocationIn - reallocationOut - actualAmount + adjustmentAmount
+                        : actualAmount - allocated + adjustmentAmount;
 
                     closingBalances[line.Id] = closingBalance;
 
@@ -108,9 +117,12 @@ public static class DashboardCalculator
                         reallocationIn,
                         reallocationOut,
                         actualAmount,
+                        adjustmentAmount,
                         closingBalance,
-                        line.Direction == BudgetLineDirection.Debit && closingBalance < 0);
+                        line.Direction == BudgetLineDirection.Debit && closingBalance < 0,
+                        line.IsArchived);
                 })
+                .Where(LineShouldAppear)
                 .ToList();
         }
 
@@ -170,6 +182,16 @@ public static class DashboardCalculator
             lineSnapshots);
     }
 
+    private static bool LineShouldAppear(BudgetLineSummary line) =>
+        !line.IsArchived
+        || line.OpeningBalance != 0
+        || line.Allocated != 0
+        || line.ReallocationIn != 0
+        || line.ReallocationOut != 0
+        || line.ActualAmount != 0
+        || line.AdjustmentAmount != 0
+        || line.ClosingBalance != 0;
+
     private static decimal SignedAssignmentAmount(
         TransactionAssignment assignment,
         BudgetLine line,
@@ -228,7 +250,11 @@ public static class DashboardQueries
             .AsNoTracking()
             .Where(x => periodIds.Contains(x.BudgetPeriodId))
             .ToListAsync(cancellationToken);
+        var adjustments = await db.BudgetAdjustments
+            .AsNoTracking()
+            .Where(x => periodIds.Contains(x.BudgetPeriodId))
+            .ToListAsync(cancellationToken);
 
-        return DashboardCalculator.Calculate(period, periods, budgetLines, allocations, transactions, assignments, reallocations);
+        return DashboardCalculator.Calculate(period, periods, budgetLines, allocations, transactions, assignments, reallocations, adjustments);
     }
 }

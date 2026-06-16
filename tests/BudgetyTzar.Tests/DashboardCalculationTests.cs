@@ -257,6 +257,72 @@ public sealed class DashboardCalculationTests
         Assert.Equal(90m, summary.DebitRemaining);
     }
 
+    [Fact]
+    public void ArchivedBudgetLinesRemainVisibleWhenTheyHaveHistoricalActivity()
+    {
+        var budget = Budget();
+        var period = Period(budget, "June 2026", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30));
+        var groceries = Archived(DebitLine(budget, "Groceries"));
+        var spend = Transaction(budget, period.StartDate, 40m, TransactionDirection.Debit);
+
+        var summary = DashboardCalculator.Calculate(
+            period,
+            [period],
+            [groceries],
+            [Allocation(period, groceries, 100m)],
+            [spend],
+            [Assignment(spend, groceries, 40m)],
+            []);
+
+        Assert.True(summary.Line(groceries).IsArchived);
+        Assert.Equal(100m, summary.Line(groceries).Allocated);
+        Assert.Equal(40m, summary.Line(groceries).ActualAmount);
+    }
+
+    [Fact]
+    public void EmptyArchivedBudgetLinesAreOmittedFromSummary()
+    {
+        var budget = Budget();
+        var period = Period(budget, "June 2026", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30));
+        var dormant = Archived(DebitLine(budget, "Dormant"));
+
+        var summary = DashboardCalculator.Calculate(
+            period,
+            [period],
+            [dormant],
+            [],
+            [],
+            [],
+            []);
+
+        Assert.DoesNotContain(summary.Lines, x => x.BudgetLineId == dormant.Id);
+    }
+
+    [Fact]
+    public void AdjustmentsAffectClosingBalanceAndCarryForwardWithoutChangingActuals()
+    {
+        var budget = Budget();
+        var may = Period(budget, "May 2026", new DateOnly(2026, 5, 1), new DateOnly(2026, 5, 31));
+        var june = Period(budget, "June 2026", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30));
+        var holiday = DebitLine(budget, "Holiday fund", BudgetLineRolloverType.Cumulative);
+        var maySpend = Transaction(budget, may.StartDate, 40m, TransactionDirection.Debit);
+
+        var summary = DashboardCalculator.Calculate(
+            june,
+            [may, june],
+            [holiday],
+            [Allocation(may, holiday, 100m), Allocation(june, holiday, 20m)],
+            [maySpend],
+            [Assignment(maySpend, holiday, 40m)],
+            [],
+            [Adjustment(may, holiday, 15m)]);
+
+        Assert.Equal(75m, summary.Line(holiday).OpeningBalance);
+        Assert.Equal(0m, summary.Line(holiday).AdjustmentAmount);
+        Assert.Equal(0m, summary.ActualDebit);
+        Assert.Equal(95m, summary.Line(holiday).ClosingBalance);
+    }
+
     private static Budget Budget() => new()
     {
         Name = "Personal Budget",
@@ -281,6 +347,12 @@ public sealed class DashboardCalculationTests
         Direction = BudgetLineDirection.Debit,
         RolloverType = rolloverType
     };
+
+    private static BudgetLine Archived(BudgetLine line)
+    {
+        line.IsArchived = true;
+        return line;
+    }
 
     private static BudgetLine CreditLine(Budget budget, string name) => new()
     {
@@ -320,6 +392,14 @@ public sealed class DashboardCalculationTests
         ToBudgetLineId = to.Id,
         Amount = amount,
         Reason = "Rebalance period budget"
+    };
+
+    private static BudgetAdjustment Adjustment(BudgetPeriod period, BudgetLine line, decimal amount) => new()
+    {
+        BudgetPeriodId = period.Id,
+        BudgetLineId = line.Id,
+        Amount = amount,
+        Reason = "Correct opening balance"
     };
 }
 

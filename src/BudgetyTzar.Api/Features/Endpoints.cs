@@ -1,6 +1,7 @@
 using BudgetyTzar.Api.Data;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using System.Text;
 
 namespace BudgetyTzar.Api.Features;
 
@@ -20,8 +21,31 @@ public sealed record CreateTransactionRequest(
 public sealed record TransactionAssignmentItem(Guid BudgetLineId, decimal Amount);
 public sealed record ReplaceTransactionAssignmentsRequest(IReadOnlyList<TransactionAssignmentItem> Assignments);
 public sealed record CreateBudgetReallocationRequest(Guid FromBudgetLineId, Guid ToBudgetLineId, decimal Amount, string Reason);
+public sealed record CreateBudgetAdjustmentRequest(Guid BudgetLineId, decimal Amount, string Reason);
+public sealed record PreviewTransactionImportRequest(string FileName, string CsvContent);
+public sealed record TransactionImportDetail(TransactionImportBatch Batch, IReadOnlyList<TransactionImportRow> Rows);
 public sealed record TransactionDetail(FinancialTransaction Transaction, IReadOnlyList<TransactionAssignment> Assignments);
 public sealed record AuditTimelineItem(DateTimeOffset OccurredAt, string EventType, Guid EntityId, string Description);
+public sealed record ReconciliationReport(
+    Guid BudgetId,
+    Guid BudgetPeriodId,
+    decimal ImportedDebitTotal,
+    decimal ImportedCreditTotal,
+    decimal ManualDebitTotal,
+    decimal ManualCreditTotal,
+    decimal AssignedDebitTotal,
+    decimal AssignedCreditTotal,
+    decimal IgnoredDebitTotal,
+    decimal IgnoredCreditTotal,
+    decimal UnassignedDebitTotal,
+    decimal UnassignedCreditTotal,
+    decimal PartiallyAssignedDebitTotal,
+    decimal PartiallyAssignedCreditTotal,
+    decimal ReallocationTotal,
+    decimal AdjustmentTotal,
+    int DuplicateCandidateCount);
+public sealed record BudgetLineTrendItem(Guid BudgetPeriodId, string PeriodName, DateOnly StartDate, DateOnly EndDate, decimal Allocated, decimal ActualAmount, decimal AdjustmentAmount, decimal ClosingBalance, bool IsOverBudget);
+public sealed record CreditVarianceItem(Guid BudgetPeriodId, string PeriodName, DateOnly StartDate, DateOnly EndDate, decimal PlannedCredit, decimal ActualCredit, decimal CreditVariance);
 
 public sealed class CreateBudgetValidator : AbstractValidator<CreateBudgetRequest>
 {
@@ -101,6 +125,25 @@ public sealed class CreateBudgetReallocationValidator : AbstractValidator<Create
     }
 }
 
+public sealed class CreateBudgetAdjustmentValidator : AbstractValidator<CreateBudgetAdjustmentRequest>
+{
+    public CreateBudgetAdjustmentValidator()
+    {
+        RuleFor(x => x.BudgetLineId).NotEmpty();
+        RuleFor(x => x.Amount).NotEqual(0).PrecisionScale(18, 2, true);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+    }
+}
+
+public sealed class PreviewTransactionImportValidator : AbstractValidator<PreviewTransactionImportRequest>
+{
+    public PreviewTransactionImportValidator()
+    {
+        RuleFor(x => x.FileName).NotEmpty().MaximumLength(240);
+        RuleFor(x => x.CsvContent).NotEmpty();
+    }
+}
+
 public static class Endpoints
 {
     public static RouteGroupBuilder MapBudgetEndpoints(this RouteGroupBuilder api)
@@ -132,6 +175,7 @@ public static class Endpoints
                 Currency = request.Currency
             };
             db.Budgets.Add(budget);
+            AddAudit(db, budget.Id, null, nameof(Budget), budget.Id, "BudgetCreated", $"Created budget {budget.Name}.");
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/budgets/{budget.Id}", budget);
         });
@@ -140,7 +184,9 @@ public static class Endpoints
         MapBudgetLineEndpoints(budgets);
         MapAllocationEndpoints(budgets);
         MapTransactionEndpoints(budgets);
+        MapTransactionImportEndpoints(budgets);
         MapReallocationEndpoints(budgets);
+        MapAdjustmentEndpoints(budgets);
         MapReportEndpoints(budgets);
 
         return api;
@@ -215,6 +261,7 @@ public static class Endpoints
                 EndDate = request.EndDate
             };
             db.BudgetPeriods.Add(period);
+            AddAudit(db, budgetId, period.Id, nameof(BudgetPeriod), period.Id, "BudgetPeriodCreated", $"Created period {period.Name}.");
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/budgets/{budgetId}/periods/{period.Id}", period);
         });
@@ -263,6 +310,7 @@ public static class Endpoints
                 RolloverType = request.RolloverType
             };
             db.BudgetLines.Add(line);
+            AddAudit(db, budgetId, null, nameof(BudgetLine), line.Id, "BudgetLineCreated", $"Created budget line {line.Name}.");
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/budgets/{budgetId}/budget-lines/{line.Id}", line);
         });
@@ -280,6 +328,7 @@ public static class Endpoints
             }
 
             line.IsArchived = true;
+            AddAudit(db, budgetId, null, nameof(BudgetLine), line.Id, "BudgetLineArchived", $"Archived budget line {line.Name}.");
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });
@@ -350,6 +399,15 @@ public static class Endpoints
                 BudgetLineId = x.BudgetLineId,
                 Amount = x.Amount
             }));
+            AddAudit(
+                db,
+                budgetId,
+                periodId,
+                nameof(BudgetLineAllocation),
+                periodId,
+                "BudgetLineAllocationsReplaced",
+                $"Replaced {request.Allocations.Count} allocation(s).",
+                $"Previous={existing.Count}; New={request.Allocations.Count}");
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });
@@ -467,6 +525,8 @@ public static class Endpoints
                 Notes = request.Notes
             };
             db.Transactions.Add(transaction);
+            var periodId = await FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
+            AddAudit(db, budgetId, periodId, nameof(FinancialTransaction), transaction.Id, "TransactionManuallyCreated", $"Created transaction {transaction.Description} for {transaction.Amount} {transaction.Direction}.");
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/budgets/{budgetId}/transactions/{transaction.Id}", transaction);
         });
@@ -484,6 +544,8 @@ public static class Endpoints
             }
 
             transaction.IsIgnored = true;
+            var periodId = await FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
+            AddAudit(db, budgetId, periodId, nameof(FinancialTransaction), transaction.Id, "TransactionIgnored", $"Ignored transaction {transaction.Description}.");
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });
@@ -563,6 +625,16 @@ public static class Endpoints
                 BudgetLineId = x.BudgetLineId,
                 Amount = x.Amount
             }));
+            var periodId = await FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
+            AddAudit(
+                db,
+                budgetId,
+                periodId,
+                nameof(FinancialTransaction),
+                transactionId,
+                request.Assignments.Count > 1 ? "TransactionSplit" : "TransactionAssigned",
+                $"Replaced assignments for transaction {transaction.Description}.",
+                $"Previous={FormatAssignments(existing)}; New={FormatAssignments(request.Assignments)}");
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });
@@ -581,9 +653,166 @@ public static class Endpoints
             var assignments = await db.TransactionAssignments
                 .Where(x => x.TransactionId == transactionId)
                 .ToListAsync(ct);
+            var transaction = await db.Transactions.AsNoTracking().FirstAsync(x => x.Id == transactionId && x.BudgetId == budgetId, ct);
             db.TransactionAssignments.RemoveRange(assignments);
+            var periodId = await FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
+            AddAudit(
+                db,
+                budgetId,
+                periodId,
+                nameof(FinancialTransaction),
+                transactionId,
+                "TransactionAssignmentsCleared",
+                $"Cleared assignments for transaction {transaction.Description}.",
+                FormatAssignments(assignments));
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
+        });
+    }
+
+    private static void MapTransactionImportEndpoints(RouteGroupBuilder budgets)
+    {
+        budgets.MapPost("/{budgetId:guid}/transaction-imports/preview", async (
+            Guid budgetId,
+            PreviewTransactionImportRequest request,
+            IValidator<PreviewTransactionImportRequest> validator,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+        {
+            if (await validator.Validate(request, ct) is { } validationProblem)
+            {
+                return validationProblem;
+            }
+
+            if (!await BudgetExists(db, budgetId, ct))
+            {
+                return Results.NotFound();
+            }
+
+            IReadOnlyList<ParsedImportRow> parsedRows;
+            try
+            {
+                parsedRows = TransactionImportParsing.Parse(request.CsvContent);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [nameof(request.CsvContent)] = [ex.Message]
+                });
+            }
+
+            var existingTransactions = await db.Transactions
+                .AsNoTracking()
+                .Where(x => x.BudgetId == budgetId)
+                .ToListAsync(ct);
+
+            var batch = new TransactionImportBatch
+            {
+                BudgetId = budgetId,
+                FileName = request.FileName.Trim(),
+                RowCount = parsedRows.Count
+            };
+            var rows = parsedRows.Select(row =>
+            {
+                var duplicateReason = FindDuplicateReason(row, existingTransactions);
+                return new TransactionImportRow
+                {
+                    ImportBatchId = batch.Id,
+                    RowNumber = row.RowNumber,
+                    TransactionDate = row.TransactionDate,
+                    Description = row.Description,
+                    Amount = row.Amount,
+                    Direction = row.Direction,
+                    SourceAccount = row.SourceAccount,
+                    ExternalReference = row.ExternalReference,
+                    Notes = row.Notes,
+                    IsDuplicateCandidate = duplicateReason is not null,
+                    DuplicateReason = duplicateReason
+                };
+            }).ToList();
+
+            batch.DuplicateCandidateCount = rows.Count(x => x.IsDuplicateCandidate);
+            db.TransactionImportBatches.Add(batch);
+            db.TransactionImportRows.AddRange(rows);
+            AddAudit(db, budgetId, null, nameof(TransactionImportBatch), batch.Id, "TransactionImportBatchPreviewed", $"Previewed import batch {batch.FileName} with {batch.RowCount} row(s).");
+            await db.SaveChangesAsync(ct);
+
+            return Results.Created($"/api/budgets/{budgetId}/transaction-imports/{batch.Id}", new TransactionImportDetail(batch, rows));
+        });
+
+        budgets.MapGet("/{budgetId:guid}/transaction-imports/{batchId:guid}", async (
+            Guid budgetId,
+            Guid batchId,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+        {
+            var batch = await db.TransactionImportBatches
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == batchId && x.BudgetId == budgetId, ct);
+            if (batch is null)
+            {
+                return Results.NotFound();
+            }
+
+            var rows = await db.TransactionImportRows
+                .AsNoTracking()
+                .Where(x => x.ImportBatchId == batchId)
+                .OrderBy(x => x.RowNumber)
+                .ToListAsync(ct);
+            return Results.Ok(new TransactionImportDetail(batch, rows));
+        });
+
+        budgets.MapPost("/{budgetId:guid}/transaction-imports/{batchId:guid}/commit", async (
+            Guid budgetId,
+            Guid batchId,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+        {
+            var batch = await db.TransactionImportBatches.FirstOrDefaultAsync(x => x.Id == batchId && x.BudgetId == budgetId, ct);
+            if (batch is null)
+            {
+                return Results.NotFound();
+            }
+
+            var rows = await db.TransactionImportRows
+                .Where(x => x.ImportBatchId == batchId)
+                .OrderBy(x => x.RowNumber)
+                .ToListAsync(ct);
+
+            if (batch.Status == TransactionImportBatchStatus.Committed)
+            {
+                return Results.Ok(new TransactionImportDetail(batch, rows));
+            }
+
+            foreach (var row in rows)
+            {
+                var transaction = new FinancialTransaction
+                {
+                    BudgetId = budgetId,
+                    ImportBatchId = batch.Id,
+                    TransactionDate = row.TransactionDate,
+                    Description = row.Description,
+                    Amount = row.Amount,
+                    Direction = row.Direction,
+                    SourceAccount = row.SourceAccount,
+                    ExternalReference = row.ExternalReference,
+                    Notes = row.Notes
+                };
+                db.Transactions.Add(transaction);
+                row.IsCommitted = true;
+                row.TransactionId = transaction.Id;
+
+                var periodId = await FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
+                AddAudit(db, budgetId, periodId, nameof(FinancialTransaction), transaction.Id, "TransactionImported", $"Imported transaction {transaction.Description} from batch {batch.FileName}.");
+            }
+
+            batch.Status = TransactionImportBatchStatus.Committed;
+            batch.CommittedAt = DateTimeOffset.UtcNow;
+            AddAudit(db, budgetId, null, nameof(TransactionImportBatch), batch.Id, "TransactionImportBatchCommitted", $"Committed import batch {batch.FileName} with {rows.Count} row(s).");
+            await db.SaveChangesAsync(ct);
+
+            return Results.Ok(new TransactionImportDetail(batch, rows));
         });
     }
 
@@ -668,8 +897,71 @@ public static class Endpoints
                 Reason = request.Reason.Trim()
             };
             db.BudgetReallocations.Add(reallocation);
+            AddAudit(db, budgetId, periodId, nameof(BudgetReallocation), reallocation.Id, "BudgetReallocationRecorded", $"Reallocated {reallocation.Amount} from budget line {reallocation.FromBudgetLineId} to budget line {reallocation.ToBudgetLineId}: {reallocation.Reason}");
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/budgets/{budgetId}/periods/{periodId}/reallocations/{reallocation.Id}", reallocation);
+        });
+    }
+
+    private static void MapAdjustmentEndpoints(RouteGroupBuilder budgets)
+    {
+        budgets.MapGet("/{budgetId:guid}/periods/{periodId:guid}/adjustments", async (
+            Guid budgetId,
+            Guid periodId,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!await PeriodBelongsToBudget(db, budgetId, periodId, ct))
+            {
+                return Results.NotFound();
+            }
+
+            var adjustments = await db.BudgetAdjustments
+                .AsNoTracking()
+                .Where(x => x.BudgetPeriodId == periodId)
+                .OrderByDescending(x => x.CreatedAt)
+                .ToListAsync(ct);
+            return Results.Ok(adjustments);
+        });
+
+        budgets.MapPost("/{budgetId:guid}/periods/{periodId:guid}/adjustments", async (
+            Guid budgetId,
+            Guid periodId,
+            CreateBudgetAdjustmentRequest request,
+            IValidator<CreateBudgetAdjustmentRequest> validator,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+        {
+            if (await validator.Validate(request, ct) is { } validationProblem)
+            {
+                return validationProblem;
+            }
+
+            if (!await PeriodBelongsToBudget(db, budgetId, periodId, ct))
+            {
+                return Results.NotFound();
+            }
+
+            var line = await db.BudgetLines
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == request.BudgetLineId && x.BudgetId == budgetId && !x.IsArchived, ct);
+            if (line is null)
+            {
+                return Results.NotFound();
+            }
+
+            var adjustment = new BudgetAdjustment
+            {
+                BudgetPeriodId = periodId,
+                BudgetLineId = request.BudgetLineId,
+                Amount = request.Amount,
+                Reason = request.Reason.Trim()
+            };
+            db.BudgetAdjustments.Add(adjustment);
+            AddAudit(db, budgetId, periodId, nameof(BudgetAdjustment), adjustment.Id, "BudgetAdjustmentRecorded", $"Recorded adjustment {adjustment.Amount} for budget line {line.Name}: {adjustment.Reason}");
+            await db.SaveChangesAsync(ct);
+
+            return Results.Created($"/api/budgets/{budgetId}/periods/{periodId}/adjustments/{adjustment.Id}", adjustment);
         });
     }
 
@@ -683,6 +975,121 @@ public static class Endpoints
             await DashboardQueries.GetPeriodSummary(db, budgetId, periodId, ct) is { } summary
                 ? Results.Ok(summary)
                 : Results.NotFound());
+
+        budgets.MapGet("/{budgetId:guid}/reports/period-summary.csv", async (
+            Guid budgetId,
+            Guid periodId,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+            await DashboardQueries.GetPeriodSummary(db, budgetId, periodId, ct) is { } summary
+                ? Results.Text(ToPeriodSummaryCsv(summary), "text/csv", Encoding.UTF8)
+                : Results.NotFound());
+
+        budgets.MapGet("/{budgetId:guid}/reports/reconciliation", async (
+            Guid budgetId,
+            Guid periodId,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+        {
+            var report = await GetReconciliationReport(db, budgetId, periodId, ct);
+            return report is null ? Results.NotFound() : Results.Ok(report);
+        });
+
+        budgets.MapGet("/{budgetId:guid}/reports/budget-line-trends", async (
+            Guid budgetId,
+            Guid budgetLineId,
+            DateOnly from,
+            DateOnly to,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+        {
+            if (to < from)
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [nameof(to)] = ["End date must be on or after start date."]
+                });
+            }
+
+            if (!await db.BudgetLines.AnyAsync(x => x.Id == budgetLineId && x.BudgetId == budgetId, ct))
+            {
+                return Results.NotFound();
+            }
+
+            var periods = await db.BudgetPeriods
+                .AsNoTracking()
+                .Where(x => x.BudgetId == budgetId && x.StartDate <= to && x.EndDate >= from)
+                .OrderBy(x => x.StartDate)
+                .ToListAsync(ct);
+
+            var trends = new List<BudgetLineTrendItem>();
+            foreach (var period in periods)
+            {
+                var summary = await DashboardQueries.GetPeriodSummary(db, budgetId, period.Id, ct);
+                var line = summary?.Lines.FirstOrDefault(x => x.BudgetLineId == budgetLineId);
+                if (summary is not null && line is not null)
+                {
+                    trends.Add(new BudgetLineTrendItem(
+                        period.Id,
+                        period.Name,
+                        period.StartDate,
+                        period.EndDate,
+                        line.Allocated,
+                        line.ActualAmount,
+                        line.AdjustmentAmount,
+                        line.ClosingBalance,
+                        line.IsOverBudget));
+                }
+            }
+
+            return Results.Ok(trends);
+        });
+
+        budgets.MapGet("/{budgetId:guid}/reports/credit-variance", async (
+            Guid budgetId,
+            DateOnly from,
+            DateOnly to,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+        {
+            if (to < from)
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [nameof(to)] = ["End date must be on or after start date."]
+                });
+            }
+
+            if (!await BudgetExists(db, budgetId, ct))
+            {
+                return Results.NotFound();
+            }
+
+            var periods = await db.BudgetPeriods
+                .AsNoTracking()
+                .Where(x => x.BudgetId == budgetId && x.StartDate <= to && x.EndDate >= from)
+                .OrderBy(x => x.StartDate)
+                .ToListAsync(ct);
+
+            var items = new List<CreditVarianceItem>();
+            foreach (var period in periods)
+            {
+                var summary = await DashboardQueries.GetPeriodSummary(db, budgetId, period.Id, ct);
+                if (summary is not null)
+                {
+                    items.Add(new CreditVarianceItem(
+                        period.Id,
+                        period.Name,
+                        period.StartDate,
+                        period.EndDate,
+                        summary.PlannedCredit,
+                        summary.ActualCredit,
+                        summary.CreditVariance));
+                }
+            }
+
+            return Results.Ok(items);
+        });
 
         budgets.MapGet("/{budgetId:guid}/reports/audit-timeline", async (
             Guid budgetId,
@@ -698,38 +1105,17 @@ public static class Endpoints
                 return Results.NotFound();
             }
 
-            var transactionIds = await db.Transactions
+            var items = await db.AuditEvents
                 .AsNoTracking()
-                .Where(x => x.BudgetId == budgetId
-                    && x.TransactionDate >= period.StartDate
-                    && x.TransactionDate <= period.EndDate)
-                .Select(x => x.Id)
-                .ToListAsync(ct);
-
-            var assignmentItems = await db.TransactionAssignments
-                .AsNoTracking()
-                .Where(x => transactionIds.Contains(x.TransactionId))
+                .Where(x => x.BudgetId == budgetId && (x.BudgetPeriodId == periodId || x.BudgetPeriodId == null))
                 .Select(x => new AuditTimelineItem(
-                    x.CreatedAt,
-                    "TransactionAssigned",
+                    x.OccurredAt,
+                    x.EventType,
                     x.Id,
-                    $"Assigned {x.Amount} to budget line {x.BudgetLineId}"))
+                    x.Description))
                 .ToListAsync(ct);
 
-            var reallocationItems = await db.BudgetReallocations
-                .AsNoTracking()
-                .Where(x => x.BudgetPeriodId == periodId)
-                .Select(x => new AuditTimelineItem(
-                    x.CreatedAt,
-                    "BudgetReallocationRecorded",
-                    x.Id,
-                    $"Reallocated {x.Amount} from budget line {x.FromBudgetLineId} to budget line {x.ToBudgetLineId}: {x.Reason}"))
-                .ToListAsync(ct);
-
-            return Results.Ok(assignmentItems
-                .Concat(reallocationItems)
-                .OrderByDescending(x => x.OccurredAt)
-                .ToList());
+            return Results.Ok(items.OrderByDescending(x => x.OccurredAt).ToList());
         });
     }
 
@@ -738,6 +1124,176 @@ public static class Endpoints
 
     private static Task<bool> PeriodBelongsToBudget(BudgetDbContext db, Guid budgetId, Guid periodId, CancellationToken ct) =>
         db.BudgetPeriods.AnyAsync(x => x.Id == periodId && x.BudgetId == budgetId, ct);
+
+    private static async Task<Guid?> FindPeriodIdForDate(BudgetDbContext db, Guid budgetId, DateOnly date, CancellationToken ct) =>
+        (await db.BudgetPeriods
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.BudgetId == budgetId && x.StartDate <= date && x.EndDate >= date, ct))?.Id;
+
+    private static void AddAudit(
+        BudgetDbContext db,
+        Guid budgetId,
+        Guid? periodId,
+        string entityType,
+        Guid entityId,
+        string eventType,
+        string description,
+        string? details = null) =>
+        db.AuditEvents.Add(new AuditEvent
+        {
+            BudgetId = budgetId,
+            BudgetPeriodId = periodId,
+            EntityType = entityType,
+            EntityId = entityId,
+            EventType = eventType,
+            Description = description,
+            Details = details
+        });
+
+    private static string FormatAssignments(IEnumerable<TransactionAssignment> assignments) =>
+        string.Join("; ", assignments.Select(x => $"{x.BudgetLineId}:{x.Amount}"));
+
+    private static string FormatAssignments(IEnumerable<TransactionAssignmentItem> assignments) =>
+        string.Join("; ", assignments.Select(x => $"{x.BudgetLineId}:{x.Amount}"));
+
+    private static string? FindDuplicateReason(ParsedImportRow row, IReadOnlyCollection<FinancialTransaction> transactions)
+    {
+        if (!string.IsNullOrWhiteSpace(row.ExternalReference)
+            && transactions.Any(x => string.Equals(x.ExternalReference, row.ExternalReference, StringComparison.OrdinalIgnoreCase)))
+        {
+            return "External reference already exists in this budget.";
+        }
+
+        var normalizedDescription = TransactionImportParsing.NormalizeForDuplicateMatch(row.Description);
+        var normalizedSource = TransactionImportParsing.NormalizeForDuplicateMatch(row.SourceAccount);
+        var fallbackMatch = transactions.Any(x =>
+            x.TransactionDate == row.TransactionDate
+            && x.Amount == row.Amount
+            && x.Direction == row.Direction
+            && TransactionImportParsing.NormalizeForDuplicateMatch(x.Description) == normalizedDescription
+            && TransactionImportParsing.NormalizeForDuplicateMatch(x.SourceAccount) == normalizedSource);
+
+        return fallbackMatch
+            ? "Date, amount, direction, source account, and description match an existing transaction."
+            : null;
+    }
+
+    private static async Task<ReconciliationReport?> GetReconciliationReport(
+        BudgetDbContext db,
+        Guid budgetId,
+        Guid periodId,
+        CancellationToken ct)
+    {
+        var period = await db.BudgetPeriods
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == periodId && x.BudgetId == budgetId, ct);
+        if (period is null)
+        {
+            return null;
+        }
+
+        var transactions = await db.Transactions
+            .AsNoTracking()
+            .Where(x => x.BudgetId == budgetId && x.TransactionDate >= period.StartDate && x.TransactionDate <= period.EndDate)
+            .ToListAsync(ct);
+        var transactionIds = transactions.Select(x => x.Id).ToArray();
+        var assignmentTotals = await db.TransactionAssignments
+            .AsNoTracking()
+            .Where(x => transactionIds.Contains(x.TransactionId))
+            .GroupBy(x => x.TransactionId)
+            .Select(x => new { TransactionId = x.Key, Amount = x.Sum(y => y.Amount) })
+            .ToDictionaryAsync(x => x.TransactionId, x => x.Amount, ct);
+        var reallocations = await db.BudgetReallocations
+            .AsNoTracking()
+            .Where(x => x.BudgetPeriodId == periodId)
+            .ToListAsync(ct);
+        var adjustments = await db.BudgetAdjustments
+            .AsNoTracking()
+            .Where(x => x.BudgetPeriodId == periodId)
+            .ToListAsync(ct);
+        var importBatchIds = await db.TransactionImportBatches
+            .AsNoTracking()
+            .Where(x => x.BudgetId == budgetId)
+            .Select(x => x.Id)
+            .ToListAsync(ct);
+        var duplicateCandidates = await db.TransactionImportRows
+            .AsNoTracking()
+            .CountAsync(x => importBatchIds.Contains(x.ImportBatchId) && x.IsDuplicateCandidate && x.TransactionDate >= period.StartDate && x.TransactionDate <= period.EndDate, ct);
+
+        var activeTransactions = transactions.Where(x => !x.IsIgnored).ToList();
+        var assignedDebit = activeTransactions
+            .Where(x => x.Direction == TransactionDirection.Debit)
+            .Sum(x => Math.Min(x.Amount, assignmentTotals.GetValueOrDefault(x.Id)));
+        var assignedCredit = activeTransactions
+            .Where(x => x.Direction == TransactionDirection.Credit)
+            .Sum(x => Math.Min(x.Amount, assignmentTotals.GetValueOrDefault(x.Id)));
+        var unassignedDebit = activeTransactions
+            .Where(x => x.Direction == TransactionDirection.Debit && assignmentTotals.GetValueOrDefault(x.Id) == 0)
+            .Sum(x => x.Amount);
+        var unassignedCredit = activeTransactions
+            .Where(x => x.Direction == TransactionDirection.Credit && assignmentTotals.GetValueOrDefault(x.Id) == 0)
+            .Sum(x => x.Amount);
+        var partiallyAssignedDebit = activeTransactions
+            .Where(x => x.Direction == TransactionDirection.Debit
+                && assignmentTotals.GetValueOrDefault(x.Id) > 0
+                && assignmentTotals.GetValueOrDefault(x.Id) < x.Amount)
+            .Sum(x => x.Amount - assignmentTotals.GetValueOrDefault(x.Id));
+        var partiallyAssignedCredit = activeTransactions
+            .Where(x => x.Direction == TransactionDirection.Credit
+                && assignmentTotals.GetValueOrDefault(x.Id) > 0
+                && assignmentTotals.GetValueOrDefault(x.Id) < x.Amount)
+            .Sum(x => x.Amount - assignmentTotals.GetValueOrDefault(x.Id));
+
+        return new ReconciliationReport(
+            budgetId,
+            periodId,
+            transactions.Where(x => x.ImportBatchId is not null && x.Direction == TransactionDirection.Debit).Sum(x => x.Amount),
+            transactions.Where(x => x.ImportBatchId is not null && x.Direction == TransactionDirection.Credit).Sum(x => x.Amount),
+            transactions.Where(x => x.ImportBatchId is null && x.Direction == TransactionDirection.Debit).Sum(x => x.Amount),
+            transactions.Where(x => x.ImportBatchId is null && x.Direction == TransactionDirection.Credit).Sum(x => x.Amount),
+            assignedDebit,
+            assignedCredit,
+            transactions.Where(x => x.IsIgnored && x.Direction == TransactionDirection.Debit).Sum(x => x.Amount),
+            transactions.Where(x => x.IsIgnored && x.Direction == TransactionDirection.Credit).Sum(x => x.Amount),
+            unassignedDebit,
+            unassignedCredit,
+            partiallyAssignedDebit,
+            partiallyAssignedCredit,
+            reallocations.Sum(x => x.Amount),
+            adjustments.Sum(x => Math.Abs(x.Amount)),
+            duplicateCandidates);
+    }
+
+    private static string ToPeriodSummaryCsv(PeriodSummary summary)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("budgetLineId,name,direction,rolloverType,isArchived,openingBalance,allocated,reallocationIn,reallocationOut,actualAmount,adjustmentAmount,closingBalance,isOverBudget");
+        foreach (var line in summary.Lines)
+        {
+            builder
+                .Append(line.BudgetLineId).Append(',')
+                .Append(EscapeCsv(line.Name)).Append(',')
+                .Append(line.Direction).Append(',')
+                .Append(line.RolloverType).Append(',')
+                .Append(line.IsArchived).Append(',')
+                .Append(line.OpeningBalance).Append(',')
+                .Append(line.Allocated).Append(',')
+                .Append(line.ReallocationIn).Append(',')
+                .Append(line.ReallocationOut).Append(',')
+                .Append(line.ActualAmount).Append(',')
+                .Append(line.AdjustmentAmount).Append(',')
+                .Append(line.ClosingBalance).Append(',')
+                .Append(line.IsOverBudget)
+                .AppendLine();
+        }
+
+        return builder.ToString();
+    }
+
+    private static string EscapeCsv(string value) =>
+        value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r')
+            ? $"\"{value.Replace("\"", "\"\"")}\""
+            : value;
 
     private static TransactionAssignmentStatus GetAssignmentStatus(FinancialTransaction transaction, decimal assignedAmount)
     {

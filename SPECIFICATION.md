@@ -180,6 +180,7 @@ Acceptance criteria:
 - A new period can be created with expected credit and debit budget lines pre-populated.
 - Cumulative debit budget lines start with their previous closing balance.
 - Period reset debit budget lines start from zero unless explicitly allocated.
+- Archived budget lines remain visible in historical periods and reports where they had activity.
 
 ### 6.2 Transaction Entry and Import
 
@@ -259,6 +260,7 @@ The user can:
 Acceptance criteria:
 
 - The current budget state can be explained from recorded events.
+- Phase 1 stores durable local audit records before Kafka-backed audit events are introduced.
 - The user can understand an old period without relying on spreadsheet context.
 
 ### 6.7 Reporting and Analysis
@@ -557,19 +559,25 @@ POST /api/budgets/{budgetId}/budget-lines
 GET /api/budgets/{budgetId}/budget-lines
 POST /api/budgets/{budgetId}/budget-lines/{budgetLineId}/archive
 PUT /api/budgets/{budgetId}/periods/{budgetPeriodId}/allocations
+GET /api/budgets/{budgetId}/periods/{budgetPeriodId}/allocations
 POST /api/budgets/{budgetId}/periods/{budgetPeriodId}/reallocations
+GET /api/budgets/{budgetId}/periods/{budgetPeriodId}/reallocations
+POST /api/budgets/{budgetId}/periods/{budgetPeriodId}/adjustments
+GET /api/budgets/{budgetId}/periods/{budgetPeriodId}/adjustments
 ```
 
 ### 12.2 Example Transaction API
 
 ```http
-POST /api/transaction-imports
-GET /api/transaction-imports/{importBatchId}
+POST /api/budgets/{budgetId}/transaction-imports/preview
+POST /api/budgets/{budgetId}/transaction-imports/{importBatchId}/commit
+GET /api/budgets/{budgetId}/transaction-imports/{importBatchId}
 POST /api/budgets/{budgetId}/transactions
 GET /api/budgets/{budgetId}/transactions?periodId={id}
 GET /api/budgets/{budgetId}/transactions?from={date}&to={date}&assignmentStatus={status}
 GET /api/budgets/{budgetId}/transactions/{transactionId}
 PUT /api/budgets/{budgetId}/transactions/{transactionId}/assignments
+GET /api/budgets/{budgetId}/transactions/{transactionId}/assignments
 DELETE /api/budgets/{budgetId}/transactions/{transactionId}/assignments
 POST /api/budgets/{budgetId}/transactions/{transactionId}/ignore
 ```
@@ -580,7 +588,9 @@ POST /api/budgets/{budgetId}/transactions/{transactionId}/ignore
 GET /api/budgets/{budgetId}/reports/period-summary?periodId={id}
 GET /api/budgets/{budgetId}/reports/budget-line-trends?budgetLineId={id}&from={date}&to={date}
 GET /api/budgets/{budgetId}/reports/credit-variance?from={date}&to={date}
+GET /api/budgets/{budgetId}/reports/reconciliation?periodId={id}
 GET /api/budgets/{budgetId}/reports/audit-timeline?periodId={id}
+GET /api/budgets/{budgetId}/reports/period-summary.csv?periodId={id}
 ```
 
 ## 13. User Interface
@@ -753,14 +763,22 @@ Build one implementation first, preferably .NET because it matches existing expe
 
 Deliver:
 
-- Budget periods.
 - Budgets.
+- Budget periods.
 - Budget lines.
+- Historical visibility of archived budget lines in old periods.
 - Manual transactions.
+- CSV import preview and commit.
+- Duplicate detection for imported transactions.
 - Transaction assignment.
 - Opposite-direction assignments for refunds, reimbursements, reversals, and corrections.
 - Budget reallocations.
+- Adjustments with reasons.
+- Durable local audit records for imports, assignments, splits, ignores, reallocations, adjustments, and budget line archival.
 - Period summary.
+- Reconciliation view.
+- Basic multi-period reports for budget line trends and credit variance.
+- CSV export.
 - PostgreSQL persistence.
 - Unit and integration tests.
 
@@ -770,8 +788,8 @@ Introduce:
 
 - Kafka.
 - Outbox pattern.
-- Reporting service projections.
-- Audit timeline.
+- Service decomposition with service-owned schemas.
+- Projection-backed reporting and audit timelines.
 - Docker Compose for local infrastructure.
 
 ### 17.3 Phase 3: Containerisation and Kubernetes
@@ -884,10 +902,13 @@ Cover:
 Cover:
 
 - PostgreSQL persistence.
-- Outbox publishing.
-- Kafka consumer behaviour.
 - CSV import.
-- Reporting projections.
+- Duplicate detection.
+- Reconciliation.
+- CSV export.
+- Outbox publishing in Phase 2.
+- Kafka consumer behaviour in Phase 2.
+- Reporting projections in Phase 2.
 
 Use Testcontainers where practical.
 
@@ -1001,14 +1022,21 @@ The smallest useful version should include:
 - Create a budget period.
 - Create debit and credit budget lines.
 - Mark budget lines as period reset or cumulative.
+- Preserve historical reporting for archived budget lines.
 - Enter planned credit and debit allocations.
 - Manually add transactions.
+- Preview and commit CSV imports.
+- Detect likely duplicate imported transactions.
 - Assign transactions to budget lines.
 - Leave transactions unassigned until classification.
 - Reallocate budget between debit budget lines.
+- Record adjustments with reasons.
 - View period summary.
+- View reconciliation for a period.
+- View basic reports across periods.
 - View transaction-level detail.
-- View audit history for budget reallocations and assignments.
+- View durable local audit history for imports, assignments, splits, ignores, reallocations, adjustments, and archival.
+- Export data to CSV.
 
 ## 25. Future Enhancements
 
