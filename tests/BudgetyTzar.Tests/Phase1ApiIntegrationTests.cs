@@ -69,6 +69,79 @@ public sealed class Phase1ApiIntegrationTests
     }
 
     [Fact]
+    public async Task TransactionEditWritesAuditAndPreservesAssignments()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var period = await CreatePeriod(client, budget.Id);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var transaction = await CreateTransaction(client, budget.Id, 25m, TransactionDirection.Debit);
+        var assignResponse = await client.PutAsJsonAsync(
+            $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/assignments",
+            new ReplaceTransactionAssignmentsRequest([new TransactionAssignmentItem(groceries.Id, 20m)]));
+        assignResponse.EnsureSuccessStatusCode();
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/budgets/{budget.Id}/transactions/{transaction.Id}",
+            new UpdateTransactionRequest(
+                new DateOnly(2026, 6, 11),
+                "Edited groceries",
+                30m,
+                TransactionDirection.Debit,
+                "Current account",
+                "EDIT-1",
+                "Updated note"));
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        var edited = await app.GetTransactionAsync(transaction.Id);
+        Assert.Equal(transaction.Id, edited!.Id);
+        Assert.Equal("Edited groceries", edited.Description);
+        Assert.Equal(30m, edited.Amount);
+        Assert.Equal(1, await app.CountAssignmentsAsync(transaction.Id));
+
+        var audit = await client.GetFromJsonAsync<IReadOnlyList<AuditTimelineItem>>(
+            $"/api/budgets/{budget.Id}/reports/audit-timeline?periodId={period.Id}");
+        var editAudit = audit!.Single(x => x.EventType == "TransactionEdited");
+        Assert.NotEqual(Guid.Empty, editAudit.AuditEventId);
+        Assert.Equal(nameof(FinancialTransaction), editAudit.EntityType);
+        Assert.Equal(transaction.Id, editAudit.EntityId);
+        Assert.Equal(period.Id, editAudit.BudgetPeriodId);
+    }
+
+    [Fact]
+    public async Task TransactionAmountCannotBeEditedBelowCurrentAssignmentTotal()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var transaction = await CreateTransaction(client, budget.Id, 25m, TransactionDirection.Debit);
+        var assignResponse = await client.PutAsJsonAsync(
+            $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/assignments",
+            new ReplaceTransactionAssignmentsRequest([new TransactionAssignmentItem(groceries.Id, 20m)]));
+        assignResponse.EnsureSuccessStatusCode();
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/budgets/{budget.Id}/transactions/{transaction.Id}",
+            new UpdateTransactionRequest(
+                transaction.TransactionDate,
+                transaction.Description,
+                19.99m,
+                transaction.Direction,
+                transaction.SourceAccount,
+                transaction.ExternalReference,
+                transaction.Notes));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(1, await app.CountAssignmentsAsync(transaction.Id));
+        var persisted = await app.GetTransactionAsync(transaction.Id);
+        Assert.Equal(25m, persisted!.Amount);
+    }
+
+    [Fact]
     public async Task ReallocationsCannotUseCreditBudgetLines()
     {
         await using var app = new BudgetApiFactory();
@@ -103,6 +176,169 @@ public sealed class Phase1ApiIntegrationTests
     }
 
     [Fact]
+    public async Task CreateBudgetPeriodCanSeedInlineAllocations()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var salary = await CreateBudgetLine(client, budget.Id, "Salary", BudgetLineDirection.Credit);
+
+        var period = await CreatePeriod(
+            client,
+            budget.Id,
+            new CreateBudgetPeriodRequest(
+                "July 2026",
+                new DateOnly(2026, 7, 1),
+                new DateOnly(2026, 7, 31),
+                [
+                    new BudgetLineAllocationItem(groceries.Id, 250m),
+                    new BudgetLineAllocationItem(salary.Id, 2_500m)
+                ]));
+
+        var allocations = await app.GetAllocationsAsync(period.Id);
+        Assert.Equal(2, allocations.Count);
+        Assert.Contains(allocations, x => x.BudgetLineId == groceries.Id && x.Amount == 250m);
+        Assert.Contains(allocations, x => x.BudgetLineId == salary.Id && x.Amount == 2_500m);
+    }
+
+    [Fact]
+    public async Task CreateBudgetPeriodCanCopyAllocationsFromPriorPeriod()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var source = await CreatePeriod(
+            client,
+            budget.Id,
+            new CreateBudgetPeriodRequest("May 2026", new DateOnly(2026, 5, 1), new DateOnly(2026, 5, 31)));
+        await ReplaceAllocations(client, budget.Id, source.Id, [new BudgetLineAllocationItem(groceries.Id, 125m)]);
+
+        var copied = await CreatePeriod(
+            client,
+            budget.Id,
+            new CreateBudgetPeriodRequest(
+                "June 2026",
+                new DateOnly(2026, 6, 1),
+                new DateOnly(2026, 6, 30),
+                CopyAllocationsFromPeriodId: source.Id));
+
+        var allocations = await app.GetAllocationsAsync(copied.Id);
+        var allocation = Assert.Single(allocations);
+        Assert.Equal(groceries.Id, allocation.BudgetLineId);
+        Assert.Equal(125m, allocation.Amount);
+    }
+
+    [Fact]
+    public async Task CreateBudgetPeriodCopySkipsArchivedBudgetLines()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var retired = await CreateBudgetLine(client, budget.Id, "Old category", BudgetLineDirection.Debit);
+        var source = await CreatePeriod(
+            client,
+            budget.Id,
+            new CreateBudgetPeriodRequest("May 2026", new DateOnly(2026, 5, 1), new DateOnly(2026, 5, 31)));
+        await ReplaceAllocations(
+            client,
+            budget.Id,
+            source.Id,
+            [new BudgetLineAllocationItem(groceries.Id, 100m), new BudgetLineAllocationItem(retired.Id, 50m)]);
+        await ArchiveBudgetLine(client, budget.Id, retired.Id);
+
+        var copied = await CreatePeriod(
+            client,
+            budget.Id,
+            new CreateBudgetPeriodRequest(
+                "June 2026",
+                new DateOnly(2026, 6, 1),
+                new DateOnly(2026, 6, 30),
+                CopyAllocationsFromPeriodId: source.Id));
+
+        var allocation = Assert.Single(await app.GetAllocationsAsync(copied.Id));
+        Assert.Equal(groceries.Id, allocation.BudgetLineId);
+        Assert.Equal(100m, allocation.Amount);
+    }
+
+    [Fact]
+    public async Task CreateBudgetPeriodRejectsDuplicateInlineAllocationLines()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/budgets/{budget.Id}/periods",
+            new CreateBudgetPeriodRequest(
+                "July 2026",
+                new DateOnly(2026, 7, 1),
+                new DateOnly(2026, 7, 31),
+                [
+                    new BudgetLineAllocationItem(groceries.Id, 100m),
+                    new BudgetLineAllocationItem(groceries.Id, 25m)
+                ]));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreateBudgetPeriodRejectsInlineAndCopyAllocationSourcesTogether()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var source = await CreatePeriod(
+            client,
+            budget.Id,
+            new CreateBudgetPeriodRequest("May 2026", new DateOnly(2026, 5, 1), new DateOnly(2026, 5, 31)));
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/budgets/{budget.Id}/periods",
+            new CreateBudgetPeriodRequest(
+                "June 2026",
+                new DateOnly(2026, 6, 1),
+                new DateOnly(2026, 6, 30),
+                [new BudgetLineAllocationItem(groceries.Id, 100m)],
+                source.Id));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreateBudgetPeriodRejectsCopySourceFromAnotherBudget()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client, "Personal");
+        var otherBudget = await CreateBudget(client, "Business");
+        var otherSource = await CreatePeriod(
+            client,
+            otherBudget.Id,
+            new CreateBudgetPeriodRequest("May 2026", new DateOnly(2026, 5, 1), new DateOnly(2026, 5, 31)));
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/budgets/{budget.Id}/periods",
+            new CreateBudgetPeriodRequest(
+                "June 2026",
+                new DateOnly(2026, 6, 1),
+                new DateOnly(2026, 6, 30),
+                CopyAllocationsFromPeriodId: otherSource.Id));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task AuditTimelinePreservesAssignmentReplacementAndClearing()
     {
         await using var app = new BudgetApiFactory();
@@ -126,6 +362,15 @@ public sealed class Phase1ApiIntegrationTests
 
         Assert.Contains(audit!, x => x.EventType == "TransactionAssigned");
         Assert.Contains(audit!, x => x.EventType == "TransactionAssignmentsCleared");
+        Assert.All(
+            audit!.Where(x => x.EventType is "TransactionAssigned" or "TransactionAssignmentsCleared"),
+            x =>
+            {
+                Assert.NotEqual(Guid.Empty, x.AuditEventId);
+                Assert.Equal(nameof(FinancialTransaction), x.EntityType);
+                Assert.Equal(transaction.Id, x.EntityId);
+                Assert.Equal(period.Id, x.BudgetPeriodId);
+            });
     }
 
     [Fact]
@@ -226,23 +471,94 @@ date,description,amount,direction,source account,external reference,notes
 
         Assert.Equal(HttpStatusCode.OK, reconciliation.StatusCode);
         Assert.Single(trends!);
-        Assert.Equal(0m, creditVariance!.Single().CreditVariance);
+        var creditVarianceItem = Assert.Single(creditVariance!);
+        Assert.Equal(0m, creditVarianceItem.CreditVariance);
+        Assert.Equal(salary.Id, creditVarianceItem.BudgetLineId);
+        Assert.Equal("Salary", creditVarianceItem.BudgetLineName);
         Assert.Contains("budgetLineId,name,direction", csv);
         Assert.Contains("Groceries", csv);
     }
 
-    private static async Task<Budget> CreateBudget(HttpClient client)
+    [Fact]
+    public async Task ReconciliationReportsDebitAndCreditDifferences()
     {
-        var response = await client.PostAsJsonAsync("/api/budgets", new CreateBudgetRequest("Personal", "GBP"));
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var period = await CreatePeriod(client, budget.Id);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var salary = await CreateBudgetLine(client, budget.Id, "Salary", BudgetLineDirection.Credit);
+        var spend = await CreateTransaction(client, budget.Id, 100m, TransactionDirection.Debit);
+        var pay = await CreateTransaction(client, budget.Id, 200m, TransactionDirection.Credit);
+        var debitAssignResponse = await client.PutAsJsonAsync(
+            $"/api/budgets/{budget.Id}/transactions/{spend.Id}/assignments",
+            new ReplaceTransactionAssignmentsRequest([new TransactionAssignmentItem(groceries.Id, 40m)]));
+        var creditAssignResponse = await client.PutAsJsonAsync(
+            $"/api/budgets/{budget.Id}/transactions/{pay.Id}/assignments",
+            new ReplaceTransactionAssignmentsRequest([new TransactionAssignmentItem(salary.Id, 150m)]));
+        debitAssignResponse.EnsureSuccessStatusCode();
+        creditAssignResponse.EnsureSuccessStatusCode();
+
+        var report = await client.GetFromJsonAsync<ReconciliationReport>(
+            $"/api/budgets/{budget.Id}/reports/reconciliation?periodId={period.Id}");
+
+        Assert.Equal(60m, report!.DebitDifference);
+        Assert.Equal(50m, report.CreditDifference);
+    }
+
+    [Fact]
+    public async Task CreditVarianceReturnsOneItemPerCreditBudgetLinePerPeriod()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var period = await CreatePeriod(client, budget.Id);
+        var salary = await CreateBudgetLine(client, budget.Id, "Salary", BudgetLineDirection.Credit);
+        var bonus = await CreateBudgetLine(client, budget.Id, "Bonus", BudgetLineDirection.Credit);
+        await ReplaceAllocations(
+            client,
+            budget.Id,
+            period.Id,
+            [new BudgetLineAllocationItem(salary.Id, 2_500m), new BudgetLineAllocationItem(bonus.Id, 500m)]);
+        var pay = await CreateTransaction(client, budget.Id, 2_400m, TransactionDirection.Credit);
+        var assignResponse = await client.PutAsJsonAsync(
+            $"/api/budgets/{budget.Id}/transactions/{pay.Id}/assignments",
+            new ReplaceTransactionAssignmentsRequest([new TransactionAssignmentItem(salary.Id, 2_400m)]));
+        assignResponse.EnsureSuccessStatusCode();
+
+        var items = await client.GetFromJsonAsync<IReadOnlyList<CreditVarianceItem>>(
+            $"/api/budgets/{budget.Id}/reports/credit-variance?from=2026-06-01&to=2026-06-30");
+
+        Assert.Equal(2, items!.Count);
+        Assert.Contains(items, x => x.BudgetLineId == salary.Id && x.BudgetLineName == "Salary" && x.PlannedCredit == 2_500m && x.ActualCredit == 2_400m && x.CreditVariance == -100m);
+        Assert.Contains(items, x => x.BudgetLineId == bonus.Id && x.BudgetLineName == "Bonus" && x.PlannedCredit == 500m && x.ActualCredit == 0m && x.CreditVariance == -500m);
+    }
+
+    private static async Task<Budget> CreateBudget(HttpClient client, string name = "Personal")
+    {
+        var response = await client.PostAsJsonAsync("/api/budgets", new CreateBudgetRequest(name, "GBP"));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<Budget>())!;
     }
 
     private static async Task<BudgetPeriod> CreatePeriod(HttpClient client, Guid budgetId)
     {
+        return await CreatePeriod(
+            client,
+            budgetId,
+            new CreateBudgetPeriodRequest("June 2026", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30)));
+    }
+
+    private static async Task<BudgetPeriod> CreatePeriod(
+        HttpClient client,
+        Guid budgetId,
+        CreateBudgetPeriodRequest request)
+    {
         var response = await client.PostAsJsonAsync(
             $"/api/budgets/{budgetId}/periods",
-            new CreateBudgetPeriodRequest("June 2026", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30)));
+            request);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<BudgetPeriod>())!;
     }
@@ -258,6 +574,12 @@ date,description,amount,direction,source account,external reference,notes
             new CreateBudgetLineRequest(name, direction, BudgetLineRolloverType.PeriodReset));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<BudgetLine>())!;
+    }
+
+    private static async Task ArchiveBudgetLine(HttpClient client, Guid budgetId, Guid lineId)
+    {
+        var response = await client.PostAsync($"/api/budgets/{budgetId}/budget-lines/{lineId}/archive", null);
+        response.EnsureSuccessStatusCode();
     }
 
     private static async Task ReplaceAllocations(
@@ -338,5 +660,23 @@ internal sealed class BudgetApiFactory : WebApplicationFactory<Program>
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
         return await db.Transactions.CountAsync(x => x.BudgetId == budgetId);
+    }
+
+    public async Task<FinancialTransaction?> GetTransactionAsync(Guid transactionId)
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        return await db.Transactions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == transactionId);
+    }
+
+    public async Task<IReadOnlyList<BudgetLineAllocation>> GetAllocationsAsync(Guid periodId)
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        return await db.BudgetLineAllocations
+            .AsNoTracking()
+            .Where(x => x.BudgetPeriodId == periodId)
+            .OrderBy(x => x.Id)
+            .ToListAsync();
     }
 }

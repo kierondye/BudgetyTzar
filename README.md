@@ -23,6 +23,7 @@ BudgetyTzar is a personal budgeting MVP that replaces a monthly spreadsheet with
 - `GET /api/budgets/{budgetId}/transactions?periodId={periodId}`
 - `GET /api/budgets/{budgetId}/transactions?from={date}&to={date}&assignmentStatus={status}`
 - `GET /api/budgets/{budgetId}/transactions/{transactionId}`
+- `PUT /api/budgets/{budgetId}/transactions/{transactionId}`
 - `POST /api/budgets/{budgetId}/transactions/{transactionId}/ignore`
 - `PUT /api/budgets/{budgetId}/transactions/{transactionId}/assignments`
 - `GET /api/budgets/{budgetId}/transactions/{transactionId}/assignments`
