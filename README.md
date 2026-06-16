@@ -35,6 +35,8 @@ Run the API:
 dotnet run --project src/BudgetyTzar.Api
 ```
 
+Open `http://localhost:5000/` or `http://localhost:5000/swagger` to browse the API. The Swagger JSON is available at `http://localhost:5000/swagger/v1/swagger.json`, and the health check is available at `http://localhost:5000/health`.
+
 The API creates the local schema on startup when `Database:EnsureCreatedOnStartup` is `true`. For production-style deployments this should be replaced with EF Core migrations.
 
 Run tests:
