@@ -9,204 +9,214 @@ public sealed class DashboardCalculationTests
     private const string Currency = "GBP";
 
     [Fact]
-    public void BudgetMovementsAdjustAvailableBudgetButDoNotAlterActualSpending()
+    public void BudgetReallocationsAdjustAvailableBudgetButDoNotAlterActualSpending()
     {
-        var period = Period();
-        var groceries = Category("Groceries");
-        var dining = Category("Dining out");
-        var grocerySpend = Transaction(period, 30m, TransactionDirection.Debit);
+        var budget = Budget();
+        var period = Period(budget, "June 2026", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30));
+        var groceries = DebitLine(budget, "Groceries");
+        var dining = DebitLine(budget, "Dining out");
+        var grocerySpend = Transaction(budget, period.StartDate, 30m, TransactionDirection.Debit);
 
-        var withoutMovement = DashboardCalculator.Calculate(
+        var withoutReallocation = DashboardCalculator.Calculate(
             period,
+            [period],
             [groceries, dining],
             [Allocation(period, groceries, 100m), Allocation(period, dining, 75m)],
-            [],
             [grocerySpend],
-            [CategoryAssignment(grocerySpend, groceries, 30m)],
+            [Assignment(grocerySpend, groceries, 30m)],
             []);
 
-        var withMovement = DashboardCalculator.Calculate(
+        var withReallocation = DashboardCalculator.Calculate(
             period,
+            [period],
             [groceries, dining],
             [Allocation(period, groceries, 100m), Allocation(period, dining, 75m)],
-            [],
             [grocerySpend],
-            [CategoryAssignment(grocerySpend, groceries, 30m)],
-            [Movement(period, dining, groceries, 25m)]);
+            [Assignment(grocerySpend, groceries, 30m)],
+            [Reallocation(period, dining, groceries, 25m)]);
 
-        Assert.Equal(30m, withoutMovement.Category(groceries).NetSpending());
-        Assert.Equal(30m, withMovement.Category(groceries).NetSpending());
-        Assert.Equal(70m, withoutMovement.Category(groceries).Remaining);
-        Assert.Equal(95m, withMovement.Category(groceries).Remaining);
-        Assert.Equal(175m, withoutMovement.TotalPlannedBudget);
-        Assert.Equal(175m, withMovement.TotalPlannedBudget);
+        Assert.Equal(30m, withoutReallocation.Line(groceries).ActualAmount);
+        Assert.Equal(30m, withReallocation.Line(groceries).ActualAmount);
+        Assert.Equal(70m, withoutReallocation.Line(groceries).ClosingBalance);
+        Assert.Equal(95m, withReallocation.Line(groceries).ClosingBalance);
+        Assert.Equal(175m, withoutReallocation.PlannedDebit);
+        Assert.Equal(175m, withReallocation.PlannedDebit);
     }
 
     [Fact]
-    public void CreditTransactionAssignedToSpendingCategoryReducesNetSpending()
+    public void CreditBudgetLinesReportExpectedAgainstActualCredit()
     {
-        var period = Period();
-        var groceries = Category("Groceries");
-        var shop = Transaction(period, 80m, TransactionDirection.Debit);
-        var refund = Transaction(period, 15m, TransactionDirection.Credit);
+        var budget = Budget();
+        var period = Period(budget, "June 2026", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30));
+        var salary = CreditLine(budget, "Salary");
+        var groceries = DebitLine(budget, "Groceries");
+        var paycheck = Transaction(budget, period.StartDate, 2_950m, TransactionDirection.Credit);
+        var food = Transaction(budget, period.StartDate, 40m, TransactionDirection.Debit);
 
-        var dashboard = DashboardCalculator.Calculate(
+        var summary = DashboardCalculator.Calculate(
             period,
-            [groceries],
-            [Allocation(period, groceries, 100m)],
-            [],
-            [shop, refund],
-            [CategoryAssignment(shop, groceries, 80m), CategoryAssignment(refund, groceries, 15m)],
-            []);
-
-        Assert.Equal(65m, dashboard.TotalActualSpending);
-        Assert.Equal(65m, dashboard.Category(groceries).NetSpending());
-        Assert.Equal(35m, dashboard.Category(groceries).Remaining);
-    }
-
-    [Fact]
-    public void IncomeAssignedToIncomeSourcesIsSeparateFromSpending()
-    {
-        var period = Period();
-        var groceries = Category("Groceries");
-        var salary = Income("Salary");
-        var paycheck = Transaction(period, 2_500m, TransactionDirection.Credit);
-        var food = Transaction(period, 40m, TransactionDirection.Debit);
-
-        var dashboard = DashboardCalculator.Calculate(
-            period,
-            [groceries],
-            [Allocation(period, groceries, 150m)],
-            [IncomeExpectation(period, salary, 2_500m)],
+            [period],
+            [salary, groceries],
+            [Allocation(period, salary, 3_000m), Allocation(period, groceries, 150m)],
             [paycheck, food],
-            [IncomeAssignment(paycheck, salary, 2_500m), CategoryAssignment(food, groceries, 40m)],
+            [Assignment(paycheck, salary, 2_950m), Assignment(food, groceries, 40m)],
             []);
 
-        Assert.Equal(2_500m, dashboard.ExpectedIncome);
-        Assert.Equal(2_500m, dashboard.ActualIncome);
-        Assert.Equal(40m, dashboard.TotalActualSpending);
-        Assert.Equal(110m, dashboard.Category(groceries).Remaining);
+        Assert.Equal(3_000m, summary.PlannedCredit);
+        Assert.Equal(2_950m, summary.ActualCredit);
+        Assert.Equal(-50m, summary.CreditVariance);
+        Assert.Equal(150m, summary.PlannedDebit);
+        Assert.Equal(40m, summary.ActualDebit);
+        Assert.Equal(110m, summary.DebitRemaining);
     }
 
     [Fact]
-    public void MonthlyDashboardTotalsAreCalculatedCorrectly()
+    public void UnassignedAndPartiallyAssignedTransactionsAreVisibleInPeriodSummary()
     {
-        var period = Period();
-        var groceries = Category("Groceries");
-        var transport = Category("Transport");
-        var salary = Income("Salary");
-        var groceryShop = Transaction(period, 120m, TransactionDirection.Debit);
-        var groceryRefund = Transaction(period, 20m, TransactionDirection.Credit);
-        var busPass = Transaction(period, 45m, TransactionDirection.Debit);
-        var paycheck = Transaction(period, 3_000m, TransactionDirection.Credit);
+        var budget = Budget();
+        var period = Period(budget, "June 2026", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30));
+        var groceries = DebitLine(budget, "Groceries");
+        var salary = CreditLine(budget, "Salary");
+        var unassignedDebit = Transaction(budget, period.StartDate, 25m, TransactionDirection.Debit);
+        var partialDebit = Transaction(budget, period.StartDate, 80m, TransactionDirection.Debit);
+        var unassignedCredit = Transaction(budget, period.StartDate, 100m, TransactionDirection.Credit);
+        var partialCredit = Transaction(budget, period.StartDate, 200m, TransactionDirection.Credit);
 
-        var dashboard = DashboardCalculator.Calculate(
+        var summary = DashboardCalculator.Calculate(
             period,
-            [groceries, transport],
-            [Allocation(period, groceries, 500m), Allocation(period, transport, 200m)],
-            [IncomeExpectation(period, salary, 3_000m)],
-            [groceryShop, groceryRefund, busPass, paycheck],
-            [
-                CategoryAssignment(groceryShop, groceries, 120m),
-                CategoryAssignment(groceryRefund, groceries, 20m),
-                CategoryAssignment(busPass, transport, 45m),
-                IncomeAssignment(paycheck, salary, 3_000m)
-            ],
-            [Movement(period, groceries, transport, 100m)]);
+            [period],
+            [groceries, salary],
+            [Allocation(period, groceries, 150m), Allocation(period, salary, 200m)],
+            [unassignedDebit, partialDebit, unassignedCredit, partialCredit],
+            [Assignment(partialDebit, groceries, 50m), Assignment(partialCredit, salary, 125m)],
+            []);
 
-        Assert.Equal(3_000m, dashboard.ExpectedIncome);
-        Assert.Equal(3_000m, dashboard.ActualIncome);
-        Assert.Equal(700m, dashboard.TotalPlannedBudget);
-        Assert.Equal(145m, dashboard.TotalActualSpending);
-        Assert.Equal(555m, dashboard.RemainingBudget);
-        Assert.Equal(400m, dashboard.Category(groceries).AdjustedBudget());
-        Assert.Equal(100m, dashboard.Category(groceries).NetSpending());
-        Assert.Equal(300m, dashboard.Category(transport).AdjustedBudget());
-        Assert.Equal(45m, dashboard.Category(transport).NetSpending());
+        Assert.Equal(25m, summary.UnassignedDebitTotal);
+        Assert.Equal(100m, summary.UnassignedCreditTotal);
+        Assert.Equal(30m, summary.PartiallyAssignedDebitTotal);
+        Assert.Equal(75m, summary.PartiallyAssignedCreditTotal);
+        Assert.Equal(50m, summary.ActualDebit);
+        Assert.Equal(125m, summary.ActualCredit);
     }
 
-    private static BudgetPeriod Period() => new()
+    [Fact]
+    public void PeriodResetBudgetLinesDoNotCarryBalancesForward()
     {
-        Name = "June 2026",
-        StartDate = new DateOnly(2026, 6, 1),
-        EndDate = new DateOnly(2026, 6, 30)
+        var budget = Budget();
+        var may = Period(budget, "May 2026", new DateOnly(2026, 5, 1), new DateOnly(2026, 5, 31));
+        var june = Period(budget, "June 2026", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30));
+        var groceries = DebitLine(budget, "Groceries", BudgetLineRolloverType.PeriodReset);
+        var maySpend = Transaction(budget, may.StartDate, 40m, TransactionDirection.Debit);
+        var juneSpend = Transaction(budget, june.StartDate, 20m, TransactionDirection.Debit);
+
+        var summary = DashboardCalculator.Calculate(
+            june,
+            [may, june],
+            [groceries],
+            [Allocation(may, groceries, 100m), Allocation(june, groceries, 50m)],
+            [maySpend, juneSpend],
+            [Assignment(maySpend, groceries, 40m), Assignment(juneSpend, groceries, 20m)],
+            []);
+
+        Assert.Equal(0m, summary.Line(groceries).OpeningBalance);
+        Assert.Equal(30m, summary.Line(groceries).ClosingBalance);
+    }
+
+    [Fact]
+    public void CumulativeBudgetLinesCarryPreviousClosingBalanceForward()
+    {
+        var budget = Budget();
+        var may = Period(budget, "May 2026", new DateOnly(2026, 5, 1), new DateOnly(2026, 5, 31));
+        var june = Period(budget, "June 2026", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30));
+        var holiday = DebitLine(budget, "Holiday fund", BudgetLineRolloverType.Cumulative);
+        var maySpend = Transaction(budget, may.StartDate, 40m, TransactionDirection.Debit);
+        var juneSpend = Transaction(budget, june.StartDate, 20m, TransactionDirection.Debit);
+
+        var summary = DashboardCalculator.Calculate(
+            june,
+            [may, june],
+            [holiday],
+            [Allocation(may, holiday, 100m), Allocation(june, holiday, 50m)],
+            [maySpend, juneSpend],
+            [Assignment(maySpend, holiday, 40m), Assignment(juneSpend, holiday, 20m)],
+            []);
+
+        Assert.Equal(60m, summary.Line(holiday).OpeningBalance);
+        Assert.Equal(90m, summary.Line(holiday).ClosingBalance);
+    }
+
+    private static Budget Budget() => new()
+    {
+        Name = "Personal Budget",
+        Currency = Currency
     };
 
-    private static BudgetCategory Category(string name) => new()
+    private static BudgetPeriod Period(Budget budget, string name, DateOnly start, DateOnly end) => new()
     {
+        BudgetId = budget.Id,
         Name = name,
-        Type = BudgetCategoryType.MonthlyReset
+        StartDate = start,
+        EndDate = end
     };
 
-    private static IncomeSource Income(string name) => new()
+    private static BudgetLine DebitLine(
+        Budget budget,
+        string name,
+        BudgetLineRolloverType rolloverType = BudgetLineRolloverType.PeriodReset) => new()
     {
+        BudgetId = budget.Id,
         Name = name,
-        IsRecurring = true
+        Direction = BudgetLineDirection.Debit,
+        RolloverType = rolloverType
     };
 
-    private static CategoryAllocation Allocation(BudgetPeriod period, BudgetCategory category, decimal amount) => new()
+    private static BudgetLine CreditLine(Budget budget, string name) => new()
+    {
+        BudgetId = budget.Id,
+        Name = name,
+        Direction = BudgetLineDirection.Credit,
+        RolloverType = BudgetLineRolloverType.PeriodReset
+    };
+
+    private static BudgetLineAllocation Allocation(BudgetPeriod period, BudgetLine line, decimal amount) => new()
     {
         BudgetPeriodId = period.Id,
-        BudgetCategoryId = category.Id,
+        BudgetLineId = line.Id,
         Amount = amount,
         Currency = Currency
     };
 
-    private static IncomeExpectation IncomeExpectation(BudgetPeriod period, IncomeSource source, decimal amount) => new()
+    private static FinancialTransaction Transaction(Budget budget, DateOnly date, decimal amount, TransactionDirection direction) => new()
     {
-        BudgetPeriodId = period.Id,
-        IncomeSourceId = source.Id,
-        Amount = amount,
-        Currency = Currency
-    };
-
-    private static FinancialTransaction Transaction(BudgetPeriod period, decimal amount, TransactionDirection direction) => new()
-    {
-        BudgetPeriodId = period.Id,
-        TransactionDate = period.StartDate,
+        BudgetId = budget.Id,
+        TransactionDate = date,
         Description = $"{direction} transaction",
         Amount = amount,
         Currency = Currency,
         Direction = direction
     };
 
-    private static TransactionAssignment CategoryAssignment(FinancialTransaction transaction, BudgetCategory category, decimal amount) => new()
+    private static TransactionAssignment Assignment(FinancialTransaction transaction, BudgetLine line, decimal amount) => new()
     {
         TransactionId = transaction.Id,
-        TargetType = TransactionAssignmentTargetType.BudgetCategory,
-        TargetId = category.Id,
+        BudgetLineId = line.Id,
         Amount = amount,
         Currency = Currency
     };
 
-    private static TransactionAssignment IncomeAssignment(FinancialTransaction transaction, IncomeSource source, decimal amount) => new()
-    {
-        TransactionId = transaction.Id,
-        TargetType = TransactionAssignmentTargetType.IncomeSource,
-        TargetId = source.Id,
-        Amount = amount,
-        Currency = Currency
-    };
-
-    private static BudgetMovement Movement(BudgetPeriod period, BudgetCategory from, BudgetCategory to, decimal amount) => new()
+    private static BudgetReallocation Reallocation(BudgetPeriod period, BudgetLine from, BudgetLine to, decimal amount) => new()
     {
         BudgetPeriodId = period.Id,
-        FromCategoryId = from.Id,
-        ToCategoryId = to.Id,
+        FromBudgetLineId = from.Id,
+        ToBudgetLineId = to.Id,
         Amount = amount,
         Currency = Currency,
-        Reason = "Rebalance monthly budget"
+        Reason = "Rebalance period budget"
     };
 }
 
 internal static class DashboardTestExtensions
 {
-    public static CategoryDashboardLine Category(this MonthlyDashboard dashboard, BudgetCategory category) =>
-        dashboard.Categories.Single(snapshot => snapshot.CategoryId == category.Id);
-
-    public static decimal AdjustedBudget(this CategoryDashboardLine line) =>
-        line.Allocated + line.MovementIn - line.MovementOut;
-
-    public static decimal NetSpending(this CategoryDashboardLine line) =>
-        line.ActualSpending - line.Refunds;
+    public static BudgetLineSummary Line(this PeriodSummary summary, BudgetLine line) =>
+        summary.Lines.Single(snapshot => snapshot.BudgetLineId == line.Id);
 }

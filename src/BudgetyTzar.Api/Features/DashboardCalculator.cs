@@ -2,148 +2,217 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BudgetyTzar.Api.Features;
 
-public sealed record CategoryDashboardLine(
-    Guid CategoryId,
-    string CategoryName,
-    BudgetCategoryType CategoryType,
+public sealed record BudgetLineSummary(
+    Guid BudgetLineId,
+    string Name,
+    BudgetLineDirection Direction,
+    BudgetLineRolloverType RolloverType,
+    decimal OpeningBalance,
     decimal Allocated,
-    decimal MovementIn,
-    decimal MovementOut,
-    decimal ActualSpending,
-    decimal Refunds,
-    decimal Remaining,
+    decimal ReallocationIn,
+    decimal ReallocationOut,
+    decimal ActualAmount,
+    decimal ClosingBalance,
     bool IsOverBudget);
 
-public sealed record MonthlyDashboard(
+public sealed record PeriodSummary(
+    Guid BudgetId,
     Guid BudgetPeriodId,
     string PeriodName,
-    decimal ExpectedIncome,
-    decimal ActualIncome,
-    decimal IncomeVariance,
-    decimal TotalPlannedBudget,
-    decimal TotalActualSpending,
-    decimal RemainingBudget,
-    IReadOnlyList<CategoryDashboardLine> Categories);
+    DateOnly StartDate,
+    DateOnly EndDate,
+    decimal PlannedDebit,
+    decimal ActualDebit,
+    decimal DebitRemaining,
+    decimal DebitVariance,
+    decimal PlannedCredit,
+    decimal ActualCredit,
+    decimal CreditVariance,
+    decimal UnassignedDebitTotal,
+    decimal UnassignedCreditTotal,
+    decimal PartiallyAssignedDebitTotal,
+    decimal PartiallyAssignedCreditTotal,
+    IReadOnlyList<BudgetLineSummary> Lines);
 
 public static class DashboardCalculator
 {
-    public static MonthlyDashboard Calculate(
+    public static PeriodSummary Calculate(
         BudgetPeriod period,
-        IReadOnlyCollection<BudgetCategory> categories,
-        IReadOnlyCollection<CategoryAllocation> allocations,
-        IReadOnlyCollection<IncomeExpectation> incomeExpectations,
+        IReadOnlyCollection<BudgetPeriod> periods,
+        IReadOnlyCollection<BudgetLine> budgetLines,
+        IReadOnlyCollection<BudgetLineAllocation> allocations,
         IReadOnlyCollection<FinancialTransaction> transactions,
         IReadOnlyCollection<TransactionAssignment> assignments,
-        IReadOnlyCollection<BudgetMovement> movements)
+        IReadOnlyCollection<BudgetReallocation> reallocations)
     {
-        var categoryLines = categories
-            .Where(category => !category.IsArchived)
-            .OrderBy(category => category.Name)
-            .Select(category =>
-            {
-                var allocated = allocations
-                    .Where(x => x.BudgetCategoryId == category.Id)
-                    .Sum(x => x.Amount);
-                var movementIn = movements
-                    .Where(x => x.ToCategoryId == category.Id)
-                    .Sum(x => x.Amount);
-                var movementOut = movements
-                    .Where(x => x.FromCategoryId == category.Id)
-                    .Sum(x => x.Amount);
-
-                var categoryAssignments = assignments
-                    .Where(x => x.TargetType == TransactionAssignmentTargetType.BudgetCategory && x.TargetId == category.Id)
-                    .Join(
-                        transactions.Where(x => !x.IsIgnored),
-                        assignment => assignment.TransactionId,
-                        transaction => transaction.Id,
-                        (assignment, transaction) => new { assignment.Amount, transaction.Direction });
-
-                var spending = categoryAssignments
-                    .Where(x => x.Direction == TransactionDirection.Debit)
-                    .Sum(x => x.Amount);
-                var refunds = categoryAssignments
-                    .Where(x => x.Direction == TransactionDirection.Credit)
-                    .Sum(x => x.Amount);
-                var netSpending = spending - refunds;
-                var remaining = allocated + movementIn - movementOut - netSpending;
-
-                return new CategoryDashboardLine(
-                    category.Id,
-                    category.Name,
-                    category.Type,
-                    allocated,
-                    movementIn,
-                    movementOut,
-                    spending,
-                    refunds,
-                    remaining,
-                    remaining < 0);
-            })
+        var orderedPeriods = periods
+            .Where(x => x.BudgetId == period.BudgetId && x.EndDate <= period.EndDate)
+            .OrderBy(x => x.StartDate)
+            .ThenBy(x => x.EndDate)
             .ToList();
+        var assignmentTotals = assignments
+            .GroupBy(x => x.TransactionId)
+            .ToDictionary(x => x.Key, x => x.Sum(y => y.Amount));
 
-        var actualIncome = assignments
-            .Where(x => x.TargetType == TransactionAssignmentTargetType.IncomeSource)
-            .Join(
-                transactions.Where(x => !x.IsIgnored && x.Direction == TransactionDirection.Credit),
-                assignment => assignment.TransactionId,
-                transaction => transaction.Id,
-                (assignment, _) => assignment.Amount)
-            .Sum();
+        var closingBalances = new Dictionary<Guid, decimal>();
+        var lineSnapshots = new List<BudgetLineSummary>();
 
-        var expectedIncome = incomeExpectations.Sum(x => x.Amount);
-        var plannedBudget = categoryLines.Sum(x => x.Allocated);
-        var actualSpending = categoryLines.Sum(x => x.ActualSpending - x.Refunds);
+        foreach (var currentPeriod in orderedPeriods)
+        {
+            var periodTransactions = transactions
+                .Where(x => !x.IsIgnored && x.TransactionDate >= currentPeriod.StartDate && x.TransactionDate <= currentPeriod.EndDate)
+                .ToList();
+            var periodTransactionIds = periodTransactions.Select(x => x.Id).ToHashSet();
+            var periodAssignments = assignments
+                .Where(x => periodTransactionIds.Contains(x.TransactionId))
+                .ToList();
+            var periodReallocations = reallocations
+                .Where(x => x.BudgetPeriodId == currentPeriod.Id)
+                .ToList();
 
-        return new MonthlyDashboard(
+            lineSnapshots = budgetLines
+                .Where(x => !x.IsArchived)
+                .OrderBy(x => x.Direction)
+                .ThenBy(x => x.Name)
+                .Select(line =>
+                {
+                    var openingBalance = line.RolloverType == BudgetLineRolloverType.Cumulative
+                        ? closingBalances.GetValueOrDefault(line.Id)
+                        : 0m;
+                    var allocated = allocations
+                        .Where(x => x.BudgetPeriodId == currentPeriod.Id && x.BudgetLineId == line.Id)
+                        .Sum(x => x.Amount);
+                    var reallocationIn = periodReallocations
+                        .Where(x => x.ToBudgetLineId == line.Id)
+                        .Sum(x => x.Amount);
+                    var reallocationOut = periodReallocations
+                        .Where(x => x.FromBudgetLineId == line.Id)
+                        .Sum(x => x.Amount);
+                    var actualAmount = periodAssignments
+                        .Where(x => x.BudgetLineId == line.Id)
+                        .Sum(x => x.Amount);
+                    var closingBalance = line.Direction == BudgetLineDirection.Debit
+                        ? openingBalance + allocated + reallocationIn - reallocationOut - actualAmount
+                        : actualAmount - allocated;
+
+                    closingBalances[line.Id] = closingBalance;
+
+                    return new BudgetLineSummary(
+                        line.Id,
+                        line.Name,
+                        line.Direction,
+                        line.RolloverType,
+                        openingBalance,
+                        allocated,
+                        reallocationIn,
+                        reallocationOut,
+                        actualAmount,
+                        closingBalance,
+                        line.Direction == BudgetLineDirection.Debit && closingBalance < 0);
+                })
+                .ToList();
+        }
+
+        var selectedTransactions = transactions
+            .Where(x => x.TransactionDate >= period.StartDate && x.TransactionDate <= period.EndDate && !x.IsIgnored)
+            .ToList();
+        var unassignedDebit = selectedTransactions
+            .Where(x => x.Direction == TransactionDirection.Debit && assignmentTotals.GetValueOrDefault(x.Id) == 0)
+            .Sum(x => x.Amount);
+        var unassignedCredit = selectedTransactions
+            .Where(x => x.Direction == TransactionDirection.Credit && assignmentTotals.GetValueOrDefault(x.Id) == 0)
+            .Sum(x => x.Amount);
+        var partiallyAssignedDebit = selectedTransactions
+            .Where(x => x.Direction == TransactionDirection.Debit
+                && assignmentTotals.GetValueOrDefault(x.Id) > 0
+                && assignmentTotals.GetValueOrDefault(x.Id) < x.Amount)
+            .Sum(x => x.Amount - assignmentTotals.GetValueOrDefault(x.Id));
+        var partiallyAssignedCredit = selectedTransactions
+            .Where(x => x.Direction == TransactionDirection.Credit
+                && assignmentTotals.GetValueOrDefault(x.Id) > 0
+                && assignmentTotals.GetValueOrDefault(x.Id) < x.Amount)
+            .Sum(x => x.Amount - assignmentTotals.GetValueOrDefault(x.Id));
+
+        var plannedDebit = lineSnapshots
+            .Where(x => x.Direction == BudgetLineDirection.Debit)
+            .Sum(x => x.Allocated);
+        var actualDebit = lineSnapshots
+            .Where(x => x.Direction == BudgetLineDirection.Debit)
+            .Sum(x => x.ActualAmount);
+        var debitRemaining = lineSnapshots
+            .Where(x => x.Direction == BudgetLineDirection.Debit)
+            .Sum(x => x.ClosingBalance);
+        var plannedCredit = lineSnapshots
+            .Where(x => x.Direction == BudgetLineDirection.Credit)
+            .Sum(x => x.Allocated);
+        var actualCredit = lineSnapshots
+            .Where(x => x.Direction == BudgetLineDirection.Credit)
+            .Sum(x => x.ActualAmount);
+
+        return new PeriodSummary(
+            period.BudgetId,
             period.Id,
             period.Name,
-            expectedIncome,
-            actualIncome,
-            actualIncome - expectedIncome,
-            plannedBudget,
-            actualSpending,
-            categoryLines.Sum(x => x.Remaining),
-            categoryLines);
+            period.StartDate,
+            period.EndDate,
+            plannedDebit,
+            actualDebit,
+            debitRemaining,
+            plannedDebit - actualDebit,
+            plannedCredit,
+            actualCredit,
+            actualCredit - plannedCredit,
+            unassignedDebit,
+            unassignedCredit,
+            partiallyAssignedDebit,
+            partiallyAssignedCredit,
+            lineSnapshots);
     }
 }
 
 public static class DashboardQueries
 {
-    public static async Task<MonthlyDashboard?> GetMonthlyDashboard(
+    public static async Task<PeriodSummary?> GetPeriodSummary(
         Data.BudgetDbContext db,
+        Guid budgetId,
         Guid budgetPeriodId,
         CancellationToken cancellationToken)
     {
-        var period = await db.BudgetPeriods.FirstOrDefaultAsync(x => x.Id == budgetPeriodId, cancellationToken);
+        var period = await db.BudgetPeriods
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == budgetPeriodId && x.BudgetId == budgetId, cancellationToken);
         if (period is null)
         {
             return null;
         }
 
-        var categories = await db.BudgetCategories.AsNoTracking().ToListAsync(cancellationToken);
-        var allocations = await db.CategoryAllocations
+        var periods = await db.BudgetPeriods
             .AsNoTracking()
-            .Where(x => x.BudgetPeriodId == budgetPeriodId)
+            .Where(x => x.BudgetId == budgetId && x.EndDate <= period.EndDate)
             .ToListAsync(cancellationToken);
-        var incomeExpectations = await db.IncomeExpectations
+        var budgetLines = await db.BudgetLines
             .AsNoTracking()
-            .Where(x => x.BudgetPeriodId == budgetPeriodId)
+            .Where(x => x.BudgetId == budgetId)
+            .ToListAsync(cancellationToken);
+        var periodIds = periods.Select(x => x.Id).ToArray();
+        var allocations = await db.BudgetLineAllocations
+            .AsNoTracking()
+            .Where(x => periodIds.Contains(x.BudgetPeriodId))
             .ToListAsync(cancellationToken);
         var transactions = await db.Transactions
             .AsNoTracking()
-            .Where(x => x.BudgetPeriodId == budgetPeriodId)
+            .Where(x => x.BudgetId == budgetId && x.TransactionDate <= period.EndDate)
             .ToListAsync(cancellationToken);
         var transactionIds = transactions.Select(x => x.Id).ToArray();
         var assignments = await db.TransactionAssignments
             .AsNoTracking()
             .Where(x => transactionIds.Contains(x.TransactionId))
             .ToListAsync(cancellationToken);
-        var movements = await db.BudgetMovements
+        var reallocations = await db.BudgetReallocations
             .AsNoTracking()
-            .Where(x => x.BudgetPeriodId == budgetPeriodId)
+            .Where(x => periodIds.Contains(x.BudgetPeriodId))
             .ToListAsync(cancellationToken);
 
-        return DashboardCalculator.Calculate(period, categories, allocations, incomeExpectations, transactions, assignments, movements);
+        return DashboardCalculator.Calculate(period, periods, budgetLines, allocations, transactions, assignments, reallocations);
     }
 }

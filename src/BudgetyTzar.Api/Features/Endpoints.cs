@@ -4,13 +4,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BudgetyTzar.Api.Features;
 
-public sealed record CreateBudgetCategoryRequest(string Name, BudgetCategoryType Type);
-public sealed record CreateIncomeSourceRequest(string Name, bool IsRecurring);
+public sealed record CreateBudgetRequest(string Name, string Currency);
 public sealed record CreateBudgetPeriodRequest(string Name, DateOnly StartDate, DateOnly EndDate);
-public sealed record PlanCategoryAllocationRequest(Guid BudgetCategoryId, decimal Amount, string Currency);
-public sealed record PlanIncomeRequest(Guid IncomeSourceId, decimal Amount, string Currency);
+public sealed record CreateBudgetLineRequest(string Name, BudgetLineDirection Direction, BudgetLineRolloverType RolloverType);
+public sealed record BudgetLineAllocationItem(Guid BudgetLineId, decimal Amount, string Currency);
+public sealed record ReplaceBudgetLineAllocationsRequest(IReadOnlyList<BudgetLineAllocationItem> Allocations);
 public sealed record CreateTransactionRequest(
-    Guid BudgetPeriodId,
     DateOnly TransactionDate,
     string Description,
     decimal Amount,
@@ -19,23 +18,19 @@ public sealed record CreateTransactionRequest(
     string? SourceAccount,
     string? ExternalReference,
     string? Notes);
-public sealed record AssignTransactionRequest(TransactionAssignmentTargetType TargetType, Guid TargetId, decimal Amount, string Currency);
-public sealed record MoveBudgetRequest(Guid FromCategoryId, Guid ToCategoryId, decimal Amount, string Currency, string Reason);
+public sealed record TransactionAssignmentItem(Guid BudgetLineId, decimal Amount, string Currency);
+public sealed record ReplaceTransactionAssignmentsRequest(IReadOnlyList<TransactionAssignmentItem> Assignments);
+public sealed record CreateBudgetReallocationRequest(Guid FromBudgetLineId, Guid ToBudgetLineId, decimal Amount, string Currency, string Reason);
 public sealed record TransactionDetail(FinancialTransaction Transaction, IReadOnlyList<TransactionAssignment> Assignments);
 public sealed record AuditTimelineItem(DateTimeOffset OccurredAt, string EventType, Guid EntityId, string Description);
 
-public sealed class CreateBudgetCategoryValidator : AbstractValidator<CreateBudgetCategoryRequest>
+public sealed class CreateBudgetValidator : AbstractValidator<CreateBudgetRequest>
 {
-    public CreateBudgetCategoryValidator()
+    public CreateBudgetValidator()
     {
         RuleFor(x => x.Name).NotEmpty().MaximumLength(120);
-        RuleFor(x => x.Type).IsInEnum();
+        RuleFor(x => x.Currency).Currency();
     }
-}
-
-public sealed class CreateIncomeSourceValidator : AbstractValidator<CreateIncomeSourceRequest>
-{
-    public CreateIncomeSourceValidator() => RuleFor(x => x.Name).NotEmpty().MaximumLength(120);
 }
 
 public sealed class CreateBudgetPeriodValidator : AbstractValidator<CreateBudgetPeriodRequest>
@@ -43,27 +38,31 @@ public sealed class CreateBudgetPeriodValidator : AbstractValidator<CreateBudget
     public CreateBudgetPeriodValidator()
     {
         RuleFor(x => x.Name).NotEmpty().MaximumLength(120);
-        RuleFor(x => x.EndDate).GreaterThan(x => x.StartDate);
+        RuleFor(x => x.EndDate).GreaterThanOrEqualTo(x => x.StartDate);
     }
 }
 
-public sealed class PlanCategoryAllocationValidator : AbstractValidator<PlanCategoryAllocationRequest>
+public sealed class CreateBudgetLineValidator : AbstractValidator<CreateBudgetLineRequest>
 {
-    public PlanCategoryAllocationValidator()
+    public CreateBudgetLineValidator()
     {
-        RuleFor(x => x.BudgetCategoryId).NotEmpty();
-        RuleFor(x => x.Amount).PositiveAmount();
-        RuleFor(x => x.Currency).Currency();
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(120);
+        RuleFor(x => x.Direction).IsInEnum();
+        RuleFor(x => x.RolloverType).IsInEnum();
     }
 }
 
-public sealed class PlanIncomeValidator : AbstractValidator<PlanIncomeRequest>
+public sealed class ReplaceBudgetLineAllocationsValidator : AbstractValidator<ReplaceBudgetLineAllocationsRequest>
 {
-    public PlanIncomeValidator()
+    public ReplaceBudgetLineAllocationsValidator()
     {
-        RuleFor(x => x.IncomeSourceId).NotEmpty();
-        RuleFor(x => x.Amount).PositiveAmount();
-        RuleFor(x => x.Currency).Currency();
+        RuleFor(x => x.Allocations).NotNull();
+        RuleForEach(x => x.Allocations).ChildRules(item =>
+        {
+            item.RuleFor(x => x.BudgetLineId).NotEmpty();
+            item.RuleFor(x => x.Amount).PositiveAmount();
+            item.RuleFor(x => x.Currency).Currency();
+        });
     }
 }
 
@@ -71,7 +70,6 @@ public sealed class CreateTransactionValidator : AbstractValidator<CreateTransac
 {
     public CreateTransactionValidator()
     {
-        RuleFor(x => x.BudgetPeriodId).NotEmpty();
         RuleFor(x => x.Description).NotEmpty().MaximumLength(240);
         RuleFor(x => x.Amount).PositiveAmount();
         RuleFor(x => x.Currency).Currency();
@@ -82,23 +80,26 @@ public sealed class CreateTransactionValidator : AbstractValidator<CreateTransac
     }
 }
 
-public sealed class AssignTransactionValidator : AbstractValidator<AssignTransactionRequest>
+public sealed class ReplaceTransactionAssignmentsValidator : AbstractValidator<ReplaceTransactionAssignmentsRequest>
 {
-    public AssignTransactionValidator()
+    public ReplaceTransactionAssignmentsValidator()
     {
-        RuleFor(x => x.TargetType).IsInEnum();
-        RuleFor(x => x.TargetId).NotEmpty();
-        RuleFor(x => x.Amount).PositiveAmount();
-        RuleFor(x => x.Currency).Currency();
+        RuleFor(x => x.Assignments).NotNull();
+        RuleForEach(x => x.Assignments).ChildRules(item =>
+        {
+            item.RuleFor(x => x.BudgetLineId).NotEmpty();
+            item.RuleFor(x => x.Amount).PositiveAmount();
+            item.RuleFor(x => x.Currency).Currency();
+        });
     }
 }
 
-public sealed class MoveBudgetValidator : AbstractValidator<MoveBudgetRequest>
+public sealed class CreateBudgetReallocationValidator : AbstractValidator<CreateBudgetReallocationRequest>
 {
-    public MoveBudgetValidator()
+    public CreateBudgetReallocationValidator()
     {
-        RuleFor(x => x.FromCategoryId).NotEmpty();
-        RuleFor(x => x.ToCategoryId).NotEmpty().NotEqual(x => x.FromCategoryId);
+        RuleFor(x => x.FromBudgetLineId).NotEmpty();
+        RuleFor(x => x.ToBudgetLineId).NotEmpty().NotEqual(x => x.FromBudgetLineId);
         RuleFor(x => x.Amount).PositiveAmount();
         RuleFor(x => x.Currency).Currency();
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
@@ -107,16 +108,21 @@ public sealed class MoveBudgetValidator : AbstractValidator<MoveBudgetRequest>
 
 public static class Endpoints
 {
-    public static RouteGroupBuilder MapBudgetCategoryEndpoints(this RouteGroupBuilder api)
+    public static RouteGroupBuilder MapBudgetEndpoints(this RouteGroupBuilder api)
     {
-        var group = api.MapGroup("/budget-categories").WithTags("Budget categories");
+        var budgets = api.MapGroup("/budgets").WithTags("Budgets");
 
-        group.MapGet("/", async (BudgetDbContext db, CancellationToken ct) =>
-            await db.BudgetCategories.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct));
+        budgets.MapGet("/", async (BudgetDbContext db, CancellationToken ct) =>
+            await db.Budgets.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct));
 
-        group.MapPost("/", async (
-            CreateBudgetCategoryRequest request,
-            IValidator<CreateBudgetCategoryRequest> validator,
+        budgets.MapGet("/{budgetId:guid}", async (Guid budgetId, BudgetDbContext db, CancellationToken ct) =>
+            await db.Budgets.AsNoTracking().FirstOrDefaultAsync(x => x.Id == budgetId, ct) is { } budget
+                ? Results.Ok(budget)
+                : Results.NotFound());
+
+        budgets.MapPost("/", async (
+            CreateBudgetRequest request,
+            IValidator<CreateBudgetRequest> validator,
             BudgetDbContext db,
             CancellationToken ct) =>
         {
@@ -125,68 +131,59 @@ public static class Endpoints
                 return validationProblem;
             }
 
-            var category = new BudgetCategory { Name = request.Name.Trim(), Type = request.Type };
-            db.BudgetCategories.Add(category);
+            var budget = new Budget
+            {
+                Name = request.Name.Trim(),
+                Currency = request.Currency
+            };
+            db.Budgets.Add(budget);
             await db.SaveChangesAsync(ct);
-            return Results.Created($"/api/budget-categories/{category.Id}", category);
+            return Results.Created($"/api/budgets/{budget.Id}", budget);
         });
 
-        group.MapPost("/{id:guid}/archive", async (Guid id, BudgetDbContext db, CancellationToken ct) =>
+        MapPeriodEndpoints(budgets);
+        MapBudgetLineEndpoints(budgets);
+        MapAllocationEndpoints(budgets);
+        MapTransactionEndpoints(budgets);
+        MapReallocationEndpoints(budgets);
+        MapReportEndpoints(budgets);
+
+        return api;
+    }
+
+    private static void MapPeriodEndpoints(RouteGroupBuilder budgets)
+    {
+        budgets.MapGet("/{budgetId:guid}/periods", async (Guid budgetId, BudgetDbContext db, CancellationToken ct) =>
         {
-            var category = await db.BudgetCategories.FirstOrDefaultAsync(x => x.Id == id, ct);
-            if (category is null)
+            if (!await BudgetExists(db, budgetId, ct))
             {
                 return Results.NotFound();
             }
 
-            category.IsArchived = true;
-            await db.SaveChangesAsync(ct);
-            return Results.NoContent();
+            var periods = await db.BudgetPeriods
+                .AsNoTracking()
+                .Where(x => x.BudgetId == budgetId)
+                .OrderByDescending(x => x.StartDate)
+                .ToListAsync(ct);
+            return Results.Ok(periods);
         });
 
-        return group;
-    }
-
-    public static RouteGroupBuilder MapIncomeEndpoints(this RouteGroupBuilder api)
-    {
-        var group = api.MapGroup("/income-sources").WithTags("Income sources");
-
-        group.MapGet("/", async (BudgetDbContext db, CancellationToken ct) =>
-            await db.IncomeSources.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct));
-
-        group.MapPost("/", async (
-            CreateIncomeSourceRequest request,
-            IValidator<CreateIncomeSourceRequest> validator,
-            BudgetDbContext db,
-            CancellationToken ct) =>
-        {
-            if (await validator.Validate(request, ct) is { } validationProblem)
-            {
-                return validationProblem;
-            }
-
-            var incomeSource = new IncomeSource { Name = request.Name.Trim(), IsRecurring = request.IsRecurring };
-            db.IncomeSources.Add(incomeSource);
-            await db.SaveChangesAsync(ct);
-            return Results.Created($"/api/income-sources/{incomeSource.Id}", incomeSource);
-        });
-
-        return group;
-    }
-
-    public static RouteGroupBuilder MapBudgetPeriodEndpoints(this RouteGroupBuilder api)
-    {
-        var group = api.MapGroup("/budget-periods").WithTags("Budget periods");
-
-        group.MapGet("/", async (BudgetDbContext db, CancellationToken ct) =>
-            await db.BudgetPeriods.AsNoTracking().OrderByDescending(x => x.StartDate).ToListAsync(ct));
-
-        group.MapGet("/{id:guid}", async (Guid id, BudgetDbContext db, CancellationToken ct) =>
-            await db.BudgetPeriods.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct) is { } period
+        budgets.MapGet("/{budgetId:guid}/periods/for-date", async (Guid budgetId, DateOnly date, BudgetDbContext db, CancellationToken ct) =>
+            await db.BudgetPeriods
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.BudgetId == budgetId && x.StartDate <= date && x.EndDate >= date, ct) is { } period
                 ? Results.Ok(period)
                 : Results.NotFound());
 
-        group.MapPost("/", async (
+        budgets.MapGet("/{budgetId:guid}/periods/{periodId:guid}", async (Guid budgetId, Guid periodId, BudgetDbContext db, CancellationToken ct) =>
+            await db.BudgetPeriods
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == periodId && x.BudgetId == budgetId, ct) is { } period
+                ? Results.Ok(period)
+                : Results.NotFound());
+
+        budgets.MapPost("/{budgetId:guid}/periods", async (
+            Guid budgetId,
             CreateBudgetPeriodRequest request,
             IValidator<CreateBudgetPeriodRequest> validator,
             BudgetDbContext db,
@@ -197,131 +194,243 @@ public static class Endpoints
                 return validationProblem;
             }
 
+            if (!await BudgetExists(db, budgetId, ct))
+            {
+                return Results.NotFound();
+            }
+
+            var overlaps = await db.BudgetPeriods.AnyAsync(x =>
+                x.BudgetId == budgetId
+                && x.StartDate <= request.EndDate
+                && request.StartDate <= x.EndDate,
+                ct);
+            if (overlaps)
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [nameof(request.StartDate)] = ["Budget periods cannot overlap within the same budget."]
+                });
+            }
+
             var period = new BudgetPeriod
             {
+                BudgetId = budgetId,
                 Name = request.Name.Trim(),
                 StartDate = request.StartDate,
                 EndDate = request.EndDate
             };
             db.BudgetPeriods.Add(period);
             await db.SaveChangesAsync(ct);
-            return Results.Created($"/api/budget-periods/{period.Id}", period);
+            return Results.Created($"/api/budgets/{budgetId}/periods/{period.Id}", period);
         });
-
-        group.MapPost("/{id:guid}/allocations", async (
-            Guid id,
-            PlanCategoryAllocationRequest request,
-            IValidator<PlanCategoryAllocationRequest> validator,
-            BudgetDbContext db,
-            CancellationToken ct) =>
-        {
-            if (await validator.Validate(request, ct) is { } validationProblem)
-            {
-                return validationProblem;
-            }
-
-            if (!await db.BudgetPeriods.AnyAsync(x => x.Id == id, ct)
-                || !await db.BudgetCategories.AnyAsync(x => x.Id == request.BudgetCategoryId && !x.IsArchived, ct))
-            {
-                return Results.NotFound();
-            }
-
-            var allocation = new CategoryAllocation
-            {
-                BudgetPeriodId = id,
-                BudgetCategoryId = request.BudgetCategoryId,
-                Amount = request.Amount,
-                Currency = request.Currency
-            };
-            db.CategoryAllocations.Add(allocation);
-            await db.SaveChangesAsync(ct);
-            return Results.Created($"/api/budget-periods/{id}/allocations/{allocation.Id}", allocation);
-        });
-
-        group.MapPost("/{id:guid}/expected-income", async (
-            Guid id,
-            PlanIncomeRequest request,
-            IValidator<PlanIncomeRequest> validator,
-            BudgetDbContext db,
-            CancellationToken ct) =>
-        {
-            if (await validator.Validate(request, ct) is { } validationProblem)
-            {
-                return validationProblem;
-            }
-
-            if (!await db.BudgetPeriods.AnyAsync(x => x.Id == id, ct)
-                || !await db.IncomeSources.AnyAsync(x => x.Id == request.IncomeSourceId && !x.IsArchived, ct))
-            {
-                return Results.NotFound();
-            }
-
-            var expectation = new IncomeExpectation
-            {
-                BudgetPeriodId = id,
-                IncomeSourceId = request.IncomeSourceId,
-                Amount = request.Amount,
-                Currency = request.Currency
-            };
-            db.IncomeExpectations.Add(expectation);
-            await db.SaveChangesAsync(ct);
-            return Results.Created($"/api/budget-periods/{id}/expected-income/{expectation.Id}", expectation);
-        });
-
-        group.MapPost("/{id:guid}/movements", async (
-            Guid id,
-            MoveBudgetRequest request,
-            IValidator<MoveBudgetRequest> validator,
-            BudgetDbContext db,
-            CancellationToken ct) =>
-        {
-            if (await validator.Validate(request, ct) is { } validationProblem)
-            {
-                return validationProblem;
-            }
-
-            if (!await db.BudgetPeriods.AnyAsync(x => x.Id == id, ct)
-                || !await db.BudgetCategories.AnyAsync(x => x.Id == request.FromCategoryId && !x.IsArchived, ct)
-                || !await db.BudgetCategories.AnyAsync(x => x.Id == request.ToCategoryId && !x.IsArchived, ct))
-            {
-                return Results.NotFound();
-            }
-
-            var movement = new BudgetMovement
-            {
-                BudgetPeriodId = id,
-                FromCategoryId = request.FromCategoryId,
-                ToCategoryId = request.ToCategoryId,
-                Amount = request.Amount,
-                Currency = request.Currency,
-                Reason = request.Reason.Trim()
-            };
-            db.BudgetMovements.Add(movement);
-            await db.SaveChangesAsync(ct);
-            return Results.Created($"/api/budget-periods/{id}/movements/{movement.Id}", movement);
-        });
-
-        return group;
     }
 
-    public static RouteGroupBuilder MapTransactionEndpoints(this RouteGroupBuilder api)
+    private static void MapBudgetLineEndpoints(RouteGroupBuilder budgets)
     {
-        var group = api.MapGroup("/transactions").WithTags("Transactions");
-
-        group.MapGet("/", async (Guid? budgetPeriodId, BudgetDbContext db, CancellationToken ct) =>
+        budgets.MapGet("/{budgetId:guid}/budget-lines", async (Guid budgetId, BudgetDbContext db, CancellationToken ct) =>
         {
-            var query = db.Transactions.AsNoTracking();
-            if (budgetPeriodId.HasValue)
+            if (!await BudgetExists(db, budgetId, ct))
             {
-                query = query.Where(x => x.BudgetPeriodId == budgetPeriodId.Value);
+                return Results.NotFound();
             }
 
-            return await query.OrderByDescending(x => x.TransactionDate).ToListAsync(ct);
+            var lines = await db.BudgetLines
+                .AsNoTracking()
+                .Where(x => x.BudgetId == budgetId)
+                .OrderBy(x => x.Direction)
+                .ThenBy(x => x.Name)
+                .ToListAsync(ct);
+            return Results.Ok(lines);
         });
 
-        group.MapGet("/{id:guid}", async (Guid id, BudgetDbContext db, CancellationToken ct) =>
+        budgets.MapPost("/{budgetId:guid}/budget-lines", async (
+            Guid budgetId,
+            CreateBudgetLineRequest request,
+            IValidator<CreateBudgetLineRequest> validator,
+            BudgetDbContext db,
+            CancellationToken ct) =>
         {
-            var transaction = await db.Transactions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+            if (await validator.Validate(request, ct) is { } validationProblem)
+            {
+                return validationProblem;
+            }
+
+            if (!await BudgetExists(db, budgetId, ct))
+            {
+                return Results.NotFound();
+            }
+
+            var line = new BudgetLine
+            {
+                BudgetId = budgetId,
+                Name = request.Name.Trim(),
+                Direction = request.Direction,
+                RolloverType = request.RolloverType
+            };
+            db.BudgetLines.Add(line);
+            await db.SaveChangesAsync(ct);
+            return Results.Created($"/api/budgets/{budgetId}/budget-lines/{line.Id}", line);
+        });
+
+        budgets.MapPost("/{budgetId:guid}/budget-lines/{lineId:guid}/archive", async (
+            Guid budgetId,
+            Guid lineId,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+        {
+            var line = await db.BudgetLines.FirstOrDefaultAsync(x => x.Id == lineId && x.BudgetId == budgetId, ct);
+            if (line is null)
+            {
+                return Results.NotFound();
+            }
+
+            line.IsArchived = true;
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        });
+    }
+
+    private static void MapAllocationEndpoints(RouteGroupBuilder budgets)
+    {
+        budgets.MapGet("/{budgetId:guid}/periods/{periodId:guid}/allocations", async (
+            Guid budgetId,
+            Guid periodId,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!await PeriodBelongsToBudget(db, budgetId, periodId, ct))
+            {
+                return Results.NotFound();
+            }
+
+            var allocations = await db.BudgetLineAllocations
+                .AsNoTracking()
+                .Where(x => x.BudgetPeriodId == periodId)
+                .OrderBy(x => x.CreatedAt)
+                .ToListAsync(ct);
+            return Results.Ok(allocations);
+        });
+
+        budgets.MapPut("/{budgetId:guid}/periods/{periodId:guid}/allocations", async (
+            Guid budgetId,
+            Guid periodId,
+            ReplaceBudgetLineAllocationsRequest request,
+            IValidator<ReplaceBudgetLineAllocationsRequest> validator,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+        {
+            if (await validator.Validate(request, ct) is { } validationProblem)
+            {
+                return validationProblem;
+            }
+
+            if (!await PeriodBelongsToBudget(db, budgetId, periodId, ct))
+            {
+                return Results.NotFound();
+            }
+
+            var lineIds = request.Allocations.Select(x => x.BudgetLineId).ToArray();
+            if (lineIds.Distinct().Count() != lineIds.Length)
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [nameof(request.Allocations)] = ["A budget line can only be allocated once per period."]
+                });
+            }
+
+            var validLineCount = await db.BudgetLines
+                .CountAsync(x => lineIds.Contains(x.Id) && x.BudgetId == budgetId && !x.IsArchived, ct);
+            if (validLineCount != lineIds.Length)
+            {
+                return Results.NotFound();
+            }
+
+            var existing = await db.BudgetLineAllocations
+                .Where(x => x.BudgetPeriodId == periodId)
+                .ToListAsync(ct);
+            db.BudgetLineAllocations.RemoveRange(existing);
+            db.BudgetLineAllocations.AddRange(request.Allocations.Select(x => new BudgetLineAllocation
+            {
+                BudgetPeriodId = periodId,
+                BudgetLineId = x.BudgetLineId,
+                Amount = x.Amount,
+                Currency = x.Currency
+            }));
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        });
+    }
+
+    private static void MapTransactionEndpoints(RouteGroupBuilder budgets)
+    {
+        budgets.MapGet("/{budgetId:guid}/transactions", async (
+            Guid budgetId,
+            Guid? periodId,
+            DateOnly? from,
+            DateOnly? to,
+            TransactionAssignmentStatus? assignmentStatus,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!await BudgetExists(db, budgetId, ct))
+            {
+                return Results.NotFound();
+            }
+
+            if (periodId.HasValue)
+            {
+                var period = await db.BudgetPeriods
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Id == periodId.Value && x.BudgetId == budgetId, ct);
+                if (period is null)
+                {
+                    return Results.NotFound();
+                }
+
+                from = period.StartDate;
+                to = period.EndDate;
+            }
+
+            var query = db.Transactions.AsNoTracking().Where(x => x.BudgetId == budgetId);
+            if (from.HasValue)
+            {
+                query = query.Where(x => x.TransactionDate >= from.Value);
+            }
+
+            if (to.HasValue)
+            {
+                query = query.Where(x => x.TransactionDate <= to.Value);
+            }
+
+            var transactions = await query.OrderByDescending(x => x.TransactionDate).ToListAsync(ct);
+            if (!assignmentStatus.HasValue)
+            {
+                return Results.Ok(transactions);
+            }
+
+            var transactionIds = transactions.Select(x => x.Id).ToArray();
+            var assignmentTotals = await db.TransactionAssignments
+                .AsNoTracking()
+                .Where(x => transactionIds.Contains(x.TransactionId))
+                .GroupBy(x => x.TransactionId)
+                .Select(x => new { TransactionId = x.Key, Amount = x.Sum(y => y.Amount) })
+                .ToDictionaryAsync(x => x.TransactionId, x => x.Amount, ct);
+
+            var filtered = transactions
+                .Where(x => GetAssignmentStatus(x, assignmentTotals.GetValueOrDefault(x.Id)) == assignmentStatus.Value)
+                .ToList();
+            return Results.Ok(filtered);
+        });
+
+        budgets.MapGet("/{budgetId:guid}/transactions/{transactionId:guid}", async (
+            Guid budgetId,
+            Guid transactionId,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+        {
+            var transaction = await db.Transactions
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == transactionId && x.BudgetId == budgetId, ct);
             if (transaction is null)
             {
                 return Results.NotFound();
@@ -329,13 +438,14 @@ public static class Endpoints
 
             var assignments = await db.TransactionAssignments
                 .AsNoTracking()
-                .Where(x => x.TransactionId == id)
+                .Where(x => x.TransactionId == transactionId)
                 .OrderBy(x => x.CreatedAt)
                 .ToListAsync(ct);
             return Results.Ok(new TransactionDetail(transaction, assignments));
         });
 
-        group.MapPost("/", async (
+        budgets.MapPost("/{budgetId:guid}/transactions", async (
+            Guid budgetId,
             CreateTransactionRequest request,
             IValidator<CreateTransactionRequest> validator,
             BudgetDbContext db,
@@ -346,14 +456,14 @@ public static class Endpoints
                 return validationProblem;
             }
 
-            if (!await db.BudgetPeriods.AnyAsync(x => x.Id == request.BudgetPeriodId, ct))
+            if (!await BudgetExists(db, budgetId, ct))
             {
                 return Results.NotFound();
             }
 
             var transaction = new FinancialTransaction
             {
-                BudgetPeriodId = request.BudgetPeriodId,
+                BudgetId = budgetId,
                 TransactionDate = request.TransactionDate,
                 Description = request.Description.Trim(),
                 Amount = request.Amount,
@@ -365,64 +475,16 @@ public static class Endpoints
             };
             db.Transactions.Add(transaction);
             await db.SaveChangesAsync(ct);
-            return Results.Created($"/api/transactions/{transaction.Id}", transaction);
+            return Results.Created($"/api/budgets/{budgetId}/transactions/{transaction.Id}", transaction);
         });
 
-        group.MapPost("/{id:guid}/assign", async (
-            Guid id,
-            AssignTransactionRequest request,
-            IValidator<AssignTransactionRequest> validator,
+        budgets.MapPost("/{budgetId:guid}/transactions/{transactionId:guid}/ignore", async (
+            Guid budgetId,
+            Guid transactionId,
             BudgetDbContext db,
             CancellationToken ct) =>
         {
-            if (await validator.Validate(request, ct) is { } validationProblem)
-            {
-                return validationProblem;
-            }
-
-            var transaction = await db.Transactions.FirstOrDefaultAsync(x => x.Id == id, ct);
-            if (transaction is null)
-            {
-                return Results.NotFound();
-            }
-
-            var targetExists = request.TargetType switch
-            {
-                TransactionAssignmentTargetType.BudgetCategory =>
-                    await db.BudgetCategories.AnyAsync(x => x.Id == request.TargetId && !x.IsArchived, ct),
-                TransactionAssignmentTargetType.IncomeSource =>
-                    await db.IncomeSources.AnyAsync(x => x.Id == request.TargetId && !x.IsArchived, ct),
-                _ => false
-            };
-            if (!targetExists)
-            {
-                return Results.NotFound();
-            }
-
-            if (request.Amount > transaction.Amount)
-            {
-                return Results.ValidationProblem(new Dictionary<string, string[]>
-                {
-                    [nameof(request.Amount)] = ["Assignment amount cannot exceed the transaction amount."]
-                });
-            }
-
-            var assignment = new TransactionAssignment
-            {
-                TransactionId = id,
-                TargetType = request.TargetType,
-                TargetId = request.TargetId,
-                Amount = request.Amount,
-                Currency = request.Currency
-            };
-            db.TransactionAssignments.Add(assignment);
-            await db.SaveChangesAsync(ct);
-            return Results.Created($"/api/transactions/{id}/assignments/{assignment.Id}", assignment);
-        });
-
-        group.MapPost("/{id:guid}/ignore", async (Guid id, BudgetDbContext db, CancellationToken ct) =>
-        {
-            var transaction = await db.Transactions.FirstOrDefaultAsync(x => x.Id == id, ct);
+            var transaction = await db.Transactions.FirstOrDefaultAsync(x => x.Id == transactionId && x.BudgetId == budgetId, ct);
             if (transaction is null)
             {
                 return Results.NotFound();
@@ -433,22 +495,209 @@ public static class Endpoints
             return Results.NoContent();
         });
 
-        return group;
+        budgets.MapGet("/{budgetId:guid}/transactions/{transactionId:guid}/assignments", async (
+            Guid budgetId,
+            Guid transactionId,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!await db.Transactions.AnyAsync(x => x.Id == transactionId && x.BudgetId == budgetId, ct))
+            {
+                return Results.NotFound();
+            }
+
+            var assignments = await db.TransactionAssignments
+                .AsNoTracking()
+                .Where(x => x.TransactionId == transactionId)
+                .OrderBy(x => x.CreatedAt)
+                .ToListAsync(ct);
+            return Results.Ok(assignments);
+        });
+
+        budgets.MapPut("/{budgetId:guid}/transactions/{transactionId:guid}/assignments", async (
+            Guid budgetId,
+            Guid transactionId,
+            ReplaceTransactionAssignmentsRequest request,
+            IValidator<ReplaceTransactionAssignmentsRequest> validator,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+        {
+            if (await validator.Validate(request, ct) is { } validationProblem)
+            {
+                return validationProblem;
+            }
+
+            var transaction = await db.Transactions.FirstOrDefaultAsync(x => x.Id == transactionId && x.BudgetId == budgetId, ct);
+            if (transaction is null)
+            {
+                return Results.NotFound();
+            }
+
+            var requestedLineIds = request.Assignments.Select(x => x.BudgetLineId).ToArray();
+            if (requestedLineIds.Distinct().Count() != requestedLineIds.Length)
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [nameof(request.Assignments)] = ["A budget line can only be assigned once per transaction."]
+                });
+            }
+
+            var budgetLines = await db.BudgetLines
+                .AsNoTracking()
+                .Where(x => requestedLineIds.Contains(x.Id) && x.BudgetId == budgetId && !x.IsArchived)
+                .ToListAsync(ct);
+            if (budgetLines.Count != requestedLineIds.Length)
+            {
+                return Results.NotFound();
+            }
+
+            var requiredDirection = transaction.Direction == TransactionDirection.Debit
+                ? BudgetLineDirection.Debit
+                : BudgetLineDirection.Credit;
+            if (budgetLines.Any(x => x.Direction != requiredDirection))
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [nameof(request.Assignments)] = ["Transaction assignments must match the transaction direction."]
+                });
+            }
+
+            var totalAssigned = request.Assignments.Sum(x => x.Amount);
+            if (totalAssigned > transaction.Amount)
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [nameof(request.Assignments)] = ["Total assigned amount cannot exceed the transaction amount."]
+                });
+            }
+
+            var existing = await db.TransactionAssignments
+                .Where(x => x.TransactionId == transactionId)
+                .ToListAsync(ct);
+            db.TransactionAssignments.RemoveRange(existing);
+            db.TransactionAssignments.AddRange(request.Assignments.Select(x => new TransactionAssignment
+            {
+                TransactionId = transactionId,
+                BudgetLineId = x.BudgetLineId,
+                Amount = x.Amount,
+                Currency = x.Currency
+            }));
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        });
+
+        budgets.MapDelete("/{budgetId:guid}/transactions/{transactionId:guid}/assignments", async (
+            Guid budgetId,
+            Guid transactionId,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!await db.Transactions.AnyAsync(x => x.Id == transactionId && x.BudgetId == budgetId, ct))
+            {
+                return Results.NotFound();
+            }
+
+            var assignments = await db.TransactionAssignments
+                .Where(x => x.TransactionId == transactionId)
+                .ToListAsync(ct);
+            db.TransactionAssignments.RemoveRange(assignments);
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        });
     }
 
-    public static RouteGroupBuilder MapDashboardEndpoints(this RouteGroupBuilder api)
+    private static void MapReallocationEndpoints(RouteGroupBuilder budgets)
     {
-        api.MapGet("/reports/monthly-summary", async (Guid budgetPeriodId, BudgetDbContext db, CancellationToken ct) =>
-            await DashboardQueries.GetMonthlyDashboard(db, budgetPeriodId, ct) is { } dashboard
-                ? Results.Ok(dashboard)
-                : Results.NotFound())
-            .WithTags("Reports");
-
-        api.MapGet("/reports/audit-timeline", async (Guid budgetPeriodId, BudgetDbContext db, CancellationToken ct) =>
+        budgets.MapGet("/{budgetId:guid}/periods/{periodId:guid}/reallocations", async (
+            Guid budgetId,
+            Guid periodId,
+            BudgetDbContext db,
+            CancellationToken ct) =>
         {
+            if (!await PeriodBelongsToBudget(db, budgetId, periodId, ct))
+            {
+                return Results.NotFound();
+            }
+
+            var reallocations = await db.BudgetReallocations
+                .AsNoTracking()
+                .Where(x => x.BudgetPeriodId == periodId)
+                .OrderByDescending(x => x.CreatedAt)
+                .ToListAsync(ct);
+            return Results.Ok(reallocations);
+        });
+
+        budgets.MapPost("/{budgetId:guid}/periods/{periodId:guid}/reallocations", async (
+            Guid budgetId,
+            Guid periodId,
+            CreateBudgetReallocationRequest request,
+            IValidator<CreateBudgetReallocationRequest> validator,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+        {
+            if (await validator.Validate(request, ct) is { } validationProblem)
+            {
+                return validationProblem;
+            }
+
+            if (!await PeriodBelongsToBudget(db, budgetId, periodId, ct))
+            {
+                return Results.NotFound();
+            }
+
+            var lineIds = new[] { request.FromBudgetLineId, request.ToBudgetLineId };
+            var validLineCount = await db.BudgetLines
+                .CountAsync(x => lineIds.Contains(x.Id) && x.BudgetId == budgetId && !x.IsArchived, ct);
+            if (validLineCount != lineIds.Length)
+            {
+                return Results.NotFound();
+            }
+
+            var reallocation = new BudgetReallocation
+            {
+                BudgetPeriodId = periodId,
+                FromBudgetLineId = request.FromBudgetLineId,
+                ToBudgetLineId = request.ToBudgetLineId,
+                Amount = request.Amount,
+                Currency = request.Currency,
+                Reason = request.Reason.Trim()
+            };
+            db.BudgetReallocations.Add(reallocation);
+            await db.SaveChangesAsync(ct);
+            return Results.Created($"/api/budgets/{budgetId}/periods/{periodId}/reallocations/{reallocation.Id}", reallocation);
+        });
+    }
+
+    private static void MapReportEndpoints(RouteGroupBuilder budgets)
+    {
+        budgets.MapGet("/{budgetId:guid}/reports/period-summary", async (
+            Guid budgetId,
+            Guid periodId,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+            await DashboardQueries.GetPeriodSummary(db, budgetId, periodId, ct) is { } summary
+                ? Results.Ok(summary)
+                : Results.NotFound());
+
+        budgets.MapGet("/{budgetId:guid}/reports/audit-timeline", async (
+            Guid budgetId,
+            Guid periodId,
+            BudgetDbContext db,
+            CancellationToken ct) =>
+        {
+            var period = await db.BudgetPeriods
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == periodId && x.BudgetId == budgetId, ct);
+            if (period is null)
+            {
+                return Results.NotFound();
+            }
+
             var transactionIds = await db.Transactions
                 .AsNoTracking()
-                .Where(x => x.BudgetPeriodId == budgetPeriodId)
+                .Where(x => x.BudgetId == budgetId
+                    && x.TransactionDate >= period.StartDate
+                    && x.TransactionDate <= period.EndDate)
                 .Select(x => x.Id)
                 .ToListAsync(ct);
 
@@ -459,26 +708,41 @@ public static class Endpoints
                     x.CreatedAt,
                     "TransactionAssigned",
                     x.Id,
-                    $"Assigned {x.Amount} {x.Currency} to {x.TargetType} {x.TargetId}"))
+                    $"Assigned {x.Amount} {x.Currency} to budget line {x.BudgetLineId}"))
                 .ToListAsync(ct);
 
-            var movementItems = await db.BudgetMovements
+            var reallocationItems = await db.BudgetReallocations
                 .AsNoTracking()
-                .Where(x => x.BudgetPeriodId == budgetPeriodId)
+                .Where(x => x.BudgetPeriodId == periodId)
                 .Select(x => new AuditTimelineItem(
                     x.CreatedAt,
-                    "BudgetMovementRecorded",
+                    "BudgetReallocationRecorded",
                     x.Id,
-                    $"Moved {x.Amount} {x.Currency} from category {x.FromCategoryId} to category {x.ToCategoryId}: {x.Reason}"))
+                    $"Reallocated {x.Amount} {x.Currency} from budget line {x.FromBudgetLineId} to budget line {x.ToBudgetLineId}: {x.Reason}"))
                 .ToListAsync(ct);
 
-            return assignmentItems
-                .Concat(movementItems)
+            return Results.Ok(assignmentItems
+                .Concat(reallocationItems)
                 .OrderByDescending(x => x.OccurredAt)
-                .ToList();
-        })
-        .WithTags("Reports");
+                .ToList());
+        });
+    }
 
-        return api;
+    private static Task<bool> BudgetExists(BudgetDbContext db, Guid budgetId, CancellationToken ct) =>
+        db.Budgets.AnyAsync(x => x.Id == budgetId, ct);
+
+    private static Task<bool> PeriodBelongsToBudget(BudgetDbContext db, Guid budgetId, Guid periodId, CancellationToken ct) =>
+        db.BudgetPeriods.AnyAsync(x => x.Id == periodId && x.BudgetId == budgetId, ct);
+
+    private static TransactionAssignmentStatus GetAssignmentStatus(FinancialTransaction transaction, decimal assignedAmount)
+    {
+        if (assignedAmount == 0)
+        {
+            return TransactionAssignmentStatus.Unassigned;
+        }
+
+        return assignedAmount < transaction.Amount
+            ? TransactionAssignmentStatus.PartiallyAssigned
+            : TransactionAssignmentStatus.FullyAssigned;
     }
 }

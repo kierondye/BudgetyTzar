@@ -31,11 +31,7 @@ if (app.Environment.IsDevelopment())
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 var api = app.MapGroup("/api");
-api.MapBudgetCategoryEndpoints();
-api.MapIncomeEndpoints();
-api.MapBudgetPeriodEndpoints();
-api.MapTransactionEndpoints();
-api.MapDashboardEndpoints();
+api.MapBudgetEndpoints();
 
 await app.RunAsync();
 

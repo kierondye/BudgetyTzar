@@ -1,15 +1,15 @@
 namespace BudgetyTzar.Api;
 
-public enum BudgetCategoryType
+public enum BudgetLineDirection
 {
-    MonthlyReset,
-    Cumulative
+    Debit,
+    Credit
 }
 
-public enum BudgetPeriodStatus
+public enum BudgetLineRolloverType
 {
-    Open,
-    Closed
+    PeriodReset,
+    Cumulative
 }
 
 public enum TransactionDirection
@@ -18,55 +18,47 @@ public enum TransactionDirection
     Credit
 }
 
-public enum TransactionAssignmentTargetType
+public enum TransactionAssignmentStatus
 {
-    BudgetCategory,
-    IncomeSource
+    Unassigned,
+    PartiallyAssigned,
+    FullyAssigned
 }
 
-public sealed class BudgetCategory
+public sealed class Budget
 {
     public Guid Id { get; init; } = Guid.NewGuid();
     public required string Name { get; set; }
-    public BudgetCategoryType Type { get; set; }
-    public bool IsArchived { get; set; }
-    public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
-}
-
-public sealed class IncomeSource
-{
-    public Guid Id { get; init; } = Guid.NewGuid();
-    public required string Name { get; set; }
-    public bool IsRecurring { get; set; }
-    public bool IsArchived { get; set; }
+    public required string Currency { get; set; }
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
 }
 
 public sealed class BudgetPeriod
 {
     public Guid Id { get; init; } = Guid.NewGuid();
+    public Guid BudgetId { get; set; }
     public required string Name { get; set; }
     public DateOnly StartDate { get; set; }
     public DateOnly EndDate { get; set; }
-    public BudgetPeriodStatus Status { get; set; } = BudgetPeriodStatus.Open;
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
 }
 
-public sealed class CategoryAllocation
+public sealed class BudgetLine
 {
     public Guid Id { get; init; } = Guid.NewGuid();
-    public Guid BudgetPeriodId { get; set; }
-    public Guid BudgetCategoryId { get; set; }
-    public decimal Amount { get; set; }
-    public required string Currency { get; set; }
+    public Guid BudgetId { get; set; }
+    public required string Name { get; set; }
+    public BudgetLineDirection Direction { get; set; }
+    public BudgetLineRolloverType RolloverType { get; set; }
+    public bool IsArchived { get; set; }
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
 }
 
-public sealed class IncomeExpectation
+public sealed class BudgetLineAllocation
 {
     public Guid Id { get; init; } = Guid.NewGuid();
     public Guid BudgetPeriodId { get; set; }
-    public Guid IncomeSourceId { get; set; }
+    public Guid BudgetLineId { get; set; }
     public decimal Amount { get; set; }
     public required string Currency { get; set; }
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
@@ -75,7 +67,7 @@ public sealed class IncomeExpectation
 public sealed class FinancialTransaction
 {
     public Guid Id { get; init; } = Guid.NewGuid();
-    public Guid BudgetPeriodId { get; set; }
+    public Guid BudgetId { get; set; }
     public DateOnly TransactionDate { get; set; }
     public required string Description { get; set; }
     public decimal Amount { get; set; }
@@ -92,19 +84,18 @@ public sealed class TransactionAssignment
 {
     public Guid Id { get; init; } = Guid.NewGuid();
     public Guid TransactionId { get; set; }
-    public TransactionAssignmentTargetType TargetType { get; set; }
-    public Guid TargetId { get; set; }
+    public Guid BudgetLineId { get; set; }
     public decimal Amount { get; set; }
     public required string Currency { get; set; }
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
 }
 
-public sealed class BudgetMovement
+public sealed class BudgetReallocation
 {
     public Guid Id { get; init; } = Guid.NewGuid();
     public Guid BudgetPeriodId { get; set; }
-    public Guid FromCategoryId { get; set; }
-    public Guid ToCategoryId { get; set; }
+    public Guid FromBudgetLineId { get; set; }
+    public Guid ToBudgetLineId { get; set; }
     public decimal Amount { get; set; }
     public required string Currency { get; set; }
     public required string Reason { get; set; }
