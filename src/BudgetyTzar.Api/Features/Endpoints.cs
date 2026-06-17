@@ -296,7 +296,7 @@ public static class Endpoints
             IReadOnlyList<BudgetLineAllocationItem> allocations = [];
             if (request.Allocations is not null)
             {
-                if (await ValidateBudgetLineAllocations(db, budgetId, request.Allocations, nameof(request.Allocations), ct) is { } allocationProblem)
+                if (await ValidateBudgetLineAllocations(db, budgetId, null, request.Allocations, nameof(request.Allocations), ct) is { } allocationProblem)
                 {
                     return allocationProblem;
                 }
@@ -379,10 +379,19 @@ public static class Endpoints
                 return Results.NotFound();
             }
 
+            var name = request.Name.Trim();
+            if (await db.BudgetLines.AnyAsync(x => x.BudgetId == budgetId && x.Name == name, ct))
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [nameof(request.Name)] = ["A budget line with this name already exists in this budget."]
+                });
+            }
+
             var line = new BudgetLine
             {
                 BudgetId = budgetId,
-                Name = request.Name.Trim(),
+                Name = name,
                 Direction = request.Direction,
                 RolloverType = request.RolloverType
             };
@@ -450,7 +459,7 @@ public static class Endpoints
                 return Results.NotFound();
             }
 
-            if (await ValidateBudgetLineAllocations(db, budgetId, request.Allocations, nameof(request.Allocations), ct) is { } allocationProblem)
+            if (await ValidateBudgetLineAllocations(db, budgetId, periodId, request.Allocations, nameof(request.Allocations), ct) is { } allocationProblem)
             {
                 return allocationProblem;
             }
@@ -482,6 +491,7 @@ public static class Endpoints
     private static async Task<IResult?> ValidateBudgetLineAllocations(
         BudgetDbContext db,
         Guid budgetId,
+        Guid? periodId,
         IReadOnlyList<BudgetLineAllocationItem> allocations,
         string requestPropertyName,
         CancellationToken ct)
@@ -495,9 +505,8 @@ public static class Endpoints
             });
         }
 
-        var validLineCount = await db.BudgetLines
-            .CountAsync(x => lineIds.Contains(x.Id) && x.BudgetId == budgetId && !x.IsArchived, ct);
-        if (validLineCount != lineIds.Length)
+        var lines = await GetEligibleBudgetLines(db, budgetId, periodId, lineIds, ct);
+        if (lines.Count != lineIds.Length)
         {
             return Results.NotFound();
         }
@@ -747,10 +756,8 @@ public static class Endpoints
                 });
             }
 
-            var budgetLines = await db.BudgetLines
-                .AsNoTracking()
-                .Where(x => requestedLineIds.Contains(x.Id) && x.BudgetId == budgetId && !x.IsArchived)
-                .ToListAsync(ct);
+            var periodId = await FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
+            var budgetLines = await GetEligibleBudgetLines(db, budgetId, periodId, requestedLineIds, ct);
             if (budgetLines.Count != requestedLineIds.Length)
             {
                 return Results.NotFound();
@@ -775,7 +782,6 @@ public static class Endpoints
                 BudgetLineId = x.BudgetLineId,
                 Amount = x.Amount
             }));
-            var periodId = await FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
             AddAudit(
                 db,
                 budgetId,
@@ -886,6 +892,15 @@ public static class Endpoints
             db.TransactionImportBatches.Add(batch);
             db.TransactionImportRows.AddRange(rows);
             AddAudit(db, budgetId, null, nameof(TransactionImportBatch), batch.Id, "TransactionImportBatchPreviewed", $"Previewed import batch {batch.FileName} with {batch.RowCount} row(s).");
+            await AddImportBatchPeriodAudits(
+                db,
+                budgetId,
+                batch.Id,
+                batch.FileName,
+                rows,
+                "TransactionImportBatchPreviewed",
+                "Previewed",
+                ct);
             await db.SaveChangesAsync(ct);
 
             return Results.Created($"/api/budgets/{budgetId}/transaction-imports/{batch.Id}", new TransactionImportDetail(batch, rows));
@@ -960,6 +975,15 @@ public static class Endpoints
             batch.Status = TransactionImportBatchStatus.Committed;
             batch.CommittedAt = DateTimeOffset.UtcNow;
             AddAudit(db, budgetId, null, nameof(TransactionImportBatch), batch.Id, "TransactionImportBatchCommitted", $"Committed import batch {batch.FileName} with {rows.Count} row(s).");
+            await AddImportBatchPeriodAudits(
+                db,
+                budgetId,
+                batch.Id,
+                batch.FileName,
+                rows,
+                "TransactionImportBatchCommitted",
+                "Committed",
+                ct);
             await db.SaveChangesAsync(ct);
 
             return Results.Ok(new TransactionImportDetail(batch, rows));
@@ -1006,10 +1030,7 @@ public static class Endpoints
             }
 
             var lineIds = new[] { request.FromBudgetLineId, request.ToBudgetLineId };
-            var budgetLines = await db.BudgetLines
-                .AsNoTracking()
-                .Where(x => lineIds.Contains(x.Id) && x.BudgetId == budgetId && !x.IsArchived)
-                .ToListAsync(ct);
+            var budgetLines = await GetEligibleBudgetLines(db, budgetId, periodId, lineIds, ct);
             if (budgetLines.Count != lineIds.Length)
             {
                 return Results.NotFound();
@@ -1036,6 +1057,21 @@ public static class Endpoints
                 }
 
                 return Results.ValidationProblem(errors);
+            }
+
+            var summary = await DashboardQueries.GetPeriodSummary(db, budgetId, periodId, ct);
+            var sourceLine = summary?.Lines.FirstOrDefault(x => x.BudgetLineId == request.FromBudgetLineId);
+            if (sourceLine is null)
+            {
+                return Results.NotFound();
+            }
+
+            if (sourceLine.ClosingBalance < request.Amount)
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [nameof(request.Amount)] = ["Reallocation amount cannot exceed the source budget line's available balance."]
+                });
             }
 
             var reallocation = new BudgetReallocation
@@ -1092,9 +1128,7 @@ public static class Endpoints
                 return Results.NotFound();
             }
 
-            var line = await db.BudgetLines
-                .AsNoTracking()
-                .FirstOrDefaultAsync(x => x.Id == request.BudgetLineId && x.BudgetId == budgetId && !x.IsArchived, ct);
+            var line = await GetEligibleBudgetLine(db, budgetId, periodId, request.BudgetLineId, ct);
             if (line is null)
             {
                 return Results.NotFound();
@@ -1262,7 +1296,7 @@ public static class Endpoints
 
             var items = await db.AuditEvents
                 .AsNoTracking()
-                .Where(x => x.BudgetId == budgetId && (x.BudgetPeriodId == periodId || x.BudgetPeriodId == null))
+                .Where(x => x.BudgetId == budgetId && (x.BudgetPeriodId == periodId || x.AppliesToAllPeriods))
                 .Select(x => new AuditTimelineItem(
                     x.Id,
                     x.OccurredAt,
@@ -1288,6 +1322,89 @@ public static class Endpoints
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.BudgetId == budgetId && x.StartDate <= date && x.EndDate >= date, ct))?.Id;
 
+    private static async Task<List<BudgetLine>> GetEligibleBudgetLines(
+        BudgetDbContext db,
+        Guid budgetId,
+        Guid? periodId,
+        IReadOnlyCollection<Guid> lineIds,
+        CancellationToken ct)
+    {
+        var lines = await db.BudgetLines
+            .AsNoTracking()
+            .Where(x => lineIds.Contains(x.Id) && x.BudgetId == budgetId)
+            .ToListAsync(ct);
+
+        var archivedLines = lines.Where(x => x.IsArchived).ToList();
+        if (archivedLines.Count == 0)
+        {
+            return lines;
+        }
+
+        if (!periodId.HasValue)
+        {
+            return lines.Where(x => !x.IsArchived).ToList();
+        }
+
+        var summary = await DashboardQueries.GetPeriodSummary(db, budgetId, periodId.Value, ct);
+        var activeArchivedLineIds = summary?.Lines
+            .Where(x => x.IsArchived)
+            .Select(x => x.BudgetLineId)
+            .ToHashSet() ?? [];
+
+        return lines
+            .Where(x => !x.IsArchived || activeArchivedLineIds.Contains(x.Id))
+            .ToList();
+    }
+
+    private static async Task<BudgetLine?> GetEligibleBudgetLine(
+        BudgetDbContext db,
+        Guid budgetId,
+        Guid? periodId,
+        Guid lineId,
+        CancellationToken ct) =>
+        (await GetEligibleBudgetLines(db, budgetId, periodId, [lineId], ct)).SingleOrDefault();
+
+    private static async Task AddImportBatchPeriodAudits(
+        BudgetDbContext db,
+        Guid budgetId,
+        Guid batchId,
+        string fileName,
+        IReadOnlyCollection<TransactionImportRow> rows,
+        string eventType,
+        string verb,
+        CancellationToken ct)
+    {
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        var firstDate = rows.Min(x => x.TransactionDate);
+        var lastDate = rows.Max(x => x.TransactionDate);
+        var periods = await db.BudgetPeriods
+            .AsNoTracking()
+            .Where(x => x.BudgetId == budgetId && x.StartDate <= lastDate && x.EndDate >= firstDate)
+            .ToListAsync(ct);
+
+        foreach (var period in periods.OrderBy(x => x.StartDate))
+        {
+            var affectedRowCount = rows.Count(x => x.TransactionDate >= period.StartDate && x.TransactionDate <= period.EndDate);
+            if (affectedRowCount == 0)
+            {
+                continue;
+            }
+
+            AddAudit(
+                db,
+                budgetId,
+                period.Id,
+                nameof(TransactionImportBatch),
+                batchId,
+                eventType,
+                $"{verb} import batch {fileName} with {affectedRowCount} row(s) affecting period {period.Name}.");
+        }
+    }
+
     private static void AddAudit(
         BudgetDbContext db,
         Guid budgetId,
@@ -1296,11 +1413,13 @@ public static class Endpoints
         Guid entityId,
         string eventType,
         string description,
-        string? details = null) =>
+        string? details = null,
+        bool appliesToAllPeriods = false) =>
         db.AuditEvents.Add(new AuditEvent
         {
             BudgetId = budgetId,
             BudgetPeriodId = periodId,
+            AppliesToAllPeriods = appliesToAllPeriods,
             EntityType = entityType,
             EntityId = entityId,
             EventType = eventType,

@@ -97,6 +97,7 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
             entity.Property(x => x.Description).HasMaxLength(500).IsRequired();
             entity.Property(x => x.Details).HasMaxLength(4000);
             entity.HasIndex(x => new { x.BudgetId, x.BudgetPeriodId, x.OccurredAt });
+            entity.HasIndex(x => new { x.BudgetId, x.AppliesToAllPeriods, x.OccurredAt });
             entity.HasIndex(x => new { x.EntityType, x.EntityId });
         });
 
