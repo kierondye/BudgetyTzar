@@ -150,6 +150,8 @@ Example:
 
 Budget reallocations must be stored separately from real transactions.
 
+The source budget line must have enough available balance in the target period for the reallocation amount. Reallocations must not be allowed to create or conceal overspending on the source line.
+
 ### 5.7 Adjustment
 
 An adjustment corrects or explains a balance without pretending it was a bank transaction.
@@ -181,6 +183,7 @@ Acceptance criteria:
 - Cumulative debit budget lines start with their previous closing balance.
 - Period reset debit budget lines start from zero unless explicitly allocated.
 - Archived budget lines remain visible in historical periods and reports where they had activity.
+- Archived budget lines can still be used for retrospective corrections in historical periods where they already had allocation, transaction assignment, reallocation, adjustment, or carried cumulative balance activity.
 
 ### 6.2 Transaction Entry and Import
 
@@ -219,6 +222,7 @@ Acceptance criteria:
 
 - Overspending is visible without needing to inspect formulas.
 - Reallocating budget between budget lines does not alter actual spending totals.
+- Reallocation commands validate that both budget lines are debit lines in the same budget and that the source line has sufficient available balance in the period.
 - Budget line balances can be recalculated from event history.
 
 ### 6.4 Cumulative Budget Lines
@@ -262,6 +266,8 @@ Acceptance criteria:
 - The current budget state can be explained from recorded events.
 - Phase 1 stores durable local audit records before Kafka-backed audit events are introduced.
 - The user can understand an old period without relying on spreadsheet context.
+- A period audit timeline includes only events that affected that period, plus explicitly marked budget-level events whose effect genuinely applies to that period.
+- Import preview and commit audit records should be linked to affected transaction periods when possible, so unrelated imports do not appear in every period timeline.
 
 ### 6.7 Reporting and Analysis
 
@@ -646,6 +652,7 @@ Reports should include:
 
 - Transactions must never be deleted once committed; they may be corrected, ignored, or superseded.
 - Budget reallocations must not change actual spending.
+- Budget reallocations may only move currently available budget between debit budget lines in the same budget, within the selected budget period.
 - Credit totals must not be mixed into debit spending totals.
 - Debit transactions assigned to debit budget lines increase spending against those lines.
 - Credit transactions assigned to debit budget lines reduce net spending against those lines.
@@ -655,6 +662,7 @@ Reports should include:
 - Period reset debit budget lines do not carry forward unused balances by default.
 - Cumulative debit budget lines carry forward closing balances.
 - Periods do not have open or closed status in the first version; retrospective changes are allowed and should be visible through audit/history.
+- Archiving a budget line prevents normal future use but must not prevent audited retrospective corrections for historical periods where the line already had activity.
 - Every adjustment requires a reason.
 - Monetary values must use decimal types, never floating point.
 - Each budget has one currency; all child amounts use the budget currency.
@@ -767,14 +775,15 @@ Deliver:
 - Budget periods.
 - Budget lines.
 - Historical visibility of archived budget lines in old periods.
+- Audited retrospective corrections for archived budget lines in historical periods where they had activity.
 - Manual transactions.
 - CSV import preview and commit.
 - Duplicate detection for imported transactions.
 - Transaction assignment.
 - Opposite-direction assignments for refunds, reimbursements, reversals, and corrections.
-- Budget reallocations.
+- Budget reallocations with available-balance validation.
 - Adjustments with reasons.
-- Durable local audit records for imports, assignments, splits, ignores, reallocations, adjustments, and budget line archival.
+- Durable local audit records for imports, assignments, splits, ignores, reallocations, adjustments, and budget line archival, with period timelines filtered to events that affected the selected period.
 - Period summary.
 - Reconciliation view.
 - Basic multi-period reports for budget line trends and credit variance.
@@ -894,6 +903,7 @@ Cover:
 - Period reset behaviour.
 - Cumulative carry-forward behaviour.
 - Budget reallocation validation.
+- Archived budget line historical correction rules.
 - Credit variance calculations.
 - Transaction assignment rules.
 
@@ -902,6 +912,7 @@ Cover:
 Cover:
 
 - PostgreSQL persistence.
+- PostgreSQL-backed API integration tests for provider-specific schema, precision, query, and index behaviour.
 - CSV import.
 - Duplicate detection.
 - Reconciliation.
@@ -910,7 +921,7 @@ Cover:
 - Kafka consumer behaviour in Phase 2.
 - Reporting projections in Phase 2.
 
-Use Testcontainers where practical.
+Use Testcontainers where practical. SQLite or in-memory tests may be used for fast feedback, but they do not replace PostgreSQL integration coverage for Phase 1 persistence requirements.
 
 ### 19.3 Contract Tests
 
@@ -1023,19 +1034,20 @@ The smallest useful version should include:
 - Create debit and credit budget lines.
 - Mark budget lines as period reset or cumulative.
 - Preserve historical reporting for archived budget lines.
+- Allow audited retrospective corrections for archived budget lines in periods where they had activity.
 - Enter planned credit and debit allocations.
 - Manually add transactions.
 - Preview and commit CSV imports.
 - Detect likely duplicate imported transactions.
 - Assign transactions to budget lines.
 - Leave transactions unassigned until classification.
-- Reallocate budget between debit budget lines.
+- Reallocate available budget between debit budget lines.
 - Record adjustments with reasons.
 - View period summary.
 - View reconciliation for a period.
 - View basic reports across periods.
 - View transaction-level detail.
-- View durable local audit history for imports, assignments, splits, ignores, reallocations, adjustments, and archival.
+- View durable local audit history for imports, assignments, splits, ignores, reallocations, adjustments, and archival, scoped to the selected period where applicable.
 - Export data to CSV.
 
 ## 25. Future Enhancements
