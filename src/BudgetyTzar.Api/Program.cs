@@ -18,7 +18,7 @@ if (app.Configuration.GetValue("Database:EnsureCreatedOnStartup", false))
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
-    await db.Database.EnsureCreatedAsync();
+    await db.EnsureLocalSchemaCreatedAsync();
 }
 
 if (app.Environment.IsDevelopment())
