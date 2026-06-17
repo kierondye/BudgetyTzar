@@ -1,4 +1,4 @@
-using BudgetyTzar.Api.Data;
+using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace BudgetyTzar.Api.Features;

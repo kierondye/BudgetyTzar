@@ -1,5 +1,5 @@
 using BudgetyTzar.Api;
-using BudgetyTzar.Api.Data;
+using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;

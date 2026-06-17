@@ -1,4 +1,5 @@
-using BudgetyTzar.Api.Data;
+using BudgetyTzar.Api.Application.Transactions;
+using BudgetyTzar.Api.Infrastructure.Persistence;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 
@@ -21,7 +22,6 @@ public sealed record UpdateTransactionRequest(
     string? ExternalReference,
     string? Notes);
 public sealed record ReplaceTransactionAssignmentsRequest(IReadOnlyList<TransactionAssignmentItem> Assignments);
-public sealed record TransactionDetail(FinancialTransaction Transaction, IReadOnlyList<TransactionAssignment> Assignments);
 public sealed class CreateTransactionValidator : AbstractValidator<CreateTransactionRequest>
 {
     public CreateTransactionValidator()
@@ -150,7 +150,7 @@ public static partial class Endpoints
             Guid budgetId,
             CreateTransactionRequest request,
             IValidator<CreateTransactionRequest> validator,
-            BudgetDbContext db,
+            CreateTransactionHandler handler,
             CancellationToken ct) =>
         {
             if (await validator.Validate(request, ct) is { } validationProblem)
@@ -158,27 +158,17 @@ public static partial class Endpoints
                 return validationProblem;
             }
 
-            if (!await BudgetExists(db, budgetId, ct))
-            {
-                return Results.NotFound();
-            }
-
-            var transaction = new FinancialTransaction
-            {
-                BudgetId = budgetId,
-                TransactionDate = request.TransactionDate,
-                Description = request.Description.Trim(),
-                Amount = request.Amount,
-                Direction = request.Direction,
-                SourceAccount = request.SourceAccount,
-                ExternalReference = request.ExternalReference,
-                Notes = request.Notes
-            };
-            db.Transactions.Add(transaction);
-            var periodId = await FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
-            AddAudit(db, budgetId, periodId, nameof(FinancialTransaction), transaction.Id, "TransactionManuallyCreated", $"Created transaction {transaction.Description} for {transaction.Amount} {transaction.Direction}.");
-            await db.SaveChangesAsync(ct);
-            return Results.Created($"/api/budgets/{budgetId}/transactions/{transaction.Id}", transaction);
+            var result = await handler.Handle(
+                budgetId,
+                request.TransactionDate,
+                request.Description,
+                request.Amount,
+                request.Direction,
+                request.SourceAccount,
+                request.ExternalReference,
+                request.Notes,
+                ct);
+            return result.ToHttpResult(transaction => Results.Created($"/api/budgets/{budgetId}/transactions/{transaction.Id}", transaction));
         });
 
         budgets.MapPut("/{budgetId:guid}/transactions/{transactionId:guid}", async (
@@ -186,7 +176,7 @@ public static partial class Endpoints
             Guid transactionId,
             UpdateTransactionRequest request,
             IValidator<UpdateTransactionRequest> validator,
-            BudgetDbContext db,
+            UpdateTransactionHandler handler,
             CancellationToken ct) =>
         {
             if (await validator.Validate(request, ct) is { } validationProblem)
@@ -194,68 +184,28 @@ public static partial class Endpoints
                 return validationProblem;
             }
 
-            var transaction = await db.Transactions.FirstOrDefaultAsync(x => x.Id == transactionId && x.BudgetId == budgetId, ct);
-            if (transaction is null)
-            {
-                return Results.NotFound();
-            }
-
-            var assignedTotal = await db.TransactionAssignments
-                .AsNoTracking()
-                .Where(x => x.TransactionId == transactionId)
-                .SumAsync(x => x.Amount, ct);
-            if (request.Amount < assignedTotal)
-            {
-                return Results.ValidationProblem(new Dictionary<string, string[]>
-                {
-                    [nameof(request.Amount)] = ["Transaction amount cannot be less than the current assigned total."]
-                });
-            }
-
-            var previousPeriodId = await FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
-            var previousDescription = transaction.Description;
-            var previousAmount = transaction.Amount;
-            var previousDirection = transaction.Direction;
-
-            transaction.TransactionDate = request.TransactionDate;
-            transaction.Description = request.Description.Trim();
-            transaction.Amount = request.Amount;
-            transaction.Direction = request.Direction;
-            transaction.SourceAccount = request.SourceAccount;
-            transaction.ExternalReference = request.ExternalReference;
-            transaction.Notes = request.Notes;
-
-            var periodId = await FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
-            AddAudit(
-                db,
+            var result = await handler.Handle(
                 budgetId,
-                periodId,
-                nameof(FinancialTransaction),
-                transaction.Id,
-                "TransactionEdited",
-                $"Edited transaction {transaction.Description}.",
-                $"Previous={previousDescription}, {previousAmount} {previousDirection}, Period={previousPeriodId}; New={transaction.Description}, {transaction.Amount} {transaction.Direction}, Period={periodId}");
-            await db.SaveChangesAsync(ct);
-            return Results.NoContent();
+                transactionId,
+                request.TransactionDate,
+                request.Description,
+                request.Amount,
+                request.Direction,
+                request.SourceAccount,
+                request.ExternalReference,
+                request.Notes,
+                ct);
+            return result.ToHttpResult();
         });
 
         budgets.MapPost("/{budgetId:guid}/transactions/{transactionId:guid}/ignore", async (
             Guid budgetId,
             Guid transactionId,
-            BudgetDbContext db,
+            IgnoreTransactionHandler handler,
             CancellationToken ct) =>
         {
-            var transaction = await db.Transactions.FirstOrDefaultAsync(x => x.Id == transactionId && x.BudgetId == budgetId, ct);
-            if (transaction is null)
-            {
-                return Results.NotFound();
-            }
-
-            transaction.IsIgnored = true;
-            var periodId = await FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
-            AddAudit(db, budgetId, periodId, nameof(FinancialTransaction), transaction.Id, "TransactionIgnored", $"Ignored transaction {transaction.Description}.");
-            await db.SaveChangesAsync(ct);
-            return Results.NoContent();
+            var result = await handler.Handle(budgetId, transactionId, ct);
+            return result.ToHttpResult();
         });
 
         budgets.MapGet("/{budgetId:guid}/transactions/{transactionId:guid}/assignments", async (
@@ -282,7 +232,7 @@ public static partial class Endpoints
             Guid transactionId,
             ReplaceTransactionAssignmentsRequest request,
             IValidator<ReplaceTransactionAssignmentsRequest> validator,
-            BudgetDbContext db,
+            ReplaceTransactionAssignmentsHandler handler,
             CancellationToken ct) =>
         {
             if (await validator.Validate(request, ct) is { } validationProblem)
@@ -290,88 +240,18 @@ public static partial class Endpoints
                 return validationProblem;
             }
 
-            var transaction = await db.Transactions.FirstOrDefaultAsync(x => x.Id == transactionId && x.BudgetId == budgetId, ct);
-            if (transaction is null)
-            {
-                return Results.NotFound();
-            }
-
-            var requestedLineIds = request.Assignments.Select(x => x.BudgetLineId).ToArray();
-            if (requestedLineIds.Distinct().Count() != requestedLineIds.Length)
-            {
-                return Results.ValidationProblem(new Dictionary<string, string[]>
-                {
-                    [nameof(request.Assignments)] = ["A budget line can only be assigned once per transaction."]
-                });
-            }
-
-            var periodId = await FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
-            var budgetLines = await GetEligibleBudgetLines(db, budgetId, periodId, requestedLineIds, ct);
-            if (budgetLines.Count != requestedLineIds.Length)
-            {
-                return Results.NotFound();
-            }
-
-            var totalAssigned = request.Assignments.Sum(x => x.Amount);
-            if (totalAssigned > transaction.Amount)
-            {
-                return Results.ValidationProblem(new Dictionary<string, string[]>
-                {
-                    [nameof(request.Assignments)] = ["Total assigned amount cannot exceed the transaction amount."]
-                });
-            }
-
-            var existing = await db.TransactionAssignments
-                .Where(x => x.TransactionId == transactionId)
-                .ToListAsync(ct);
-            db.TransactionAssignments.RemoveRange(existing);
-            db.TransactionAssignments.AddRange(request.Assignments.Select(x => new TransactionAssignment
-            {
-                TransactionId = transactionId,
-                BudgetLineId = x.BudgetLineId,
-                Amount = x.Amount
-            }));
-            AddAudit(
-                db,
-                budgetId,
-                periodId,
-                nameof(FinancialTransaction),
-                transactionId,
-                request.Assignments.Count > 1 ? "TransactionSplit" : "TransactionAssigned",
-                $"Replaced assignments for transaction {transaction.Description}.",
-                $"Previous={FormatAssignments(existing)}; New={FormatAssignments(request.Assignments)}");
-            await db.SaveChangesAsync(ct);
-            return Results.NoContent();
+            var result = await handler.Handle(budgetId, transactionId, request.Assignments, ct);
+            return result.ToHttpResult();
         });
 
         budgets.MapDelete("/{budgetId:guid}/transactions/{transactionId:guid}/assignments", async (
             Guid budgetId,
             Guid transactionId,
-            BudgetDbContext db,
+            ClearTransactionAssignmentsHandler handler,
             CancellationToken ct) =>
         {
-            if (!await db.Transactions.AnyAsync(x => x.Id == transactionId && x.BudgetId == budgetId, ct))
-            {
-                return Results.NotFound();
-            }
-
-            var assignments = await db.TransactionAssignments
-                .Where(x => x.TransactionId == transactionId)
-                .ToListAsync(ct);
-            var transaction = await db.Transactions.AsNoTracking().FirstAsync(x => x.Id == transactionId && x.BudgetId == budgetId, ct);
-            db.TransactionAssignments.RemoveRange(assignments);
-            var periodId = await FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
-            AddAudit(
-                db,
-                budgetId,
-                periodId,
-                nameof(FinancialTransaction),
-                transactionId,
-                "TransactionAssignmentsCleared",
-                $"Cleared assignments for transaction {transaction.Description}.",
-                FormatAssignments(assignments));
-            await db.SaveChangesAsync(ct);
-            return Results.NoContent();
+            var result = await handler.Handle(budgetId, transactionId, ct);
+            return result.ToHttpResult();
         });
     }
 }

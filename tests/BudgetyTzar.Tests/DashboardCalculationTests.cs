@@ -1,4 +1,5 @@
 using BudgetyTzar.Api;
+using BudgetyTzar.Api.Application.Reporting;
 using BudgetyTzar.Api.Features;
 using Xunit;
 
