@@ -27,7 +27,7 @@ internal sealed class PostgresBudgetApiFactory : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseSetting("Database:EnsureCreatedOnStartup", "false");
+        builder.UseSetting("Database:MigrateOnStartup", "false");
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<BudgetDbContext>();
@@ -45,7 +45,7 @@ internal sealed class PostgresBudgetApiFactory : WebApplicationFactory<Program>
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
         await db.Database.EnsureDeletedAsync();
-        await db.Database.EnsureCreatedAsync();
+        await db.Database.MigrateAsync();
     }
 
     public async Task<FinancialTransaction?> GetTransactionAsync(Guid transactionId)

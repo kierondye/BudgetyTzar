@@ -619,7 +619,7 @@ internal sealed class BudgetApiFactory : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseSetting("Database:EnsureCreatedOnStartup", "false");
+        builder.UseSetting("Database:MigrateOnStartup", "false");
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<BudgetDbContext>();

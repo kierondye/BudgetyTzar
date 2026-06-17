@@ -14,11 +14,11 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-if (app.Configuration.GetValue("Database:EnsureCreatedOnStartup", false))
+if (app.Configuration.GetValue("Database:MigrateOnStartup", false))
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
-    await db.EnsureLocalSchemaCreatedAsync();
+    await db.Database.MigrateAsync();
 }
 
 if (app.Environment.IsDevelopment())

@@ -47,6 +47,14 @@ Start PostgreSQL:
 docker compose up -d postgres
 ```
 
+If you are moving from the old local `EnsureCreated` schema, reset the disposable
+PostgreSQL volume first:
+
+```bash
+docker compose down -v
+docker compose up -d postgres
+```
+
 Run the API:
 
 ```bash
@@ -55,7 +63,7 @@ dotnet run --project src/BudgetyTzar.Api
 
 Open `http://localhost:5000/` or `http://localhost:5000/swagger` to browse the API. The Swagger JSON is available at `http://localhost:5000/swagger/v1/swagger.json`, and the health check is available at `http://localhost:5000/health`.
 
-The API creates the local schema on startup when `Database:EnsureCreatedOnStartup` is `true`. For production-style deployments this should be replaced with EF Core migrations.
+The API applies EF Core migrations on startup when `Database:MigrateOnStartup` is `true`.
 
 Run tests:
 
