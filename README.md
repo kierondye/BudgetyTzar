@@ -39,6 +39,8 @@ BudgetyTzar is a personal budgeting MVP that replaces a monthly spreadsheet with
 - `GET /api/budgets/{budgetId}/reports/audit-timeline?periodId={periodId}`
 - `GET /api/budgets/{budgetId}/reports/period-summary.csv?periodId={periodId}`
 
+Period summary `ActualDebit` and `ActualCredit` values are based on assigned transaction amounts. Unassigned debit and credit transactions remain visible in `UnassignedDebitTotal` and `UnassignedCreditTotal` until they are assigned to budget lines.
+
 ## Local Development
 
 Start PostgreSQL:

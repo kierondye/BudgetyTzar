@@ -76,6 +76,44 @@ public sealed class Phase1SpecGapBehaviorTests
     }
 
     [Fact]
+    public async Task CreditTransactionAppearsAsUnassignedUntilAssignedToCreditLine()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var period = await CreatePeriod(client, budget.Id);
+        var salary = await CreateBudgetLine(client, budget.Id, "Salary", BudgetLineDirection.Credit);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/budgets/{budget.Id}/transactions",
+            new
+            {
+                transactionDate = "2026-06-17",
+                description = "Visa",
+                amount = 3000m,
+                direction = 1,
+                sourceAccount = "Spending",
+                externalReference = "Payment",
+                notes = "Earnings"
+            });
+        response.EnsureSuccessStatusCode();
+        var transaction = (await response.Content.ReadFromJsonAsync<FinancialTransaction>())!;
+
+        var unassignedSummary = await GetPeriodSummary(client, budget.Id, period.Id);
+        Assert.Equal(TransactionDirection.Credit, transaction.Direction);
+        Assert.Equal(3000m, unassignedSummary.UnassignedCreditTotal);
+        Assert.Equal(0m, unassignedSummary.ActualCredit);
+
+        await ReplaceAssignments(client, budget.Id, transaction.Id, [new TransactionAssignmentItem(salary.Id, 3000m)]);
+
+        var assignedSummary = await GetPeriodSummary(client, budget.Id, period.Id);
+        Assert.Equal(0m, assignedSummary.UnassignedCreditTotal);
+        Assert.Equal(3000m, assignedSummary.ActualCredit);
+        Assert.Equal(3000m, assignedSummary.Lines.Single(x => x.BudgetLineId == salary.Id).ActualAmount);
+    }
+
+    [Fact]
     public async Task ArchivedLineAllowsHistoricalAdjustmentOnlyWhenLineHadPeriodActivity()
     {
         await using var app = new BudgetApiFactory();
@@ -255,11 +293,15 @@ date,description,amount,direction,source account,external reference,notes
         return (await response.Content.ReadFromJsonAsync<BudgetPeriod>())!;
     }
 
-    private static async Task<BudgetLine> CreateBudgetLine(HttpClient client, Guid budgetId, string name)
+    private static async Task<BudgetLine> CreateBudgetLine(
+        HttpClient client,
+        Guid budgetId,
+        string name,
+        BudgetLineDirection direction = BudgetLineDirection.Debit)
     {
         var response = await client.PostAsJsonAsync(
             $"/api/budgets/{budgetId}/budget-lines",
-            new CreateBudgetLineRequest(name, BudgetLineDirection.Debit, BudgetLineRolloverType.PeriodReset));
+            new CreateBudgetLineRequest(name, direction, BudgetLineRolloverType.PeriodReset));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<BudgetLine>())!;
     }
