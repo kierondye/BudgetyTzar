@@ -21,7 +21,6 @@ public sealed record UpdateTransactionRequest(
     string? SourceAccount,
     string? ExternalReference,
     string? Notes);
-public sealed record ReplaceTransactionAssignmentsRequest(IReadOnlyList<TransactionAssignmentItem> Assignments);
 public sealed record ReplaceTransactionAllocationsRequest(IReadOnlyList<TransactionAssignmentItem> Allocations);
 public sealed class CreateTransactionValidator : AbstractValidator<CreateTransactionRequest>
 {
@@ -46,19 +45,6 @@ public sealed class UpdateTransactionValidator : AbstractValidator<UpdateTransac
         RuleFor(x => x.SourceAccount).MaximumLength(120);
         RuleFor(x => x.ExternalReference).MaximumLength(160);
         RuleFor(x => x.Notes).MaximumLength(500);
-    }
-}
-
-public sealed class ReplaceTransactionAssignmentsValidator : AbstractValidator<ReplaceTransactionAssignmentsRequest>
-{
-    public ReplaceTransactionAssignmentsValidator()
-    {
-        RuleFor(x => x.Assignments).NotNull();
-        RuleForEach(x => x.Assignments).ChildRules(item =>
-        {
-            item.RuleFor(x => x.BudgetLineId).NotEmpty();
-            item.RuleFor(x => x.Amount).PositiveAmount();
-        });
     }
 }
 
@@ -222,35 +208,11 @@ public static partial class Endpoints
             return result.ToHttpResult();
         });
 
-        budgets.MapGet("/{budgetId:guid}/transactions/{transactionId:guid}/assignments", async (
-            Guid budgetId,
-            Guid transactionId,
-            BudgetDbContext db,
-            CancellationToken ct) => await GetTransactionAssignments(budgetId, transactionId, db, ct))
-            .ExcludeFromDescription();
-
         budgets.MapGet("/{budgetId:guid}/transactions/{transactionId:guid}/allocations", async (
             Guid budgetId,
             Guid transactionId,
             BudgetDbContext db,
             CancellationToken ct) => await GetTransactionAssignments(budgetId, transactionId, db, ct));
-
-        budgets.MapPut("/{budgetId:guid}/transactions/{transactionId:guid}/assignments", async (
-            Guid budgetId,
-            Guid transactionId,
-            ReplaceTransactionAssignmentsRequest request,
-            IValidator<ReplaceTransactionAssignmentsRequest> validator,
-            ReplaceTransactionAssignmentsHandler handler,
-            CancellationToken ct) =>
-        {
-            if (await validator.Validate(request, ct) is { } validationProblem)
-            {
-                return validationProblem;
-            }
-
-            var result = await handler.Handle(budgetId, transactionId, request.Assignments, ct);
-            return result.ToHttpResult();
-        }).ExcludeFromDescription();
 
         budgets.MapPut("/{budgetId:guid}/transactions/{transactionId:guid}/allocations", async (
             Guid budgetId,
@@ -268,16 +230,6 @@ public static partial class Endpoints
             var result = await handler.Handle(budgetId, transactionId, request.Allocations, ct);
             return result.ToHttpResult();
         });
-
-        budgets.MapDelete("/{budgetId:guid}/transactions/{transactionId:guid}/assignments", async (
-            Guid budgetId,
-            Guid transactionId,
-            ClearTransactionAssignmentsHandler handler,
-            CancellationToken ct) =>
-        {
-            var result = await handler.Handle(budgetId, transactionId, ct);
-            return result.ToHttpResult();
-        }).ExcludeFromDescription();
 
         budgets.MapDelete("/{budgetId:guid}/transactions/{transactionId:guid}/allocations", async (
             Guid budgetId,

@@ -1,6 +1,6 @@
 # BudgetyTzar
 
-BudgetyTzar is a personal budgeting MVP that replaces a monthly spreadsheet with a PostgreSQL-backed HTTP API. The target domain model is a dated ledger: budgets contain budget items, debit and credit budget adjustments, zero-sum reallocations, debit and credit transactions, transaction allocations, snapshots, reconciliation, reports, and durable audit records. Phase 2 introduces Kafka-compatible local infrastructure, outbox publishing, and projection-backed reporting behind disabled-by-default feature flags.
+BudgetyTzar is a personal budgeting MVP that replaces a monthly spreadsheet with a PostgreSQL-backed HTTP API. The target domain model is a dated ledger: budgets contain budget items, debit and credit budget adjustments, zero-sum reallocations, debit and credit transactions, transaction allocations, snapshots, and durable audit records. Phase 2 introduces Kafka-compatible local infrastructure, outbox publishing, and projection-backed reporting behind disabled-by-default feature flags.
 
 ## Phase 1 API
 
@@ -29,13 +29,8 @@ The current implementation is being migrated from an older period-based model to
 - `PUT /api/budgets/{budgetId}/transactions/{transactionId}/allocations`
 - `GET /api/budgets/{budgetId}/transactions/{transactionId}/allocations`
 - `DELETE /api/budgets/{budgetId}/transactions/{transactionId}/allocations`
-- `GET /api/budgets/{budgetId}/reports/activity?from={date}&to={date}`
-- `GET /api/budgets/{budgetId}/reports/budget-item-trends?budgetItemId={itemId}&from={date}&to={date}`
-- `GET /api/budgets/{budgetId}/reports/reconciliation?from={date}&to={date}`
-- `GET /api/budgets/{budgetId}/reports/audit-timeline?from={date}&to={date}`
-- `GET /api/budgets/{budgetId}/reports/activity.csv?from={date}&to={date}`
 
-Balances use ledger signs: credits minus debits. Budget item balances are cumulative by default. Unallocated debit and credit transaction values remain visible in snapshots and reconciliation until they are allocated to budget items.
+Balances use ledger signs: credits minus debits. Budget item balances are cumulative by default. Unallocated debit and credit transaction values remain visible in snapshots until they are allocated to budget items.
 
 ## Local Development
 

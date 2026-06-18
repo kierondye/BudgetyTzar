@@ -46,12 +46,12 @@ public sealed class Phase2EventDrivenTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var period = await CreatePeriod(client, budget.Id);
+        var period = await CreatePeriod(app, budget.Id);
         var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
-        await ReplaceAllocations(client, budget.Id, period.Id, [new BudgetLineAllocationItem(groceries.Id, 100m)]);
+        await ReplaceAllocations(app, period.Id, [new BudgetLineAllocationItem(groceries.Id, 100m)]);
         var transaction = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 12), 35m, TransactionDirection.Debit);
         await ReplaceAssignments(client, budget.Id, transaction.Id, [new TransactionAssignmentItem(groceries.Id, 35m)]);
-        await RecordAdjustment(client, budget.Id, period.Id, groceries.Id, 5m);
+        await RecordAdjustment(client, budget.Id, groceries.Id, 5m);
 
         using (var scope = app.Services.CreateScope())
         {
@@ -79,9 +79,9 @@ public sealed class Phase2EventDrivenTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var period = await CreatePeriod(client, budget.Id);
+        var period = await CreatePeriod(app, budget.Id);
         var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
-        await ReplaceAllocations(client, budget.Id, period.Id, [new BudgetLineAllocationItem(groceries.Id, 100m)]);
+        await ReplaceAllocations(app, period.Id, [new BudgetLineAllocationItem(groceries.Id, 100m)]);
 
         using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
@@ -161,16 +161,12 @@ public sealed class Phase2EventDrivenTests
         await app.ResetDatabaseAsync();
 
         var budget = await CreateBudget(client);
-        var period = await CreatePeriod(client, budget.Id);
+        await CreatePeriod(app, budget.Id);
         var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
         var savings = await CreateBudgetLine(client, budget.Id, "Savings", BudgetLineDirection.Debit);
         var archived = await CreateBudgetLine(client, budget.Id, "Old category", BudgetLineDirection.Debit);
-        await ReplaceAllocations(client, budget.Id, period.Id, [
-            new BudgetLineAllocationItem(groceries.Id, 100m),
-            new BudgetLineAllocationItem(savings.Id, 25m)
-        ]);
-        await RecordReallocation(client, budget.Id, period.Id, groceries.Id, savings.Id, 10m);
-        await RecordAdjustment(client, budget.Id, period.Id, groceries.Id, 5m);
+        await RecordReallocation(client, budget.Id, groceries.Id, savings.Id, 10m);
+        await RecordAdjustment(client, budget.Id, groceries.Id, 5m);
         await ArchiveBudgetLine(client, budget.Id, archived.Id);
 
         var transaction = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 12), 35m, TransactionDirection.Debit);
@@ -197,9 +193,7 @@ public sealed class Phase2EventDrivenTests
         var expectedEventTypes = new[]
         {
             "budgetytzar.budgeting.budget-created.v1",
-            "budgetytzar.budgeting.budget-period-created.v1",
             "budgetytzar.budgeting.budget-line-created.v1",
-            "budgetytzar.budgeting.budget-line-allocations-replaced.v1",
             "budgetytzar.budgeting.budget-reallocation-recorded.v1",
             "budgetytzar.budgeting.budget-adjustment-recorded.v1",
             "budgetytzar.budgeting.budget-line-archived.v1",
@@ -324,30 +318,32 @@ public sealed class Phase2EventDrivenTests
         return (await response.Content.ReadFromJsonAsync<Budget>())!;
     }
 
-    private static async Task<BudgetPeriod> CreatePeriod(HttpClient client, Guid budgetId)
+    private static async Task<BudgetPeriod> CreatePeriod(BudgetApiFactory app, Guid budgetId)
     {
-        var response = await client.PostAsJsonAsync(
-            $"/api/budgets/{budgetId}/periods",
-            new CreateBudgetPeriodRequest("June 2026", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30)));
-        response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<BudgetPeriod>())!;
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var period = BudgetPeriod.Create(budgetId, "June 2026", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30));
+        db.BudgetPeriods.Add(period);
+        await db.SaveChangesAsync();
+        return period;
     }
 
-    private static async Task<BudgetLine> CreateBudgetLine(HttpClient client, Guid budgetId, string name, BudgetLineDirection direction)
+    private static async Task<BudgetItemDto> CreateBudgetLine(HttpClient client, Guid budgetId, string name, BudgetLineDirection direction)
     {
         var response = await client.PostAsJsonAsync(
-            $"/api/budgets/{budgetId}/budget-lines",
-            new CreateBudgetLineRequest(name, direction, BudgetLineRolloverType.PeriodReset));
+            $"/api/budgets/{budgetId}/budget-items",
+            new CreateBudgetItemRequest(name));
         response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<BudgetLine>())!;
+        return (await response.Content.ReadFromJsonAsync<BudgetItemDto>())!;
     }
 
-    private static async Task ReplaceAllocations(HttpClient client, Guid budgetId, Guid periodId, IReadOnlyList<BudgetLineAllocationItem> allocations)
+    private static async Task ReplaceAllocations(BudgetApiFactory app, Guid periodId, IReadOnlyList<BudgetLineAllocationItem> allocations)
     {
-        var response = await client.PutAsJsonAsync(
-            $"/api/budgets/{budgetId}/periods/{periodId}/allocations",
-            new ReplaceBudgetLineAllocationsRequest(allocations));
-        response.EnsureSuccessStatusCode();
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var period = await db.BudgetPeriods.AsNoTracking().SingleAsync(x => x.Id == periodId);
+        db.BudgetLineAllocations.AddRange(period.ReplaceAllocations(allocations));
+        await db.SaveChangesAsync();
     }
 
     private static async Task<FinancialTransaction> CreateTransaction(HttpClient client, Guid budgetId, DateOnly date, decimal amount, TransactionDirection direction)
@@ -362,14 +358,14 @@ public sealed class Phase2EventDrivenTests
     private static async Task ReplaceAssignments(HttpClient client, Guid budgetId, Guid transactionId, IReadOnlyList<TransactionAssignmentItem> assignments)
     {
         var response = await client.PutAsJsonAsync(
-            $"/api/budgets/{budgetId}/transactions/{transactionId}/assignments",
-            new ReplaceTransactionAssignmentsRequest(assignments));
+            $"/api/budgets/{budgetId}/transactions/{transactionId}/allocations",
+            new ReplaceTransactionAllocationsRequest(assignments));
         response.EnsureSuccessStatusCode();
     }
 
     private static async Task ClearAssignments(HttpClient client, Guid budgetId, Guid transactionId)
     {
-        var response = await client.DeleteAsync($"/api/budgets/{budgetId}/transactions/{transactionId}/assignments");
+        var response = await client.DeleteAsync($"/api/budgets/{budgetId}/transactions/{transactionId}/allocations");
         response.EnsureSuccessStatusCode();
     }
 
@@ -387,25 +383,31 @@ public sealed class Phase2EventDrivenTests
         response.EnsureSuccessStatusCode();
     }
 
-    private static async Task RecordAdjustment(HttpClient client, Guid budgetId, Guid periodId, Guid budgetLineId, decimal amount)
+    private static async Task RecordAdjustment(HttpClient client, Guid budgetId, Guid budgetLineId, decimal amount)
     {
         var response = await client.PostAsJsonAsync(
-            $"/api/budgets/{budgetId}/periods/{periodId}/adjustments",
-            new CreateBudgetAdjustmentRequest(budgetLineId, amount, "Projection test adjustment"));
+            $"/api/budgets/{budgetId}/budget-items/{budgetLineId}/adjustments",
+            new CreateBudgetItemAdjustmentRequest(amount, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 12), "Projection test adjustment"));
         response.EnsureSuccessStatusCode();
     }
 
-    private static async Task RecordReallocation(HttpClient client, Guid budgetId, Guid periodId, Guid fromBudgetLineId, Guid toBudgetLineId, decimal amount)
+    private static async Task RecordReallocation(HttpClient client, Guid budgetId, Guid fromBudgetLineId, Guid toBudgetLineId, decimal amount)
     {
         var response = await client.PostAsJsonAsync(
-            $"/api/budgets/{budgetId}/periods/{periodId}/reallocations",
-            new CreateBudgetReallocationRequest(fromBudgetLineId, toBudgetLineId, amount, "Schema validation reallocation"));
+            $"/api/budgets/{budgetId}/reallocations",
+            new CreateBudgetItemReallocationRequest(
+                new DateOnly(2026, 6, 12),
+                "Schema validation reallocation",
+                [
+                    new BudgetReallocationAdjustmentItem(fromBudgetLineId, amount, BudgetAdjustmentType.Credit),
+                    new BudgetReallocationAdjustmentItem(toBudgetLineId, amount, BudgetAdjustmentType.Debit)
+                ]));
         response.EnsureSuccessStatusCode();
     }
 
     private static async Task ArchiveBudgetLine(HttpClient client, Guid budgetId, Guid budgetLineId)
     {
-        var response = await client.PostAsync($"/api/budgets/{budgetId}/budget-lines/{budgetLineId}/archive", null);
+        var response = await client.PostAsync($"/api/budgets/{budgetId}/budget-items/{budgetLineId}/archive", null);
         response.EnsureSuccessStatusCode();
     }
 

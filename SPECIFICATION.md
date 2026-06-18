@@ -627,11 +627,7 @@ POST /api/budgets/{budgetId}/transactions/{transactionId}/ignore
 ### 12.3 Example Reporting API
 
 ```http
-GET /api/budgets/{budgetId}/reports/activity?from={date}&to={date}
-GET /api/budgets/{budgetId}/reports/budget-item-trends?budgetItemId={id}&from={date}&to={date}
-GET /api/budgets/{budgetId}/reports/reconciliation?from={date}&to={date}
-GET /api/budgets/{budgetId}/reports/audit-timeline?from={date}&to={date}
-GET /api/budgets/{budgetId}/reports/activity.csv?from={date}&to={date}
+GET /api/budgets/{budgetId}/snapshot?date={date}
 ```
 
 ### 12.4 Example Snapshot Response
