@@ -81,11 +81,88 @@ public sealed class Phase1SpecGapBehaviorTests
         var afterDebit = await client.GetFromJsonAsync<BudgetSnapshot>(
             $"/api/budgets/{budget.Id}/snapshot?date=2026-06-02");
 
-        Assert.Equal(2_500m, beforeDebit!.BudgetItems.Single(x => x.BudgetItemId == salary.Id).Balance);
+        Assert.Equal(-2_500m, beforeDebit!.BudgetItems.Single(x => x.BudgetItemId == salary.Id).Balance);
         Assert.DoesNotContain(beforeDebit.BudgetItems, x => x.BudgetItemId == groceries.Id && x.Balance != 0);
-        Assert.Equal(-500m, afterDebit!.BudgetItems.Single(x => x.BudgetItemId == groceries.Id).Balance);
-        Assert.Equal(10m, afterDebit.BudgetItems.Single(x => x.BudgetItemId == retired.Id).Balance);
+        Assert.Equal(500m, afterDebit!.BudgetItems.Single(x => x.BudgetItemId == groceries.Id).Balance);
+        Assert.Equal(-10m, afterDebit.BudgetItems.Single(x => x.BudgetItemId == retired.Id).Balance);
         Assert.True(afterDebit.BudgetItems.Single(x => x.BudgetItemId == retired.Id).IsArchived);
+    }
+
+    [Fact]
+    public async Task CanonicalBudgetSnapshotTracksPlannedActualAndUnbudgetedBalances()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var salary = await CreateBudgetItem(client, budget.Id, "Salary");
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
+        var mortgage = await CreateBudgetItem(client, budget.Id, "Mortgage");
+        var incidentals = await CreateBudgetItem(client, budget.Id, "Incidentals");
+
+        await RecordBudgetItemAdjustment(client, budget.Id, salary.Id, 2_500m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 18), "Initial budget for salary.");
+        await RecordBudgetItemAdjustment(client, budget.Id, groceries.Id, 500m, BudgetAdjustmentType.Debit, new DateOnly(2026, 6, 18), "Initial budget for groceries.");
+        await RecordBudgetItemAdjustment(client, budget.Id, mortgage.Id, 800m, BudgetAdjustmentType.Debit, new DateOnly(2026, 6, 18), "Initial budget for mortgage.");
+        await RecordBudgetItemAdjustment(client, budget.Id, incidentals.Id, 1_000m, BudgetAdjustmentType.Debit, new DateOnly(2026, 6, 18), "Initial budget for incidentals.");
+
+        var initialSnapshot = await GetSnapshot(client, budget.Id, new DateOnly(2026, 6, 18));
+        AssertSnapshot(
+            initialSnapshot,
+            -200m,
+            0m,
+            [
+                (salary.Id, -2_500m),
+                (groceries.Id, 500m),
+                (mortgage.Id, 800m),
+                (incidentals.Id, 1_000m)
+            ]);
+
+        var pay = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 19), 3_000m, TransactionDirection.Credit);
+        await ReplaceAssignments(client, budget.Id, pay.Id, [new TransactionAssignmentItem(salary.Id, 3_000m)]);
+
+        var afterSalarySnapshot = await GetSnapshot(client, budget.Id, new DateOnly(2026, 6, 19));
+        AssertSnapshot(
+            afterSalarySnapshot,
+            3_000m,
+            200m,
+            [
+                (salary.Id, 500m),
+                (groceries.Id, 500m),
+                (mortgage.Id, 800m),
+                (incidentals.Id, 1_000m)
+            ]);
+
+        var supermarket = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 20), 200m, TransactionDirection.Debit);
+        await ReplaceAssignments(client, budget.Id, supermarket.Id, [
+            new TransactionAssignmentItem(groceries.Id, 150m),
+            new TransactionAssignmentItem(incidentals.Id, 40m)
+        ]);
+
+        var afterSpendSnapshot = await GetSnapshot(client, budget.Id, new DateOnly(2026, 6, 21));
+        AssertSnapshot(
+            afterSpendSnapshot,
+            2_800m,
+            190m,
+            [
+                (salary.Id, 500m),
+                (groceries.Id, 350m),
+                (mortgage.Id, 800m),
+                (incidentals.Id, 960m)
+            ]);
+
+        await RecordBudgetItemAdjustment(client, budget.Id, salary.Id, 2_500m, BudgetAdjustmentType.Credit, new DateOnly(2026, 7, 18), "Second expected salary.");
+
+        var julySnapshot = await GetSnapshot(client, budget.Id, new DateOnly(2026, 7, 18));
+        AssertSnapshot(
+            julySnapshot,
+            300m,
+            190m,
+            [
+                (salary.Id, -2_000m),
+                (groceries.Id, 350m),
+                (mortgage.Id, 800m),
+                (incidentals.Id, 960m)
+            ]);
     }
 
     [Fact]
@@ -127,8 +204,8 @@ public sealed class Phase1SpecGapBehaviorTests
 
         var snapshot = await client.GetFromJsonAsync<BudgetSnapshot>(
             $"/api/budgets/{budget.Id}/snapshot?date=2026-06-05");
-        Assert.Equal(30m, snapshot!.BudgetItems.Single(x => x.BudgetItemId == dining.Id).Balance);
-        Assert.Equal(-30m, snapshot.BudgetItems.Single(x => x.BudgetItemId == groceries.Id).Balance);
+        Assert.Equal(-30m, snapshot!.BudgetItems.Single(x => x.BudgetItemId == dining.Id).Balance);
+        Assert.Equal(30m, snapshot.BudgetItems.Single(x => x.BudgetItemId == groceries.Id).Balance);
     }
 
     [Fact]
@@ -523,6 +600,26 @@ date,description,amount,direction,source account,external reference,notes
                 null));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<FinancialTransaction>())!;
+    }
+
+    private static async Task<BudgetSnapshot> GetSnapshot(HttpClient client, Guid budgetId, DateOnly date)
+    {
+        return (await client.GetFromJsonAsync<BudgetSnapshot>(
+            $"/api/budgets/{budgetId}/snapshot?date={date:yyyy-MM-dd}"))!;
+    }
+
+    private static void AssertSnapshot(
+        BudgetSnapshot snapshot,
+        decimal totalBalance,
+        decimal unbudgetedBalance,
+        IReadOnlyList<(Guid BudgetItemId, decimal Balance)> expectedBalances)
+    {
+        Assert.Equal(totalBalance, snapshot.TotalBalance);
+        Assert.Equal(unbudgetedBalance, snapshot.UnbudgetedBalance);
+        foreach (var expected in expectedBalances)
+        {
+            Assert.Equal(expected.Balance, snapshot.BudgetItems.Single(x => x.BudgetItemId == expected.BudgetItemId).Balance);
+        }
     }
 
     private static async Task ReplaceAssignments(

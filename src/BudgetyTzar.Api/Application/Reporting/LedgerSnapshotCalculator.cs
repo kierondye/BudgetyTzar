@@ -11,6 +11,8 @@ public sealed record BudgetSnapshot(
     decimal UnallocatedCreditTotal,
     decimal UnallocatedBalance,
     decimal TotalTransactionBalance,
+    decimal UnbudgetedBalance,
+    decimal TotalBalance,
     IReadOnlyList<BudgetSnapshotItem> BudgetItems);
 
 public sealed record BudgetSnapshotItem(
@@ -77,7 +79,7 @@ public static class LedgerSnapshotCalculator
                 var actualDebit = lineAssignments
                     .Where(x => transactionsById[x.TransactionId].Direction == TransactionDirection.Debit)
                     .Sum(x => x.Amount);
-                var balance = plannedCredit - plannedDebit + actualCredit - actualDebit;
+                var balance = plannedDebit - plannedCredit + actualCredit - actualDebit;
 
                 return new BudgetSnapshotItem(
                     line.Id,
@@ -104,15 +106,39 @@ public static class LedgerSnapshotCalculator
             .Where(x => x.Direction == TransactionDirection.Credit)
             .Sum(x => Math.Max(0, x.Amount - assignmentTotals.GetValueOrDefault(x.Id)));
         var totalTransactionBalance = transactions.Sum(x => x.Direction == TransactionDirection.Credit ? x.Amount : -x.Amount);
+        var totalBudgetedBalance = items.Sum(x => x.Balance);
+        var unbudgetedBalance = 0m;
+        if (transactions.Count > 0)
+        {
+            var latestTransactionDate = transactions.Max(x => x.TransactionDate);
+            var budgetedBalanceAtLatestTransaction = items.Sum(item =>
+            {
+                var plannedCreditAtLatestTransaction = adjustments
+                    .Where(x => x.BudgetLineId == item.BudgetItemId
+                        && x.Date <= latestTransactionDate
+                        && x.Type == BudgetAdjustmentType.Credit)
+                    .Sum(x => x.Amount);
+                var plannedDebitAtLatestTransaction = adjustments
+                    .Where(x => x.BudgetLineId == item.BudgetItemId
+                        && x.Date <= latestTransactionDate
+                        && x.Type == BudgetAdjustmentType.Debit)
+                    .Sum(x => x.Amount);
+
+                return plannedDebitAtLatestTransaction - plannedCreditAtLatestTransaction + item.ActualCredit - item.ActualDebit;
+            });
+            unbudgetedBalance = totalTransactionBalance - budgetedBalanceAtLatestTransaction;
+        }
 
         return new BudgetSnapshot(
             budgetId,
             date,
-            items.Sum(x => x.Balance),
+            totalBudgetedBalance,
             unallocatedDebit,
             unallocatedCredit,
-            unallocatedCredit - unallocatedDebit,
+            unbudgetedBalance,
             totalTransactionBalance,
+            unbudgetedBalance,
+            totalBudgetedBalance + unbudgetedBalance,
             items);
     }
 }
