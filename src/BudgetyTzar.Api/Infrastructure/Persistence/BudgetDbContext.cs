@@ -23,6 +23,7 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
     public DbSet<TransactionAssignmentSummaryProjection> TransactionAssignmentSummaries => Set<TransactionAssignmentSummaryProjection>();
     public DbSet<CumulativeBudgetLineBalanceProjection> CumulativeBudgetLineBalances => Set<CumulativeBudgetLineBalanceProjection>();
     public DbSet<BudgetAuditTimelineProjection> BudgetAuditTimelines => Set<BudgetAuditTimelineProjection>();
+    public DbSet<ProcessedProjectionEvent> ProcessedProjectionEvents => Set<ProcessedProjectionEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -84,16 +85,23 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Amount).HasPrecision(18, 2);
             entity.Property(x => x.Reason).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.Notes).HasMaxLength(500);
             entity.HasIndex(x => x.BudgetPeriodId);
+            entity.HasIndex(x => new { x.BudgetId, x.Date });
         });
 
         modelBuilder.Entity<BudgetAdjustment>(entity =>
         {
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Amount).HasPrecision(18, 2);
+            entity.Property(x => x.LegacySignedAmount).HasPrecision(18, 2);
+            entity.Property(x => x.Type).HasConversion<string>().HasMaxLength(16);
             entity.Property(x => x.Reason).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.Notes).HasMaxLength(500);
             entity.HasIndex(x => x.BudgetPeriodId);
             entity.HasIndex(x => x.BudgetLineId);
+            entity.HasIndex(x => new { x.BudgetId, x.Date });
+            entity.HasIndex(x => x.ReallocationId);
         });
 
         modelBuilder.Entity<AuditEvent>(entity =>
@@ -221,6 +229,14 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
             entity.Property(x => x.EntityType).HasMaxLength(80).IsRequired();
             entity.Property(x => x.Description).HasMaxLength(500).IsRequired();
             entity.HasIndex(x => new { x.BudgetId, x.BudgetPeriodId, x.OccurredAt });
+        });
+
+        modelBuilder.Entity<ProcessedProjectionEvent>(entity =>
+        {
+            entity.ToTable("processed_projection_event");
+            entity.HasKey(x => x.EventId);
+            entity.Property(x => x.EventType).HasMaxLength(160).IsRequired();
+            entity.HasIndex(x => new { x.BudgetId, x.ProcessedAt });
         });
     }
 }

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://budgetytzar.local/contracts/events/budgeting/budget-line-created.v1.schema.json",
+  "title": "Budget Line Created",
+  "type": "object",
+  "required": ["auditEventId", "budgetId", "budgetPeriodId", "entityType", "entityId", "eventName", "description", "appliesToAllPeriods"],
+  "properties": {
+    "auditEventId": { "type": "string", "format": "uuid" },
+    "budgetId": { "type": "string", "format": "uuid" },
+    "budgetPeriodId": { "type": ["string", "null"], "format": "uuid" },
+    "entityType": { "const": "BudgetLine" },
+    "entityId": { "type": "string", "format": "uuid" },
+    "eventName": { "const": "BudgetLineCreated" },
+    "description": { "type": "string" },
+    "details": { "type": ["string", "null"] },
+    "appliesToAllPeriods": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}

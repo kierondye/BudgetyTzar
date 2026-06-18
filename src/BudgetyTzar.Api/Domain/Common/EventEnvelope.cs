@@ -13,6 +13,17 @@ public sealed record EventEnvelope(
     int SchemaVersion,
     JsonObject Payload);
 
+public sealed record EventEnvelope<TPayload>(
+    Guid EventId,
+    string EventType,
+    DateTimeOffset OccurredAt,
+    Guid CorrelationId,
+    Guid? CausationId,
+    Guid AggregateId,
+    string AggregateType,
+    int SchemaVersion,
+    TPayload Payload);
+
 public static class EventTypes
 {
     private static readonly IReadOnlyDictionary<string, string> CanonicalNames = new Dictionary<string, string>

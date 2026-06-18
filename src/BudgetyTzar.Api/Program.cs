@@ -7,6 +7,8 @@ using BudgetyTzar.Api.Infrastructure.Events;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi.Models;
+using Swashbuckle.AspNetCore.SwaggerGen;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,7 +44,12 @@ builder.Services.AddScoped<IgnoreTransactionHandler>();
 builder.Services.AddScoped<ReplaceTransactionAssignmentsHandler>();
 builder.Services.AddScoped<ClearTransactionAssignmentsHandler>();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.OrderActionsBy(apiDescription =>
+        $"{apiDescription.RelativePath} {apiDescription.HttpMethod}");
+    options.DocumentFilter<AlphabeticalPathsDocumentFilter>();
+});
 
 var app = builder.Build();
 
@@ -68,3 +75,19 @@ api.MapBudgetEndpoints();
 await app.RunAsync();
 
 public partial class Program;
+
+public sealed class AlphabeticalPathsDocumentFilter : IDocumentFilter
+{
+    public void Apply(OpenApiDocument swaggerDoc, DocumentFilterContext context)
+    {
+        var sortedPaths = swaggerDoc.Paths
+            .OrderBy(path => path.Key, StringComparer.Ordinal)
+            .ToList();
+
+        swaggerDoc.Paths.Clear();
+        foreach (var path in sortedPaths)
+        {
+            swaggerDoc.Paths.Add(path.Key, path.Value);
+        }
+    }
+}

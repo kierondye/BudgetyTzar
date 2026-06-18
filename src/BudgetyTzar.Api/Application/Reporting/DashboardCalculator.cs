@@ -101,7 +101,7 @@ public static class DashboardCalculator
                         .Sum(x => SignedAssignmentAmount(x, line, periodTransactionsById[x.TransactionId]));
                     var adjustmentAmount = periodAdjustments
                         .Where(x => x.BudgetLineId == line.Id)
-                        .Sum(x => x.Amount);
+                        .Sum(LegacyAdjustmentAmount);
                     var closingBalance = line.Direction == BudgetLineDirection.Debit
                         ? openingBalance + allocated + reallocationIn - reallocationOut - actualAmount + adjustmentAmount
                         : actualAmount - allocated + adjustmentAmount;
@@ -207,6 +207,18 @@ public static class DashboardCalculator
 
         return sameDirection ? assignment.Amount : -assignment.Amount;
     }
+
+    private static decimal LegacyAdjustmentAmount(BudgetAdjustment adjustment) =>
+        adjustment.LegacySignedAmount != 0
+            ? adjustment.LegacySignedAmount
+            : adjustment.BudgetId == Guid.Empty && adjustment.Date == default
+                ? adjustment.Amount
+            : adjustment.Type switch
+            {
+                BudgetAdjustmentType.Debit => -adjustment.Amount,
+                BudgetAdjustmentType.Credit => adjustment.Amount,
+                _ => adjustment.Amount
+            };
 }
 
 public static class DashboardQueries

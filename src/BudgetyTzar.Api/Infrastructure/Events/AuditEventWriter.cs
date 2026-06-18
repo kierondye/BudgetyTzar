@@ -2,7 +2,6 @@ using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 
 namespace BudgetyTzar.Api.Infrastructure.Events;
 
@@ -27,7 +26,7 @@ public sealed class AuditEventWriter(BudgetDbContext db, IOptions<EventTopicOpti
 
         var canonicalEventType = EventTypes.ToCanonical(domainEvent.EventType);
         var outboxId = Guid.NewGuid();
-        var envelope = new EventEnvelope(
+        var envelope = new EventEnvelope<CanonicalEventPayload>(
             outboxId,
             canonicalEventType,
             occurredAt,
@@ -36,7 +35,7 @@ public sealed class AuditEventWriter(BudgetDbContext db, IOptions<EventTopicOpti
             domainEvent.EntityId,
             domainEvent.EntityType,
             1,
-            BuildPayload(domainEvent, audit.Id));
+            CanonicalEventPayload.From(domainEvent, audit.Id));
 
         db.OutboxMessages.Add(new OutboxMessage
         {
@@ -90,17 +89,4 @@ public sealed class AuditEventWriter(BudgetDbContext db, IOptions<EventTopicOpti
         }
     }
 
-    private static JsonObject BuildPayload(DomainEvent domainEvent, Guid auditEventId) =>
-        new()
-        {
-            ["auditEventId"] = auditEventId,
-            ["budgetId"] = domainEvent.BudgetId,
-            ["budgetPeriodId"] = domainEvent.BudgetPeriodId,
-            ["entityType"] = domainEvent.EntityType,
-            ["entityId"] = domainEvent.EntityId,
-            ["eventName"] = domainEvent.EventType,
-            ["description"] = domainEvent.Description,
-            ["details"] = domainEvent.Details,
-            ["appliesToAllPeriods"] = domainEvent.AppliesToAllPeriods
-        };
 }

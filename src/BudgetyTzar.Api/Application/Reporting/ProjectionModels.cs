@@ -91,3 +91,12 @@ public sealed class BudgetAuditTimelineProjection
     public required string Description { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
+
+public sealed class ProcessedProjectionEvent
+{
+    public Guid EventId { get; set; }
+    public required string EventType { get; set; }
+    public Guid? BudgetId { get; set; }
+    public DateTimeOffset OccurredAt { get; set; }
+    public DateTimeOffset ProcessedAt { get; set; } = DateTimeOffset.UtcNow;
+}

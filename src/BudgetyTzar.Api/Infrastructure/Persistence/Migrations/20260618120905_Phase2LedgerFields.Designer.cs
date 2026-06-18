@@ -3,6 +3,7 @@ using System;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(BudgetDbContext))]
-    partial class BudgetDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260618120905_Phase2LedgerFields")]
+    partial class Phase2LedgerFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -285,33 +288,6 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                     b.HasIndex("BudgetId", "StartDate");
 
                     b.ToTable("period_budget_summary", (string)null);
-                });
-
-            modelBuilder.Entity("BudgetyTzar.Api.Application.Reporting.ProcessedProjectionEvent", b =>
-                {
-                    b.Property<Guid>("EventId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("BudgetId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("character varying(160)");
-
-                    b.Property<DateTimeOffset>("OccurredAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset>("ProcessedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("EventId");
-
-                    b.HasIndex("BudgetId", "ProcessedAt");
-
-                    b.ToTable("processed_projection_event", (string)null);
                 });
 
             modelBuilder.Entity("BudgetyTzar.Api.Application.Reporting.TransactionAssignmentSummaryProjection", b =>

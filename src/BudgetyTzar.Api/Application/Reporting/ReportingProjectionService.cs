@@ -15,6 +15,7 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
         db.TransactionAssignmentSummaries.RemoveRange(db.TransactionAssignmentSummaries);
         db.CumulativeBudgetLineBalances.RemoveRange(db.CumulativeBudgetLineBalances);
         db.BudgetAuditTimelines.RemoveRange(db.BudgetAuditTimelines);
+        db.ProcessedProjectionEvents.RemoveRange(db.ProcessedProjectionEvents);
         await db.SaveChangesAsync(ct);
 
         var budgetIds = await db.OutboxMessages
@@ -32,11 +33,27 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
     public async Task ProjectEnvelope(string envelopeJson, CancellationToken ct)
     {
         var envelope = JsonSerializer.Deserialize<EventEnvelope>(envelopeJson, EventSerialization.Options);
-        if (envelope?.Payload["budgetId"] is { } budgetIdNode)
+        if (envelope is null
+            || await db.ProcessedProjectionEvents.AnyAsync(x => x.EventId == envelope.EventId, ct))
         {
-            var budgetId = budgetIdNode.GetValue<Guid>();
-            await RebuildBudget(budgetId, ct);
+            return;
         }
+
+        Guid? budgetId = null;
+        if (envelope.Payload["budgetId"] is { } budgetIdNode)
+        {
+            budgetId = budgetIdNode.GetValue<Guid>();
+            await RebuildBudget(budgetId.Value, ct);
+        }
+
+        db.ProcessedProjectionEvents.Add(new ProcessedProjectionEvent
+        {
+            EventId = envelope.EventId,
+            EventType = envelope.EventType,
+            BudgetId = budgetId,
+            OccurredAt = envelope.OccurredAt
+        });
+        await db.SaveChangesAsync(ct);
     }
 
     public async Task RebuildBudget(Guid budgetId, CancellationToken ct)

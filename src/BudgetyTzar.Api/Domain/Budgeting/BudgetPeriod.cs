@@ -28,6 +28,9 @@ public sealed class BudgetPeriod
     public BudgetAdjustment RecordAdjustment(Guid budgetLineId, decimal amount, string reason) =>
         BudgetAdjustment.Create(Id, budgetLineId, amount, reason);
 
+    public BudgetAdjustment RecordAdjustment(Guid budgetLineId, decimal amount, string reason, DateOnly date) =>
+        BudgetAdjustment.CreateLegacy(BudgetId, Id, budgetLineId, date, amount, reason);
+
     public BudgetReallocation RecordReallocation(Guid fromBudgetLineId, Guid toBudgetLineId, decimal amount, string reason) =>
         BudgetReallocation.Create(Id, fromBudgetLineId, toBudgetLineId, amount, reason);
 

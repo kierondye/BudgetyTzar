@@ -216,12 +216,66 @@ public sealed class RecordAdjustmentHandler(BudgetDbContext db, AuditEventWriter
         }
 
         var period = await db.BudgetPeriods.AsNoTracking().FirstAsync(x => x.Id == periodId, ct);
-        var adjustment = period.RecordAdjustment(budgetLineId, amount, reason);
+        var adjustment = period.RecordAdjustment(budgetLineId, amount, reason, period.StartDate);
         db.BudgetAdjustments.Add(adjustment);
         audit.Add(adjustment.RecordedEvent(budgetId, line.Name));
         await db.SaveChangesAsync(ct);
         return CommandResult<BudgetAdjustment>.Created(adjustment);
     }
+
+    public async Task<CommandResult<BudgetAdjustment>> HandleCanonical(
+        Guid budgetId,
+        Guid budgetLineId,
+        decimal amount,
+        BudgetAdjustmentType type,
+        DateOnly date,
+        string? notes,
+        CancellationToken ct)
+    {
+        if (!await db.Budgets.AnyAsync(x => x.Id == budgetId, ct))
+        {
+            return CommandResult<BudgetAdjustment>.NotFound();
+        }
+
+        var periodId = await FindPeriodIdForDate(budgetId, date, ct);
+        var line = await eligibility.GetEligibleBudgetLine(budgetId, periodId, budgetLineId, ct);
+        if (line is null)
+        {
+            return CommandResult<BudgetAdjustment>.NotFound();
+        }
+
+        var adjustment = BudgetAdjustment.Create(budgetId, budgetLineId, amount, type, date, notes, periodId);
+        if (!await NetPlannedSpendingIsValid(budgetId, adjustment, ct))
+        {
+            return CommandResult<BudgetAdjustment>.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(amount)] = ["Net planned spending must not exceed net planned income."]
+            });
+        }
+
+        db.BudgetAdjustments.Add(adjustment);
+        audit.Add(adjustment.RecordedEvent(budgetId, line.Name));
+        await db.SaveChangesAsync(ct);
+        return CommandResult<BudgetAdjustment>.Created(adjustment);
+    }
+
+    private async Task<Guid?> FindPeriodIdForDate(Guid budgetId, DateOnly date, CancellationToken ct) =>
+        (await db.BudgetPeriods
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.BudgetId == budgetId && x.StartDate <= date && x.EndDate >= date, ct))?.Id;
+
+    private async Task<bool> NetPlannedSpendingIsValid(Guid budgetId, BudgetAdjustment pending, CancellationToken ct)
+    {
+        var existing = await db.BudgetAdjustments
+            .AsNoTracking()
+            .Where(x => x.BudgetId == budgetId || x.BudgetId == Guid.Empty)
+            .ToListAsync(ct);
+        var net = existing.Sum(SignedPlannedAmount) + SignedPlannedAmount(pending);
+        return net >= 0;
+    }
+
+    private static decimal SignedPlannedAmount(BudgetAdjustment adjustment) =>
+        adjustment.Type == BudgetAdjustmentType.Credit ? adjustment.Amount : -adjustment.Amount;
 }
 
 public sealed class RecordReallocationHandler(BudgetDbContext db, AuditEventWriter audit, BudgetLineEligibilityService eligibility)
@@ -280,9 +334,63 @@ public sealed class RecordReallocationHandler(BudgetDbContext db, AuditEventWrit
 
         var period = await db.BudgetPeriods.AsNoTracking().FirstAsync(x => x.Id == periodId, ct);
         var reallocation = period.RecordReallocation(fromBudgetLineId, toBudgetLineId, amount, reason);
+        reallocation.BudgetId = budgetId;
+        reallocation.Date = period.StartDate;
         db.BudgetReallocations.Add(reallocation);
         audit.Add(reallocation.RecordedEvent(budgetId));
         await db.SaveChangesAsync(ct);
         return CommandResult<BudgetReallocation>.Created(reallocation);
     }
+
+    public async Task<CommandResult<BudgetReallocation>> HandleCanonical(
+        Guid budgetId,
+        DateOnly date,
+        string? notes,
+        IReadOnlyList<BudgetReallocationAdjustmentItem> adjustments,
+        CancellationToken ct)
+    {
+        if (!await db.Budgets.AnyAsync(x => x.Id == budgetId, ct))
+        {
+            return CommandResult<BudgetReallocation>.NotFound();
+        }
+
+        if (adjustments.Count < 2)
+        {
+            return CommandResult<BudgetReallocation>.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(adjustments)] = ["A reallocation must contain at least two adjustments."]
+            });
+        }
+
+        var creditTotal = adjustments.Where(x => x.Type == BudgetAdjustmentType.Credit).Sum(x => x.Amount);
+        var debitTotal = adjustments.Where(x => x.Type == BudgetAdjustmentType.Debit).Sum(x => x.Amount);
+        if (creditTotal != debitTotal)
+        {
+            return CommandResult<BudgetReallocation>.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(adjustments)] = ["Reallocation credits must equal reallocation debits."]
+            });
+        }
+
+        var periodId = await FindPeriodIdForDate(budgetId, date, ct);
+        var lineIds = adjustments.Select(x => x.BudgetItemId).Distinct().ToArray();
+        var lines = await eligibility.GetEligibleBudgetLines(budgetId, periodId, lineIds, ct);
+        if (lines.Count != lineIds.Length)
+        {
+            return CommandResult<BudgetReallocation>.NotFound();
+        }
+
+        var reallocation = BudgetReallocation.Create(budgetId, date, notes);
+        db.BudgetReallocations.Add(reallocation);
+        db.BudgetAdjustments.AddRange(adjustments.Select(x =>
+            BudgetAdjustment.Create(budgetId, x.BudgetItemId, x.Amount, x.Type, date, notes, periodId, reallocation.Id)));
+        audit.Add(reallocation.RecordedEvent(budgetId));
+        await db.SaveChangesAsync(ct);
+        return CommandResult<BudgetReallocation>.Created(reallocation);
+    }
+
+    private async Task<Guid?> FindPeriodIdForDate(Guid budgetId, DateOnly date, CancellationToken ct) =>
+        (await db.BudgetPeriods
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.BudgetId == budgetId && x.StartDate <= date && x.EndDate >= date, ct))?.Id;
 }

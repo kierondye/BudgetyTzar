@@ -40,7 +40,7 @@ public static partial class Endpoints
                 .OrderBy(x => x.Id)
                 .ToListAsync(ct);
             return Results.Ok(allocations);
-        });
+        }).ExcludeFromDescription();
 
         budgets.MapPut("/{budgetId:guid}/periods/{periodId:guid}/allocations", async (
             Guid budgetId,
@@ -57,6 +57,6 @@ public static partial class Endpoints
 
             var result = await handler.Handle(budgetId, periodId, request.Allocations, ct);
             return result.ToHttpResult();
-        });
+        }).ExcludeFromDescription();
     }
 }

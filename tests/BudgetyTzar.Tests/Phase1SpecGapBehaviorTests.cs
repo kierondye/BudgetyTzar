@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using BudgetyTzar.Api;
 using BudgetyTzar.Api.Application.Reporting;
 using BudgetyTzar.Api.Application.Transactions;
@@ -10,6 +11,161 @@ namespace BudgetyTzar.Tests;
 
 public sealed class Phase1SpecGapBehaviorTests
 {
+    [Fact]
+    public async Task SwaggerOnlyAdvertisesCanonicalBudgetingRoutes()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+
+        using var swagger = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
+        var orderedPaths = swagger.RootElement.GetProperty("paths").EnumerateObject().Select(x => x.Name).ToList();
+        var paths = orderedPaths.ToHashSet();
+
+        Assert.Contains("/api/budgets/{budgetId}/budget-items/{budgetItemId}/adjustments", paths);
+        Assert.Contains("/api/budgets/{budgetId}/reallocations", paths);
+        Assert.Contains("/api/budgets/{budgetId}/transactions/{transactionId}/allocations", paths);
+        Assert.Contains("/api/budgets/{budgetId}/snapshot", paths);
+
+        Assert.DoesNotContain("/api/budgets/{budgetId}/periods/{periodId}/adjustments", paths);
+        Assert.DoesNotContain("/api/budgets/{budgetId}/periods/{periodId}/reallocations", paths);
+        Assert.DoesNotContain("/api/budgets/{budgetId}/periods/{periodId}/allocations", paths);
+        Assert.DoesNotContain("/api/budgets/{budgetId}/budget-lines", paths);
+        Assert.DoesNotContain("/api/budgets/{budgetId}/transactions/{transactionId}/assignments", paths);
+        Assert.DoesNotContain("/api/budgets/{budgetId}/reports/period-summary", paths);
+        Assert.DoesNotContain("/api/budgets/{budgetId}/reports/budget-line-trends", paths);
+        Assert.Equal(orderedPaths.Order(StringComparer.Ordinal).ToList(), orderedPaths);
+    }
+
+    [Fact]
+    public async Task CanonicalBudgetItemApiCreatesNameOnlyItemsAndHidesLegacyDirectionFields()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/budgets/{budget.Id}/budget-items",
+            new CreateBudgetItemRequest("Groceries"));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Groceries", json);
+        Assert.DoesNotContain("direction", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("rolloverType", json, StringComparison.OrdinalIgnoreCase);
+
+        var items = await client.GetFromJsonAsync<IReadOnlyList<BudgetItemDto>>(
+            $"/api/budgets/{budget.Id}/budget-items");
+        var item = Assert.Single(items!);
+        Assert.Equal("Groceries", item.Name);
+    }
+
+    [Fact]
+    public async Task CanonicalAdjustmentsSnapshotAndArchivedHistoryUseLedgerSigns()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var salary = await CreateBudgetItem(client, budget.Id, "Salary");
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
+        var retired = await CreateBudgetItem(client, budget.Id, "Retired");
+
+        await RecordBudgetItemAdjustment(client, budget.Id, salary.Id, 2_500m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 1), "Expected salary");
+        await RecordBudgetItemAdjustment(client, budget.Id, groceries.Id, 500m, BudgetAdjustmentType.Debit, new DateOnly(2026, 6, 2), "Expected groceries");
+        await RecordBudgetItemAdjustment(client, budget.Id, retired.Id, 10m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 2), "Historical balance");
+        await client.PostAsync($"/api/budgets/{budget.Id}/budget-items/{retired.Id}/archive", null);
+
+        var beforeDebit = await client.GetFromJsonAsync<BudgetSnapshot>(
+            $"/api/budgets/{budget.Id}/snapshot?date=2026-06-01");
+        var afterDebit = await client.GetFromJsonAsync<BudgetSnapshot>(
+            $"/api/budgets/{budget.Id}/snapshot?date=2026-06-02");
+
+        Assert.Equal(2_500m, beforeDebit!.BudgetItems.Single(x => x.BudgetItemId == salary.Id).Balance);
+        Assert.DoesNotContain(beforeDebit.BudgetItems, x => x.BudgetItemId == groceries.Id && x.Balance != 0);
+        Assert.Equal(-500m, afterDebit!.BudgetItems.Single(x => x.BudgetItemId == groceries.Id).Balance);
+        Assert.Equal(10m, afterDebit.BudgetItems.Single(x => x.BudgetItemId == retired.Id).Balance);
+        Assert.True(afterDebit.BudgetItems.Single(x => x.BudgetItemId == retired.Id).IsArchived);
+    }
+
+    [Fact]
+    public async Task CanonicalGroupedReallocationRequiresZeroSumAndCreatesLinkedAdjustments()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var dining = await CreateBudgetItem(client, budget.Id, "Dining");
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
+
+        var invalid = await client.PostAsJsonAsync(
+            $"/api/budgets/{budget.Id}/reallocations",
+            new CreateBudgetItemReallocationRequest(
+                new DateOnly(2026, 6, 5),
+                "Unbalanced",
+                [
+                    new BudgetReallocationAdjustmentItem(dining.Id, 30m, BudgetAdjustmentType.Credit),
+                    new BudgetReallocationAdjustmentItem(groceries.Id, 20m, BudgetAdjustmentType.Debit)
+                ]));
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+
+        var valid = await client.PostAsJsonAsync(
+            $"/api/budgets/{budget.Id}/reallocations",
+            new CreateBudgetItemReallocationRequest(
+                new DateOnly(2026, 6, 5),
+                "Move budget",
+                [
+                    new BudgetReallocationAdjustmentItem(dining.Id, 30m, BudgetAdjustmentType.Credit),
+                    new BudgetReallocationAdjustmentItem(groceries.Id, 30m, BudgetAdjustmentType.Debit)
+                ]));
+        Assert.Equal(HttpStatusCode.Created, valid.StatusCode);
+
+        var reallocations = await client.GetFromJsonAsync<IReadOnlyList<BudgetReallocationDto>>(
+            $"/api/budgets/{budget.Id}/reallocations");
+        var reallocation = Assert.Single(reallocations!);
+        Assert.Equal(2, reallocation.Adjustments.Count);
+
+        var snapshot = await client.GetFromJsonAsync<BudgetSnapshot>(
+            $"/api/budgets/{budget.Id}/snapshot?date=2026-06-05");
+        Assert.Equal(30m, snapshot!.BudgetItems.Single(x => x.BudgetItemId == dining.Id).Balance);
+        Assert.Equal(-30m, snapshot.BudgetItems.Single(x => x.BudgetItemId == groceries.Id).Balance);
+    }
+
+    [Fact]
+    public async Task CanonicalDateRangeReportsUseLedgerActivityAndReconciliation()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var salary = await CreateBudgetItem(client, budget.Id, "Salary");
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
+        await RecordBudgetItemAdjustment(client, budget.Id, salary.Id, 2_500m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 1), "Expected salary");
+        await RecordBudgetItemAdjustment(client, budget.Id, groceries.Id, 500m, BudgetAdjustmentType.Debit, new DateOnly(2026, 6, 1), "Expected groceries");
+        var pay = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 15), 2_400m, TransactionDirection.Credit);
+        var spend = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 16), 120m, TransactionDirection.Debit);
+        await client.PutAsJsonAsync(
+            $"/api/budgets/{budget.Id}/transactions/{pay.Id}/allocations",
+            new ReplaceTransactionAllocationsRequest([new TransactionAssignmentItem(salary.Id, 2_400m)]));
+        await client.PutAsJsonAsync(
+            $"/api/budgets/{budget.Id}/transactions/{spend.Id}/allocations",
+            new ReplaceTransactionAllocationsRequest([new TransactionAssignmentItem(groceries.Id, 100m)]));
+
+        var activity = await client.GetFromJsonAsync<BudgetActivityReport>(
+            $"/api/budgets/{budget.Id}/reports/activity?from=2026-06-01&to=2026-06-30");
+        var reconciliation = await client.GetFromJsonAsync<ReconciliationReport>(
+            $"/api/budgets/{budget.Id}/reports/reconciliation?from=2026-06-01&to=2026-06-30");
+        var csv = await client.GetStringAsync(
+            $"/api/budgets/{budget.Id}/reports/activity.csv?from=2026-06-01&to=2026-06-30");
+
+        Assert.Equal(2_500m, activity!.BudgetItems.Single(x => x.BudgetItemId == salary.Id).PlannedCredit);
+        Assert.Equal(2_400m, activity.BudgetItems.Single(x => x.BudgetItemId == salary.Id).ActualCredit);
+        Assert.Equal(500m, activity.BudgetItems.Single(x => x.BudgetItemId == groceries.Id).PlannedDebit);
+        Assert.Equal(100m, activity.BudgetItems.Single(x => x.BudgetItemId == groceries.Id).ActualDebit);
+        Assert.Equal(20m, reconciliation!.DebitDifference);
+        Assert.Contains("budgetItemId,name,plannedCredit", csv);
+    }
+
     [Fact]
     public async Task ReallocationRejectsMovingMoreThanSourceClosingBalance()
     {
@@ -304,6 +460,30 @@ date,description,amount,direction,source account,external reference,notes
             new CreateBudgetLineRequest(name, direction, BudgetLineRolloverType.PeriodReset));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<BudgetLine>())!;
+    }
+
+    private static async Task<BudgetItemDto> CreateBudgetItem(HttpClient client, Guid budgetId, string name)
+    {
+        var response = await client.PostAsJsonAsync(
+            $"/api/budgets/{budgetId}/budget-items",
+            new CreateBudgetItemRequest(name));
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<BudgetItemDto>())!;
+    }
+
+    private static async Task RecordBudgetItemAdjustment(
+        HttpClient client,
+        Guid budgetId,
+        Guid budgetItemId,
+        decimal amount,
+        BudgetAdjustmentType type,
+        DateOnly date,
+        string notes)
+    {
+        var response = await client.PostAsJsonAsync(
+            $"/api/budgets/{budgetId}/budget-items/{budgetItemId}/adjustments",
+            new CreateBudgetItemAdjustmentRequest(amount, type, date, notes));
+        response.EnsureSuccessStatusCode();
     }
 
     private static async Task ArchiveBudgetLine(HttpClient client, Guid budgetId, Guid budgetLineId)

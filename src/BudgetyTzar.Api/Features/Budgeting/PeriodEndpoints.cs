@@ -49,21 +49,21 @@ public static partial class Endpoints
                 .OrderByDescending(x => x.StartDate)
                 .ToListAsync(ct);
             return Results.Ok(periods);
-        });
+        }).ExcludeFromDescription();
 
         budgets.MapGet("/{budgetId:guid}/periods/for-date", async (Guid budgetId, DateOnly date, BudgetDbContext db, CancellationToken ct) =>
             await db.BudgetPeriods
                 .AsNoTracking()
                 .FirstOrDefaultAsync(x => x.BudgetId == budgetId && x.StartDate <= date && x.EndDate >= date, ct) is { } period
                 ? Results.Ok(period)
-                : Results.NotFound());
+                : Results.NotFound()).ExcludeFromDescription();
 
         budgets.MapGet("/{budgetId:guid}/periods/{periodId:guid}", async (Guid budgetId, Guid periodId, BudgetDbContext db, CancellationToken ct) =>
             await db.BudgetPeriods
                 .AsNoTracking()
                 .FirstOrDefaultAsync(x => x.Id == periodId && x.BudgetId == budgetId, ct) is { } period
                 ? Results.Ok(period)
-                : Results.NotFound());
+                : Results.NotFound()).ExcludeFromDescription();
 
         budgets.MapPost("/{budgetId:guid}/periods", async (
             Guid budgetId,
@@ -86,6 +86,6 @@ public static partial class Endpoints
                 request.CopyAllocationsFromPeriodId,
                 ct);
             return result.ToHttpResult(period => Results.Created($"/api/budgets/{budgetId}/periods/{period.Id}", period));
-        });
+        }).ExcludeFromDescription();
     }
 }

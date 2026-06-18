@@ -71,6 +71,95 @@ public sealed class Phase1ApiIntegrationTests
     }
 
     [Fact]
+    public async Task TransactionAllocationAliasCanClearToEmpty()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var transaction = await CreateTransaction(client, budget.Id, 20m, TransactionDirection.Debit);
+        var assignResponse = await client.PutAsJsonAsync(
+            $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
+            new ReplaceTransactionAllocationsRequest([new TransactionAssignmentItem(groceries.Id, 20m)]));
+        assignResponse.EnsureSuccessStatusCode();
+
+        var clearResponse = await client.DeleteAsync($"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations");
+        var allocations = await client.GetFromJsonAsync<IReadOnlyList<TransactionAssignment>>(
+            $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations");
+
+        Assert.Equal(HttpStatusCode.NoContent, clearResponse.StatusCode);
+        Assert.Empty(allocations!);
+        Assert.Equal(0, await app.CountAssignmentsAsync(transaction.Id));
+    }
+
+    [Fact]
+    public async Task TransactionAllocationAliasCanReplaceWithSplitAllocations()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var household = await CreateBudgetLine(client, budget.Id, "Household", BudgetLineDirection.Debit);
+        var transaction = await CreateTransaction(client, budget.Id, 50m, TransactionDirection.Debit);
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
+            new ReplaceTransactionAllocationsRequest([
+                new TransactionAssignmentItem(groceries.Id, 30m),
+                new TransactionAssignmentItem(household.Id, 15m)
+            ]));
+        var allocations = await client.GetFromJsonAsync<IReadOnlyList<TransactionAssignment>>(
+            $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations");
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(2, allocations!.Count);
+        Assert.Contains(allocations, x => x.BudgetLineId == groceries.Id && x.Amount == 30m);
+        Assert.Contains(allocations, x => x.BudgetLineId == household.Id && x.Amount == 15m);
+    }
+
+    [Fact]
+    public async Task TransactionAllocationAliasRejectsOverAllocation()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var transaction = await CreateTransaction(client, budget.Id, 20m, TransactionDirection.Debit);
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
+            new ReplaceTransactionAllocationsRequest([new TransactionAssignmentItem(groceries.Id, 20.01m)]));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, await app.CountAssignmentsAsync(transaction.Id));
+    }
+
+    [Fact]
+    public async Task TransactionAllocationAliasCanGetExistingAssignments()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var transaction = await CreateTransaction(client, budget.Id, 20m, TransactionDirection.Debit);
+        var assignResponse = await client.PutAsJsonAsync(
+            $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/assignments",
+            new ReplaceTransactionAssignmentsRequest([new TransactionAssignmentItem(groceries.Id, 12m)]));
+        assignResponse.EnsureSuccessStatusCode();
+
+        var allocations = await client.GetFromJsonAsync<IReadOnlyList<TransactionAssignment>>(
+            $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations");
+
+        var allocation = Assert.Single(allocations!);
+        Assert.Equal(groceries.Id, allocation.BudgetLineId);
+        Assert.Equal(12m, allocation.Amount);
+    }
+
+    [Fact]
     public async Task TransactionEditWritesAuditAndPreservesAssignments()
     {
         await using var app = new BudgetApiFactory();

@@ -22,6 +22,7 @@ public sealed record UpdateTransactionRequest(
     string? ExternalReference,
     string? Notes);
 public sealed record ReplaceTransactionAssignmentsRequest(IReadOnlyList<TransactionAssignmentItem> Assignments);
+public sealed record ReplaceTransactionAllocationsRequest(IReadOnlyList<TransactionAssignmentItem> Allocations);
 public sealed class CreateTransactionValidator : AbstractValidator<CreateTransactionRequest>
 {
     public CreateTransactionValidator()
@@ -54,6 +55,19 @@ public sealed class ReplaceTransactionAssignmentsValidator : AbstractValidator<R
     {
         RuleFor(x => x.Assignments).NotNull();
         RuleForEach(x => x.Assignments).ChildRules(item =>
+        {
+            item.RuleFor(x => x.BudgetLineId).NotEmpty();
+            item.RuleFor(x => x.Amount).PositiveAmount();
+        });
+    }
+}
+
+public sealed class ReplaceTransactionAllocationsValidator : AbstractValidator<ReplaceTransactionAllocationsRequest>
+{
+    public ReplaceTransactionAllocationsValidator()
+    {
+        RuleFor(x => x.Allocations).NotNull();
+        RuleForEach(x => x.Allocations).ChildRules(item =>
         {
             item.RuleFor(x => x.BudgetLineId).NotEmpty();
             item.RuleFor(x => x.Amount).PositiveAmount();
@@ -212,20 +226,14 @@ public static partial class Endpoints
             Guid budgetId,
             Guid transactionId,
             BudgetDbContext db,
-            CancellationToken ct) =>
-        {
-            if (!await db.Transactions.AnyAsync(x => x.Id == transactionId && x.BudgetId == budgetId, ct))
-            {
-                return Results.NotFound();
-            }
+            CancellationToken ct) => await GetTransactionAssignments(budgetId, transactionId, db, ct))
+            .ExcludeFromDescription();
 
-            var assignments = await db.TransactionAssignments
-                .AsNoTracking()
-                .Where(x => x.TransactionId == transactionId)
-                .OrderBy(x => x.Id)
-                .ToListAsync(ct);
-            return Results.Ok(assignments);
-        });
+        budgets.MapGet("/{budgetId:guid}/transactions/{transactionId:guid}/allocations", async (
+            Guid budgetId,
+            Guid transactionId,
+            BudgetDbContext db,
+            CancellationToken ct) => await GetTransactionAssignments(budgetId, transactionId, db, ct));
 
         budgets.MapPut("/{budgetId:guid}/transactions/{transactionId:guid}/assignments", async (
             Guid budgetId,
@@ -242,6 +250,23 @@ public static partial class Endpoints
 
             var result = await handler.Handle(budgetId, transactionId, request.Assignments, ct);
             return result.ToHttpResult();
+        }).ExcludeFromDescription();
+
+        budgets.MapPut("/{budgetId:guid}/transactions/{transactionId:guid}/allocations", async (
+            Guid budgetId,
+            Guid transactionId,
+            ReplaceTransactionAllocationsRequest request,
+            IValidator<ReplaceTransactionAllocationsRequest> validator,
+            ReplaceTransactionAssignmentsHandler handler,
+            CancellationToken ct) =>
+        {
+            if (await validator.Validate(request, ct) is { } validationProblem)
+            {
+                return validationProblem;
+            }
+
+            var result = await handler.Handle(budgetId, transactionId, request.Allocations, ct);
+            return result.ToHttpResult();
         });
 
         budgets.MapDelete("/{budgetId:guid}/transactions/{transactionId:guid}/assignments", async (
@@ -252,6 +277,35 @@ public static partial class Endpoints
         {
             var result = await handler.Handle(budgetId, transactionId, ct);
             return result.ToHttpResult();
+        }).ExcludeFromDescription();
+
+        budgets.MapDelete("/{budgetId:guid}/transactions/{transactionId:guid}/allocations", async (
+            Guid budgetId,
+            Guid transactionId,
+            ClearTransactionAssignmentsHandler handler,
+            CancellationToken ct) =>
+        {
+            var result = await handler.Handle(budgetId, transactionId, ct);
+            return result.ToHttpResult();
         });
+    }
+
+    private static async Task<IResult> GetTransactionAssignments(
+        Guid budgetId,
+        Guid transactionId,
+        BudgetDbContext db,
+        CancellationToken ct)
+    {
+        if (!await db.Transactions.AnyAsync(x => x.Id == transactionId && x.BudgetId == budgetId, ct))
+        {
+            return Results.NotFound();
+        }
+
+        var assignments = await db.TransactionAssignments
+            .AsNoTracking()
+            .Where(x => x.TransactionId == transactionId)
+            .OrderBy(x => x.Id)
+            .ToListAsync(ct);
+        return Results.Ok(assignments);
     }
 }
