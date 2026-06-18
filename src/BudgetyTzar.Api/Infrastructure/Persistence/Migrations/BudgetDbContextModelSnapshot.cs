@@ -31,13 +31,14 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("BudgetId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("BudgetPeriodId")
-                        .HasColumnType("uuid");
-
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Details")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
 
                     b.Property<Guid>("EntityId")
                         .HasColumnType("uuid");
@@ -60,231 +61,73 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
 
                     b.HasKey("AuditEventId");
 
-                    b.HasIndex("BudgetId", "BudgetPeriodId", "OccurredAt");
+                    b.HasIndex("BudgetId", "OccurredAt");
 
                     b.ToTable("budget_audit_timeline", (string)null);
                 });
 
-            modelBuilder.Entity("BudgetyTzar.Api.Application.Reporting.BudgetLinePeriodSummaryProjection", b =>
+            modelBuilder.Entity("BudgetyTzar.Api.Application.Reporting.BudgetSnapshotItemProjection", b =>
                 {
-                    b.Property<Guid>("BudgetPeriodId")
+                    b.Property<Guid>("SnapshotId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("BudgetLineId")
+                    b.Property<Guid>("BudgetItemId")
                         .HasColumnType("uuid");
 
-                    b.Property<decimal>("ActualAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal>("AdjustmentAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal>("Allocated")
+                    b.Property<decimal>("Balance")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
                     b.Property<Guid>("BudgetId")
                         .HasColumnType("uuid");
 
-                    b.Property<decimal>("ClosingBalance")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<string>("Direction")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<bool>("IsArchived")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsOverBudget")
-                        .HasColumnType("boolean");
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(120)
                         .HasColumnType("character varying(120)");
 
-                    b.Property<decimal>("OpeningBalance")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal>("ReallocationIn")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal>("ReallocationOut")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<string>("RolloverType")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.HasKey("BudgetPeriodId", "BudgetLineId");
+                    b.HasKey("SnapshotId", "BudgetItemId");
 
-                    b.HasIndex("BudgetId", "BudgetLineId");
+                    b.HasIndex("BudgetId", "Date");
 
-                    b.ToTable("budget_line_period_summary", (string)null);
+                    b.ToTable("budget_snapshot_item", (string)null);
                 });
 
-            modelBuilder.Entity("BudgetyTzar.Api.Application.Reporting.CreditBudgetLinePeriodSummaryProjection", b =>
+            modelBuilder.Entity("BudgetyTzar.Api.Application.Reporting.BudgetSnapshotProjection", b =>
                 {
-                    b.Property<Guid>("BudgetPeriodId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("BudgetLineId")
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("ActualCredit")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<Guid>("BudgetId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("BudgetLineName")
-                        .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
-
-                    b.Property<decimal>("CreditVariance")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<DateOnly>("EndDate")
-                        .HasColumnType("date");
-
-                    b.Property<string>("PeriodName")
-                        .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
-
-                    b.Property<decimal>("PlannedCredit")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<DateOnly>("StartDate")
-                        .HasColumnType("date");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("BudgetPeriodId", "BudgetLineId");
-
-                    b.HasIndex("BudgetId", "StartDate");
-
-                    b.ToTable("credit_budget_line_period_summary", (string)null);
-                });
-
-            modelBuilder.Entity("BudgetyTzar.Api.Application.Reporting.CumulativeBudgetLineBalanceProjection", b =>
-                {
-                    b.Property<Guid>("BudgetPeriodId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("BudgetLineId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("BudgetId")
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("ClosingBalance")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal>("OpeningBalance")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("BudgetPeriodId", "BudgetLineId");
-
-                    b.HasIndex("BudgetId", "BudgetLineId");
-
-                    b.ToTable("cumulative_budget_line_balance", (string)null);
-                });
-
-            modelBuilder.Entity("BudgetyTzar.Api.Application.Reporting.PeriodBudgetSummaryProjection", b =>
-                {
-                    b.Property<Guid>("BudgetPeriodId")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<decimal>("ActualCredit")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal>("ActualDebit")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
                     b.Property<Guid>("BudgetId")
                         .HasColumnType("uuid");
 
-                    b.Property<decimal>("CreditVariance")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal>("DebitRemaining")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal>("DebitVariance")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<DateOnly>("EndDate")
+                    b.Property<DateOnly>("Date")
                         .HasColumnType("date");
 
-                    b.Property<decimal>("PartiallyAssignedCreditTotal")
+                    b.Property<decimal>("TotalBalance")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
-                    b.Property<decimal>("PartiallyAssignedDebitTotal")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<string>("PeriodName")
-                        .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
-
-                    b.Property<decimal>("PlannedCredit")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal>("PlannedDebit")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<DateOnly>("StartDate")
-                        .HasColumnType("date");
-
-                    b.Property<decimal>("UnassignedCreditTotal")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal>("UnassignedDebitTotal")
+                    b.Property<decimal>("UnbudgetedBalance")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.HasKey("BudgetPeriodId");
+                    b.HasKey("Id");
 
-                    b.HasIndex("BudgetId", "StartDate");
+                    b.HasIndex("BudgetId", "Date")
+                        .IsUnique();
 
-                    b.ToTable("period_budget_summary", (string)null);
+                    b.ToTable("budget_snapshot", (string)null);
                 });
 
             modelBuilder.Entity("BudgetyTzar.Api.Application.Reporting.ProcessedProjectionEvent", b =>
@@ -314,48 +157,6 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("processed_projection_event", (string)null);
                 });
 
-            modelBuilder.Entity("BudgetyTzar.Api.Application.Reporting.TransactionAssignmentSummaryProjection", b =>
-                {
-                    b.Property<Guid>("TransactionId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("AssignedAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<Guid>("BudgetId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("BudgetPeriodId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Direction")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<bool>("IsIgnored")
-                        .HasColumnType("boolean");
-
-                    b.Property<decimal>("TransactionAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal>("UnassignedAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("TransactionId");
-
-                    b.HasIndex("BudgetId", "BudgetPeriodId");
-
-                    b.ToTable("transaction_assignment_summary", (string)null);
-                });
-
             modelBuilder.Entity("BudgetyTzar.Api.AuditEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -366,9 +167,6 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<Guid>("BudgetId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("BudgetPeriodId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("Description")
@@ -398,11 +196,11 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("BudgetId", "OccurredAt");
+
                     b.HasIndex("EntityType", "EntityId");
 
                     b.HasIndex("BudgetId", "AppliesToAllPeriods", "OccurredAt");
-
-                    b.HasIndex("BudgetId", "BudgetPeriodId", "OccurredAt");
 
                     b.ToTable("AuditEvents");
                 });
@@ -449,9 +247,6 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("BudgetLineId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("BudgetPeriodId")
-                        .HasColumnType("uuid");
-
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -483,8 +278,6 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("BudgetLineId");
 
-                    b.HasIndex("BudgetPeriodId");
-
                     b.HasIndex("ReallocationId");
 
                     b.HasIndex("BudgetId", "Date");
@@ -504,11 +297,6 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Direction")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
                     b.Property<bool>("IsArchived")
                         .HasColumnType("boolean");
 
@@ -517,75 +305,12 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                         .HasMaxLength(120)
                         .HasColumnType("character varying(120)");
 
-                    b.Property<string>("RolloverType")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
                     b.HasKey("Id");
 
                     b.HasIndex("BudgetId", "Name")
                         .IsUnique();
 
                     b.ToTable("BudgetLines");
-                });
-
-            modelBuilder.Entity("BudgetyTzar.Api.BudgetLineAllocation", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("Amount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<Guid>("BudgetLineId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("BudgetPeriodId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BudgetPeriodId", "BudgetLineId")
-                        .IsUnique();
-
-                    b.ToTable("BudgetLineAllocations");
-                });
-
-            modelBuilder.Entity("BudgetyTzar.Api.BudgetPeriod", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("BudgetId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateOnly>("EndDate")
-                        .HasColumnType("date");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
-
-                    b.Property<DateOnly>("StartDate")
-                        .HasColumnType("date");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BudgetId", "StartDate", "EndDate")
-                        .IsUnique();
-
-                    b.ToTable("BudgetPeriods");
                 });
 
             modelBuilder.Entity("BudgetyTzar.Api.BudgetReallocation", b =>
@@ -599,9 +324,6 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                         .HasColumnType("numeric(18,2)");
 
                     b.Property<Guid>("BudgetId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("BudgetPeriodId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")
@@ -626,8 +348,6 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("BudgetPeriodId");
 
                     b.HasIndex("BudgetId", "Date");
 
@@ -707,9 +427,6 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(80)");
 
                     b.Property<Guid?>("BudgetId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("BudgetPeriodId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")

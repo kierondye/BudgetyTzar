@@ -15,7 +15,6 @@ public sealed class OutboxMessage
     public Guid AggregateId { get; set; }
     public required string AggregateType { get; set; }
     public Guid? BudgetId { get; set; }
-    public Guid? BudgetPeriodId { get; set; }
     public required string EnvelopeJson { get; set; }
     public OutboxMessageStatus Status { get; set; } = OutboxMessageStatus.Pending;
     public int RetryCount { get; set; }

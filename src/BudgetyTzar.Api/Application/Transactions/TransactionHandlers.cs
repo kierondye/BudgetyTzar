@@ -29,14 +29,13 @@ public sealed class CreateTransactionHandler(BudgetDbContext db, AuditEventWrite
 
         var transaction = FinancialTransaction.Create(budgetId, transactionDate, description, amount, direction, sourceAccount, externalReference, notes);
         db.Transactions.Add(transaction);
-        var periodId = await BudgetPeriodLookup.FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
         audit.Add(new DomainEvent(
             "TransactionManuallyCreated",
             budgetId,
-            periodId,
             nameof(FinancialTransaction),
             transaction.Id,
-            $"Created transaction {transaction.Description} for {transaction.Amount} {transaction.Direction}."));
+            $"Created transaction {transaction.Description} for {transaction.Amount} {transaction.Direction}.",
+            Payload: TransactionEventPayloads.TransactionPayload(transaction)));
         await db.SaveChangesAsync(ct);
         return CommandResult<FinancialTransaction>.Created(transaction);
     }
@@ -74,22 +73,20 @@ public sealed class UpdateTransactionHandler(BudgetDbContext db, AuditEventWrite
             });
         }
 
-        var previousPeriodId = await BudgetPeriodLookup.FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
         var previousDescription = transaction.Description;
         var previousAmount = transaction.Amount;
         var previousDirection = transaction.Direction;
 
         transaction.Edit(transactionDate, description, amount, direction, sourceAccount, externalReference, notes);
 
-        var periodId = await BudgetPeriodLookup.FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
         audit.Add(new DomainEvent(
             "TransactionEdited",
             budgetId,
-            periodId,
             nameof(FinancialTransaction),
             transaction.Id,
             $"Edited transaction {transaction.Description}.",
-            $"Previous={previousDescription}, {previousAmount} {previousDirection}, Period={previousPeriodId}; New={transaction.Description}, {transaction.Amount} {transaction.Direction}, Period={periodId}"));
+            $"Previous={previousDescription}, {previousAmount} {previousDirection}; New={transaction.Description}, {transaction.Amount} {transaction.Direction}",
+            Payload: TransactionEventPayloads.TransactionPayload(transaction)));
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent();
     }
@@ -106,14 +103,13 @@ public sealed class IgnoreTransactionHandler(BudgetDbContext db, AuditEventWrite
         }
 
         transaction.Ignore();
-        var periodId = await BudgetPeriodLookup.FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
         audit.Add(new DomainEvent(
             "TransactionIgnored",
             budgetId,
-            periodId,
             nameof(FinancialTransaction),
             transaction.Id,
-            $"Ignored transaction {transaction.Description}."));
+            $"Ignored transaction {transaction.Description}.",
+            Payload: TransactionEventPayloads.TransactionPayload(transaction)));
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent();
     }
@@ -138,8 +134,7 @@ public sealed class ReplaceTransactionAssignmentsHandler(BudgetDbContext db, Aud
             });
         }
 
-        var periodId = await BudgetPeriodLookup.FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
-        var budgetLines = await eligibility.GetEligibleBudgetLines(budgetId, periodId, requestedLineIds, ct);
+        var budgetLines = await eligibility.GetEligibleBudgetLines(budgetId, requestedLineIds, ct);
         if (budgetLines.Count != requestedLineIds.Length)
         {
             return CommandResult.NotFound();
@@ -162,11 +157,21 @@ public sealed class ReplaceTransactionAssignmentsHandler(BudgetDbContext db, Aud
         audit.Add(new DomainEvent(
             assignments.Count > 1 ? "TransactionSplit" : "TransactionAssigned",
             budgetId,
-            periodId,
             nameof(FinancialTransaction),
             transactionId,
             $"Replaced assignments for transaction {transaction.Description}.",
-            $"Previous={TransactionAssignmentFormatting.Format(existing)}; New={TransactionAssignmentFormatting.Format(assignments)}"));
+            $"Previous={TransactionAssignmentFormatting.Format(existing)}; New={TransactionAssignmentFormatting.Format(assignments)}",
+            Payload: new
+            {
+                TransactionId = transaction.Id,
+                BudgetId = budgetId,
+                TransactionAmount = transaction.Amount,
+                Assignments = assignments.Select(x => new
+                {
+                    BudgetItemId = x.BudgetLineId,
+                    x.Amount
+                }).ToList()
+            }));
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent();
     }
@@ -186,15 +191,23 @@ public sealed class ClearTransactionAssignmentsHandler(BudgetDbContext db, Audit
             .Where(x => x.TransactionId == transactionId)
             .ToListAsync(ct);
         db.TransactionAssignments.RemoveRange(assignments);
-        var periodId = await BudgetPeriodLookup.FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
         audit.Add(new DomainEvent(
             "TransactionAssignmentsCleared",
             budgetId,
-            periodId,
             nameof(FinancialTransaction),
             transactionId,
             $"Cleared assignments for transaction {transaction.Description}.",
-            TransactionAssignmentFormatting.Format(assignments)));
+            TransactionAssignmentFormatting.Format(assignments),
+            Payload: new
+            {
+                TransactionId = transaction.Id,
+                BudgetId = budgetId,
+                ClearedAssignments = assignments.Select(x => new
+                {
+                    BudgetItemId = x.BudgetLineId,
+                    x.Amount
+                }).ToList()
+            }));
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent();
     }
@@ -253,11 +266,17 @@ public sealed class PreviewTransactionImportHandler(BudgetDbContext db, AuditEve
         audit.Add(new DomainEvent(
             "TransactionImportBatchPreviewed",
             budgetId,
-            null,
             nameof(TransactionImportBatch),
             batch.Id,
-            $"Previewed import batch {batch.FileName} with {batch.RowCount} row(s)."));
-        await audit.AddImportBatchPeriodAudits(budgetId, batch.Id, batch.FileName, rows, "TransactionImportBatchPreviewed", "Previewed", ct);
+            $"Previewed import batch {batch.FileName} with {batch.RowCount} row(s).",
+            Payload: new
+            {
+                ImportBatchId = batch.Id,
+                BudgetId = budgetId,
+                batch.FileName,
+                batch.RowCount,
+                batch.DuplicateCandidateCount
+            }));
         await db.SaveChangesAsync(ct);
 
         return CommandResult<TransactionImportDetail>.Created(new TransactionImportDetail(batch, rows));
@@ -312,27 +331,49 @@ public sealed class CommitTransactionImportHandler(BudgetDbContext db, AuditEven
             db.Transactions.Add(transaction);
             row.MarkCommitted(transaction.Id);
 
-            var periodId = await BudgetPeriodLookup.FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
             audit.Add(new DomainEvent(
                 "TransactionImported",
                 budgetId,
-                periodId,
                 nameof(FinancialTransaction),
                 transaction.Id,
-                $"Imported transaction {transaction.Description} from batch {batch.FileName}."));
+                $"Imported transaction {transaction.Description} from batch {batch.FileName}.",
+                Payload: TransactionEventPayloads.TransactionPayload(transaction)));
         }
 
         batch.Commit(DateTimeOffset.UtcNow);
         audit.Add(new DomainEvent(
             "TransactionImportBatchCommitted",
             budgetId,
-            null,
             nameof(TransactionImportBatch),
             batch.Id,
-            $"Committed import batch {batch.FileName} with {rows.Count} row(s)."));
-        await audit.AddImportBatchPeriodAudits(budgetId, batch.Id, batch.FileName, rows, "TransactionImportBatchCommitted", "Committed", ct);
+            $"Committed import batch {batch.FileName} with {rows.Count} row(s).",
+            Payload: new
+            {
+                ImportBatchId = batch.Id,
+                BudgetId = budgetId,
+                batch.FileName,
+                RowCount = rows.Count
+            }));
         await db.SaveChangesAsync(ct);
 
         return CommandResult<TransactionImportDetail>.Success(new TransactionImportDetail(batch, rows));
     }
+}
+
+file static class TransactionEventPayloads
+{
+    public static object TransactionPayload(FinancialTransaction transaction) => new
+    {
+        TransactionId = transaction.Id,
+        transaction.BudgetId,
+        transaction.ImportBatchId,
+        transaction.TransactionDate,
+        transaction.Description,
+        transaction.Amount,
+        Direction = transaction.Direction,
+        transaction.SourceAccount,
+        transaction.ExternalReference,
+        transaction.Notes,
+        transaction.IsIgnored
+    };
 }

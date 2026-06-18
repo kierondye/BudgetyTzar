@@ -3,17 +3,11 @@
   "$id": "https://budgetytzar.local/contracts/events/budgeting/budget-created.v1.schema.json",
   "title": "Budget Created",
   "type": "object",
-  "required": ["auditEventId", "budgetId", "budgetPeriodId", "entityType", "entityId", "eventName", "description", "appliesToAllPeriods"],
+  "required": ["auditEventId", "budgetId", "name", "currency"],
   "properties": {
     "auditEventId": { "type": "string", "format": "uuid" },
     "budgetId": { "type": "string", "format": "uuid" },
-    "budgetPeriodId": { "type": ["string", "null"], "format": "uuid" },
-    "entityType": { "const": "Budget" },
-    "entityId": { "type": "string", "format": "uuid" },
-    "eventName": { "const": "BudgetCreated" },
-    "description": { "type": "string" },
-    "details": { "type": ["string", "null"] },
-    "appliesToAllPeriods": { "type": "boolean" }
-  },
-  "additionalProperties": false
+    "name": { "type": "string" },
+    "currency": { "type": "string" }
+  }
 }

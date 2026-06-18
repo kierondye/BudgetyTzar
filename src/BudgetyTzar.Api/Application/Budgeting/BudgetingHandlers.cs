@@ -19,7 +19,7 @@ public sealed class CreateBudgetHandler(BudgetDbContext db, AuditEventWriter aud
 
 public sealed class CreateBudgetLineHandler(BudgetDbContext db, AuditEventWriter audit)
 {
-    public async Task<CommandResult<BudgetLine>> Handle(Guid budgetId, string name, BudgetLineDirection direction, BudgetLineRolloverType rolloverType, CancellationToken ct)
+    public async Task<CommandResult<BudgetLine>> Handle(Guid budgetId, string name, CancellationToken ct)
     {
         if (!await db.Budgets.AnyAsync(x => x.Id == budgetId, ct))
         {
@@ -35,7 +35,7 @@ public sealed class CreateBudgetLineHandler(BudgetDbContext db, AuditEventWriter
             });
         }
 
-        var line = BudgetLine.Create(budgetId, trimmedName, direction, rolloverType);
+        var line = BudgetLine.Create(budgetId, trimmedName);
         db.BudgetLines.Add(line);
         audit.Add(line.CreatedEvent());
         await db.SaveChangesAsync(ct);
@@ -75,14 +75,13 @@ public sealed class RecordAdjustmentHandler(BudgetDbContext db, AuditEventWriter
             return CommandResult<BudgetAdjustment>.NotFound();
         }
 
-        var periodId = await BudgetPeriodLookup.FindPeriodIdForDate(db, budgetId, date, ct);
-        var line = await eligibility.GetEligibleBudgetLine(budgetId, periodId, budgetLineId, ct);
+        var line = await eligibility.GetEligibleBudgetLine(budgetId, budgetLineId, ct);
         if (line is null)
         {
             return CommandResult<BudgetAdjustment>.NotFound();
         }
 
-        var adjustment = BudgetAdjustment.Create(budgetId, budgetLineId, amount, type, date, notes, periodId);
+        var adjustment = BudgetAdjustment.Create(budgetId, budgetLineId, amount, type, date, notes);
         if (!await NetPlannedSpendingIsValid(budgetId, adjustment, ct))
         {
             return CommandResult<BudgetAdjustment>.ValidationProblem(new Dictionary<string, string[]>
@@ -101,7 +100,7 @@ public sealed class RecordAdjustmentHandler(BudgetDbContext db, AuditEventWriter
     {
         var existing = await db.BudgetAdjustments
             .AsNoTracking()
-            .Where(x => x.BudgetId == budgetId || x.BudgetId == Guid.Empty)
+            .Where(x => x.BudgetId == budgetId)
             .ToListAsync(ct);
         var net = existing.Sum(SignedPlannedAmount) + SignedPlannedAmount(pending);
         return net >= 0;
@@ -143,24 +142,37 @@ public sealed class RecordReallocationHandler(BudgetDbContext db, AuditEventWrit
             });
         }
 
-        var periodId = await BudgetPeriodLookup.FindPeriodIdForDate(db, budgetId, date, ct);
         var lineIds = adjustments.Select(x => x.BudgetItemId).Distinct().ToArray();
-        var lines = await eligibility.GetEligibleBudgetLines(budgetId, periodId, lineIds, ct);
+        var lines = await eligibility.GetEligibleBudgetLines(budgetId, lineIds, ct);
         if (lines.Count != lineIds.Length)
         {
             return CommandResult<BudgetReallocation>.NotFound();
         }
 
         var reallocation = BudgetReallocation.Create(budgetId, date, notes);
-        if (periodId.HasValue)
-        {
-            reallocation.BudgetPeriodId = periodId.Value;
-        }
 
         db.BudgetReallocations.Add(reallocation);
         db.BudgetAdjustments.AddRange(adjustments.Select(x =>
-            BudgetAdjustment.Create(budgetId, x.BudgetItemId, x.Amount, x.Direction, date, notes, periodId, reallocation.Id)));
-        audit.Add(reallocation.RecordedEvent(budgetId));
+            BudgetAdjustment.Create(budgetId, x.BudgetItemId, x.Amount, x.Direction, date, notes, reallocation.Id)));
+        audit.Add(new DomainEvent(
+            "BudgetReallocationRecorded",
+            budgetId,
+            nameof(BudgetReallocation),
+            reallocation.Id,
+            $"Recorded budget reallocation {reallocation.Id}: {reallocation.Reason}",
+            Payload: new
+            {
+                BudgetReallocationId = reallocation.Id,
+                BudgetId = budgetId,
+                Date = date,
+                Notes = notes,
+                Adjustments = adjustments.Select(x => new
+                {
+                    x.BudgetItemId,
+                    x.Amount,
+                    Direction = x.Direction
+                }).ToList()
+            }));
         await db.SaveChangesAsync(ct);
         return CommandResult<BudgetReallocation>.Created(reallocation);
     }

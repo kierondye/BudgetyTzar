@@ -57,15 +57,6 @@ internal sealed class PostgresBudgetApiFactory : WebApplicationFactory<Program>
             .FirstOrDefaultAsync(x => x.Id == transactionId);
     }
 
-    public async Task<BudgetLineAllocation?> GetAllocationAsync(Guid periodId, Guid budgetLineId)
-    {
-        using var scope = Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
-        return await db.BudgetLineAllocations
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.BudgetPeriodId == periodId && x.BudgetLineId == budgetLineId);
-    }
-
     public async Task<TransactionAssignment?> GetAssignmentAsync(Guid transactionId, Guid budgetLineId)
     {
         using var scope = Services.CreateScope();

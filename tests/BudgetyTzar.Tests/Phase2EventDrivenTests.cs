@@ -16,7 +16,7 @@ namespace BudgetyTzar.Tests;
 public sealed class Phase2EventDrivenTests
 {
     [Fact]
-    public async Task CommandsWriteAuditRecordsAndOutboxEnvelopesAtomically()
+    public async Task CommandsWriteAuditRecordsAndDomainShapedOutboxEnvelopesAtomically()
     {
         await using var app = new BudgetApiFactory();
         var client = app.CreateClient();
@@ -36,22 +36,24 @@ public sealed class Phase2EventDrivenTests
         Assert.Equal(outbox.Id, envelope.EventId);
         Assert.Equal(outbox.EventType, envelope.EventType);
         Assert.Equal(budget.Id, envelope.Payload["budgetId"]!.GetValue<Guid>());
+        Assert.Equal(budget.Name, envelope.Payload["name"]!.GetValue<string>());
+        Assert.Equal(budget.Currency, envelope.Payload["currency"]!.GetValue<string>());
         Assert.Equal(audit.Id, envelope.Payload["auditEventId"]!.GetValue<Guid>());
     }
 
     [Fact]
-    public async Task ProjectionRebuildFromOutboxSupportsProjectionBackedPeriodSummary()
+    public async Task ProjectionRebuildFromOutboxSupportsProjectionBackedSnapshotsAndAuditTimeline()
     {
         await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var period = await CreatePeriod(app, budget.Id);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
-        await ReplaceAllocations(app, period.Id, [new BudgetLineAllocationItem(groceries.Id, 100m)]);
+        var salary = await CreateBudgetLine(client, budget.Id, "Salary");
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
+        await RecordAdjustment(client, budget.Id, salary.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 10));
+        await RecordAdjustment(client, budget.Id, groceries.Id, 100m, BudgetAdjustmentType.Debit, new DateOnly(2026, 6, 10));
         var transaction = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 12), 35m, TransactionDirection.Debit);
         await ReplaceAssignments(client, budget.Id, transaction.Id, [new TransactionAssignmentItem(groceries.Id, 35m)]);
-        await RecordAdjustment(client, budget.Id, groceries.Id, 5m);
 
         using (var scope = app.Services.CreateScope())
         {
@@ -61,15 +63,16 @@ public sealed class Phase2EventDrivenTests
 
         using var verifyScope = app.Services.CreateScope();
         var db = verifyScope.ServiceProvider.GetRequiredService<BudgetDbContext>();
-        var periodSummary = await db.PeriodBudgetSummaries.AsNoTracking().SingleAsync(x => x.BudgetPeriodId == period.Id);
-        var lineSummary = await db.BudgetLinePeriodSummaries.AsNoTracking().SingleAsync(x => x.BudgetLineId == groceries.Id);
+        var snapshot = await db.BudgetSnapshotProjections.AsNoTracking().SingleAsync(x => x.BudgetId == budget.Id && x.Date == new DateOnly(2026, 6, 12));
+        var item = await db.BudgetSnapshotItemProjections.AsNoTracking().SingleAsync(x => x.SnapshotId == snapshot.Id && x.BudgetItemId == groceries.Id);
 
-        Assert.Equal(100m, periodSummary.PlannedDebit);
-        Assert.Equal(35m, periodSummary.ActualDebit);
-        Assert.Equal(70m, periodSummary.DebitRemaining);
-        Assert.Equal(5m, lineSummary.AdjustmentAmount);
-        Assert.Equal(70m, lineSummary.ClosingBalance);
-        Assert.True(await db.TransactionAssignmentSummaries.AnyAsync(x => x.TransactionId == transaction.Id));
+        Assert.Equal(65m, item.Balance);
+        Assert.Equal(-35m, snapshot.TotalBalance);
+        Assert.True(await db.BudgetAuditTimelines.AnyAsync(x => x.BudgetId == budget.Id && x.EventType == "TransactionAssigned"));
+
+        var apiSnapshot = await client.GetFromJsonAsync<BudgetSnapshot>(
+            $"/api/budgets/{budget.Id}/snapshot?date=2026-06-30");
+        Assert.Equal(65m, apiSnapshot!.BudgetItems.Single(x => x.BudgetItemId == groceries.Id).Balance);
     }
 
     [Fact]
@@ -79,18 +82,15 @@ public sealed class Phase2EventDrivenTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var period = await CreatePeriod(app, budget.Id);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
-        await ReplaceAllocations(app, period.Id, [new BudgetLineAllocationItem(groceries.Id, 100m)]);
+        var salary = await CreateBudgetLine(client, budget.Id, "Salary");
+        await RecordAdjustment(client, budget.Id, salary.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 10));
 
         using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
         var envelopeJson = (await db.OutboxMessages
             .AsNoTracking()
-            .Where(x => x.BudgetId == budget.Id)
-            .ToListAsync())
-            .OrderByDescending(x => x.CreatedAt)
-            .First()
+            .Where(x => x.EventType == "budgetytzar.budgeting.budget-adjustment-recorded.v1")
+            .SingleAsync())
             .EnvelopeJson;
         var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
 
@@ -98,11 +98,11 @@ public sealed class Phase2EventDrivenTests
         await projector.ProjectEnvelope(envelopeJson, CancellationToken.None);
 
         Assert.Equal(1, await db.ProcessedProjectionEvents.CountAsync());
-        Assert.Equal(1, await db.PeriodBudgetSummaries.CountAsync(x => x.BudgetPeriodId == period.Id));
+        Assert.Equal(1, await db.BudgetSnapshotProjections.CountAsync(x => x.BudgetId == budget.Id && x.Date == new DateOnly(2026, 6, 10)));
     }
 
     [Fact]
-    public void EventSchemaSamplesContainRequiredContractFields()
+    public void EventSchemaSamplesContainRequiredDomainContractFields()
     {
         var root = FindRepoRoot();
         var envelopeSchema = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "contracts/events/event-envelope.schema.json")));
@@ -124,27 +124,27 @@ public sealed class Phase2EventDrivenTests
         var payload = JsonDocument.Parse("""
             {
               "auditEventId": "44444444-4444-4444-4444-444444444444",
+              "budgetReallocationId": "33333333-3333-3333-3333-333333333333",
               "budgetId": "55555555-5555-5555-5555-555555555555",
-              "budgetPeriodId": "66666666-6666-6666-6666-666666666666",
-              "entityType": "BudgetReallocation",
-              "entityId": "33333333-3333-3333-3333-333333333333",
-              "eventName": "BudgetReallocationRecorded",
-              "description": "Reallocated 30.00.",
-              "details": null,
-              "appliesToAllPeriods": false
+              "date": "2026-06-12",
+              "notes": "Move budget.",
+              "adjustments": []
             }
             """);
         var importedPayload = JsonDocument.Parse("""
             {
               "auditEventId": "44444444-4444-4444-4444-444444444444",
+              "transactionId": "77777777-7777-7777-7777-777777777777",
               "budgetId": "55555555-5555-5555-5555-555555555555",
-              "budgetPeriodId": null,
-              "entityType": "FinancialTransaction",
-              "entityId": "77777777-7777-7777-7777-777777777777",
-              "eventName": "TransactionImported",
+              "importBatchId": "88888888-8888-8888-8888-888888888888",
+              "transactionDate": "2026-06-14",
               "description": "Imported transaction.",
-              "details": null,
-              "appliesToAllPeriods": false
+              "amount": 12.50,
+              "direction": "debit",
+              "sourceAccount": "Current",
+              "externalReference": "import-001",
+              "notes": null,
+              "isIgnored": false
             }
             """);
 
@@ -154,19 +154,18 @@ public sealed class Phase2EventDrivenTests
     }
 
     [Fact]
-    public async Task RealOutboxEnvelopesValidateAgainstCanonicalSchemas()
+    public async Task RealOutboxEnvelopesValidateAgainstDomainContractSchemas()
     {
         await using var app = new BudgetApiFactory();
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
 
         var budget = await CreateBudget(client);
-        await CreatePeriod(app, budget.Id);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
-        var savings = await CreateBudgetLine(client, budget.Id, "Savings", BudgetLineDirection.Debit);
-        var archived = await CreateBudgetLine(client, budget.Id, "Old category", BudgetLineDirection.Debit);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
+        var savings = await CreateBudgetLine(client, budget.Id, "Savings");
+        var archived = await CreateBudgetLine(client, budget.Id, "Old category");
         await RecordReallocation(client, budget.Id, groceries.Id, savings.Id, 10m);
-        await RecordAdjustment(client, budget.Id, groceries.Id, 5m);
+        await RecordAdjustment(client, budget.Id, groceries.Id, 5m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 12));
         await ArchiveBudgetLine(client, budget.Id, archived.Id);
 
         var transaction = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 12), 35m, TransactionDirection.Debit);
@@ -282,7 +281,7 @@ public sealed class Phase2EventDrivenTests
         var actualType = value.ValueKind switch
         {
             JsonValueKind.String => "string",
-            JsonValueKind.Number => "integer",
+            JsonValueKind.Number => "number",
             JsonValueKind.True or JsonValueKind.False => "boolean",
             JsonValueKind.Object => "object",
             JsonValueKind.Array => "array",
@@ -290,7 +289,7 @@ public sealed class Phase2EventDrivenTests
             _ => value.ValueKind.ToString()
         };
 
-        Assert.True(allowedTypes.Contains(actualType), $"{context}: expected {string.Join(" or ", allowedTypes)}, got {actualType}.");
+        Assert.True(allowedTypes.Contains(actualType) || actualType == "number" && allowedTypes.Contains("integer"), $"{context}: expected {string.Join(" or ", allowedTypes)}, got {actualType}.");
     }
 
     private static string PayloadSchemaPath(string root, string eventType)
@@ -318,32 +317,13 @@ public sealed class Phase2EventDrivenTests
         return (await response.Content.ReadFromJsonAsync<Budget>())!;
     }
 
-    private static async Task<BudgetPeriod> CreatePeriod(BudgetApiFactory app, Guid budgetId)
-    {
-        using var scope = app.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
-        var period = BudgetPeriod.Create(budgetId, "June 2026", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30));
-        db.BudgetPeriods.Add(period);
-        await db.SaveChangesAsync();
-        return period;
-    }
-
-    private static async Task<BudgetItemDto> CreateBudgetLine(HttpClient client, Guid budgetId, string name, BudgetLineDirection direction)
+    private static async Task<BudgetItemDto> CreateBudgetLine(HttpClient client, Guid budgetId, string name)
     {
         var response = await client.PostAsJsonAsync(
             $"/api/budgets/{budgetId}/budget-items",
             new CreateBudgetItemRequest(name));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<BudgetItemDto>())!;
-    }
-
-    private static async Task ReplaceAllocations(BudgetApiFactory app, Guid periodId, IReadOnlyList<BudgetLineAllocationItem> allocations)
-    {
-        using var scope = app.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
-        var period = await db.BudgetPeriods.AsNoTracking().SingleAsync(x => x.Id == periodId);
-        db.BudgetLineAllocations.AddRange(period.ReplaceAllocations(allocations));
-        await db.SaveChangesAsync();
     }
 
     private static async Task<FinancialTransaction> CreateTransaction(HttpClient client, Guid budgetId, DateOnly date, decimal amount, TransactionDirection direction)
@@ -383,11 +363,11 @@ public sealed class Phase2EventDrivenTests
         response.EnsureSuccessStatusCode();
     }
 
-    private static async Task RecordAdjustment(HttpClient client, Guid budgetId, Guid budgetLineId, decimal amount)
+    private static async Task RecordAdjustment(HttpClient client, Guid budgetId, Guid budgetLineId, decimal amount, BudgetAdjustmentType type, DateOnly date)
     {
         var response = await client.PostAsJsonAsync(
             $"/api/budgets/{budgetId}/budget-items/{budgetLineId}/adjustments",
-            new CreateBudgetItemAdjustmentRequest(amount, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 12), "Projection test adjustment"));
+            new CreateBudgetItemAdjustmentRequest(amount, type, date, "Projection test adjustment"));
         response.EnsureSuccessStatusCode();
     }
 

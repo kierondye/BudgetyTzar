@@ -47,7 +47,7 @@ public static partial class Endpoints
                 return validationProblem;
             }
 
-            var result = await handler.Handle(budgetId, request.Name, BudgetLineDirection.Debit, BudgetLineRolloverType.Cumulative, ct);
+            var result = await handler.Handle(budgetId, request.Name, ct);
             return result.ToHttpResult(line => Results.Created(
                 $"/api/budgets/{budgetId}/budget-items/{line.Id}",
                 new BudgetItemDto(line.Id, line.BudgetId, line.Name, line.IsArchived, line.CreatedAt)));

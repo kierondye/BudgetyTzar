@@ -3,17 +3,15 @@
   "$id": "https://budgetytzar.local/contracts/events/budgeting/budget-adjustment-recorded.v1.schema.json",
   "title": "Budget Adjustment Recorded",
   "type": "object",
-  "required": ["auditEventId", "budgetId", "budgetPeriodId", "entityType", "entityId", "eventName", "description", "appliesToAllPeriods"],
+  "required": ["auditEventId", "budgetAdjustmentId", "budgetId", "budgetItemId", "amount", "direction", "date"],
   "properties": {
     "auditEventId": { "type": "string", "format": "uuid" },
+    "budgetAdjustmentId": { "type": "string", "format": "uuid" },
     "budgetId": { "type": "string", "format": "uuid" },
-    "budgetPeriodId": { "type": "string", "format": "uuid" },
-    "entityType": { "const": "BudgetAdjustment" },
-    "entityId": { "type": "string", "format": "uuid" },
-    "eventName": { "const": "BudgetAdjustmentRecorded" },
-    "description": { "type": "string" },
-    "details": { "type": ["string", "null"] },
-    "appliesToAllPeriods": { "type": "boolean" }
-  },
-  "additionalProperties": false
+    "budgetItemId": { "type": "string", "format": "uuid" },
+    "amount": { "type": "number" },
+    "direction": { "type": "string" },
+    "date": { "type": "string" },
+    "notes": { "type": ["string", "null"] }
+  }
 }

@@ -18,8 +18,13 @@ public sealed class Budget
         new(
             "BudgetCreated",
             Id,
-            null,
             nameof(Budget),
             Id,
-            $"Created budget {Name}.");
+            $"Created budget {Name}.",
+            Payload: new
+            {
+                BudgetId = Id,
+                Name,
+                Currency
+            });
 }

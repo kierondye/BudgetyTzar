@@ -3,17 +3,13 @@
   "$id": "https://budgetytzar.local/contracts/events/transactions/transaction-import-batch-previewed.v1.schema.json",
   "title": "Transaction Import Batch Previewed",
   "type": "object",
-  "required": ["auditEventId", "budgetId", "budgetPeriodId", "entityType", "entityId", "eventName", "description", "appliesToAllPeriods"],
+  "required": ["auditEventId", "importBatchId", "budgetId", "fileName", "rowCount", "duplicateCandidateCount"],
   "properties": {
     "auditEventId": { "type": "string", "format": "uuid" },
+    "importBatchId": { "type": "string", "format": "uuid" },
     "budgetId": { "type": "string", "format": "uuid" },
-    "budgetPeriodId": { "type": ["string", "null"], "format": "uuid" },
-    "entityType": { "const": "TransactionImportBatch" },
-    "entityId": { "type": "string", "format": "uuid" },
-    "eventName": { "const": "TransactionImportBatchPreviewed" },
-    "description": { "type": "string" },
-    "details": { "type": ["string", "null"] },
-    "appliesToAllPeriods": { "type": "boolean" }
-  },
-  "additionalProperties": false
+    "fileName": { "type": "string" },
+    "rowCount": { "type": "number" },
+    "duplicateCandidateCount": { "type": "number" }
+  }
 }

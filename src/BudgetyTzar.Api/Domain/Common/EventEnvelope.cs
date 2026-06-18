@@ -29,10 +29,8 @@ public static class EventTypes
     private static readonly IReadOnlyDictionary<string, string> CanonicalNames = new Dictionary<string, string>
     {
         ["BudgetCreated"] = "budgetytzar.budgeting.budget-created.v1",
-        ["BudgetPeriodCreated"] = "budgetytzar.budgeting.budget-period-created.v1",
         ["BudgetLineCreated"] = "budgetytzar.budgeting.budget-line-created.v1",
         ["BudgetLineArchived"] = "budgetytzar.budgeting.budget-line-archived.v1",
-        ["BudgetLineAllocationsReplaced"] = "budgetytzar.budgeting.budget-line-allocations-replaced.v1",
         ["BudgetReallocationRecorded"] = "budgetytzar.budgeting.budget-reallocation-recorded.v1",
         ["BudgetAdjustmentRecorded"] = "budgetytzar.budgeting.budget-adjustment-recorded.v1",
         ["TransactionImportBatchPreviewed"] = "budgetytzar.transactions.transaction-import-batch-previewed.v1",

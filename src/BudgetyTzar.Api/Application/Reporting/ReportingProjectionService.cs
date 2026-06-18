@@ -9,11 +9,8 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
 {
     public async Task RebuildFromOutbox(CancellationToken ct)
     {
-        db.PeriodBudgetSummaries.RemoveRange(db.PeriodBudgetSummaries);
-        db.BudgetLinePeriodSummaries.RemoveRange(db.BudgetLinePeriodSummaries);
-        db.CreditBudgetLinePeriodSummaries.RemoveRange(db.CreditBudgetLinePeriodSummaries);
-        db.TransactionAssignmentSummaries.RemoveRange(db.TransactionAssignmentSummaries);
-        db.CumulativeBudgetLineBalances.RemoveRange(db.CumulativeBudgetLineBalances);
+        db.BudgetSnapshotItemProjections.RemoveRange(db.BudgetSnapshotItemProjections);
+        db.BudgetSnapshotProjections.RemoveRange(db.BudgetSnapshotProjections);
         db.BudgetAuditTimelines.RemoveRange(db.BudgetAuditTimelines);
         db.ProcessedProjectionEvents.RemoveRange(db.ProcessedProjectionEvents);
         await db.SaveChangesAsync(ct);
@@ -40,7 +37,8 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
         }
 
         Guid? budgetId = null;
-        if (envelope.Payload["budgetId"] is { } budgetIdNode)
+        if (envelope.Payload.TryGetPropertyValue("budgetId", out var budgetIdNode)
+            && budgetIdNode is not null)
         {
             budgetId = budgetIdNode.GetValue<Guid>();
             await RebuildBudget(budgetId.Value, ct);
@@ -58,97 +56,54 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
 
     public async Task RebuildBudget(Guid budgetId, CancellationToken ct)
     {
-        var periods = await db.BudgetPeriods
-            .AsNoTracking()
-            .Where(x => x.BudgetId == budgetId)
-            .OrderBy(x => x.StartDate)
-            .ToListAsync(ct);
-
-        var existingPeriodIds = periods.Select(x => x.Id).ToArray();
-        db.PeriodBudgetSummaries.RemoveRange(db.PeriodBudgetSummaries.Where(x => x.BudgetId == budgetId));
-        db.BudgetLinePeriodSummaries.RemoveRange(db.BudgetLinePeriodSummaries.Where(x => x.BudgetId == budgetId));
-        db.CreditBudgetLinePeriodSummaries.RemoveRange(db.CreditBudgetLinePeriodSummaries.Where(x => x.BudgetId == budgetId));
-        db.TransactionAssignmentSummaries.RemoveRange(db.TransactionAssignmentSummaries.Where(x => x.BudgetId == budgetId));
-        db.CumulativeBudgetLineBalances.RemoveRange(db.CumulativeBudgetLineBalances.Where(x => x.BudgetId == budgetId));
+        db.BudgetSnapshotItemProjections.RemoveRange(db.BudgetSnapshotItemProjections.Where(x => x.BudgetId == budgetId));
+        db.BudgetSnapshotProjections.RemoveRange(db.BudgetSnapshotProjections.Where(x => x.BudgetId == budgetId));
         db.BudgetAuditTimelines.RemoveRange(db.BudgetAuditTimelines.Where(x => x.BudgetId == budgetId));
         await db.SaveChangesAsync(ct);
 
-        foreach (var period in periods)
+        var adjustmentDates = await db.BudgetAdjustments
+            .AsNoTracking()
+            .Where(x => x.BudgetId == budgetId)
+            .Select(x => x.Date)
+            .ToListAsync(ct);
+        var transactionDates = await db.Transactions
+            .AsNoTracking()
+            .Where(x => x.BudgetId == budgetId)
+            .Select(x => x.TransactionDate)
+            .ToListAsync(ct);
+        var dates = adjustmentDates
+            .Concat(transactionDates)
+            .Distinct()
+            .Order()
+            .ToList();
+
+        foreach (var date in dates)
         {
-            var summary = await DashboardQueries.GetPeriodSummaryFromOperationalTables(db, budgetId, period.Id, ct);
-            if (summary is null)
+            var snapshot = await LedgerSnapshotCalculator.Calculate(db, budgetId, date, ct);
+            if (snapshot is null)
             {
                 continue;
             }
 
-            db.PeriodBudgetSummaries.Add(new PeriodBudgetSummaryProjection
+            var projection = new BudgetSnapshotProjection
             {
                 BudgetId = budgetId,
-                BudgetPeriodId = period.Id,
-                PeriodName = summary.PeriodName,
-                StartDate = summary.StartDate,
-                EndDate = summary.EndDate,
-                PlannedDebit = summary.PlannedDebit,
-                ActualDebit = summary.ActualDebit,
-                DebitRemaining = summary.DebitRemaining,
-                DebitVariance = summary.DebitVariance,
-                PlannedCredit = summary.PlannedCredit,
-                ActualCredit = summary.ActualCredit,
-                CreditVariance = summary.CreditVariance,
-                UnassignedDebitTotal = summary.UnassignedDebitTotal,
-                UnassignedCreditTotal = summary.UnassignedCreditTotal,
-                PartiallyAssignedDebitTotal = summary.PartiallyAssignedDebitTotal,
-                PartiallyAssignedCreditTotal = summary.PartiallyAssignedCreditTotal
-            });
-
-            db.BudgetLinePeriodSummaries.AddRange(summary.Lines.Select(line => new BudgetLinePeriodSummaryProjection
+                Date = date,
+                UnbudgetedBalance = snapshot.UnbudgetedBalance,
+                TotalBalance = snapshot.TotalBalance
+            };
+            db.BudgetSnapshotProjections.Add(projection);
+            db.BudgetSnapshotItemProjections.AddRange(snapshot.BudgetItems.Select(item => new BudgetSnapshotItemProjection
             {
+                SnapshotId = projection.Id,
                 BudgetId = budgetId,
-                BudgetPeriodId = period.Id,
-                BudgetLineId = line.BudgetLineId,
-                Name = line.Name,
-                Direction = line.Direction,
-                RolloverType = line.RolloverType,
-                OpeningBalance = line.OpeningBalance,
-                Allocated = line.Allocated,
-                ReallocationIn = line.ReallocationIn,
-                ReallocationOut = line.ReallocationOut,
-                ActualAmount = line.ActualAmount,
-                AdjustmentAmount = line.AdjustmentAmount,
-                ClosingBalance = line.ClosingBalance,
-                IsOverBudget = line.IsOverBudget,
-                IsArchived = line.IsArchived
+                Date = date,
+                BudgetItemId = item.BudgetItemId,
+                Name = item.Name,
+                Balance = item.Balance
             }));
-
-            db.CreditBudgetLinePeriodSummaries.AddRange(summary.Lines
-                .Where(x => x.Direction == BudgetLineDirection.Credit)
-                .Select(line => new CreditBudgetLinePeriodSummaryProjection
-                {
-                    BudgetId = budgetId,
-                    BudgetPeriodId = period.Id,
-                    BudgetLineId = line.BudgetLineId,
-                    PeriodName = summary.PeriodName,
-                    StartDate = summary.StartDate,
-                    EndDate = summary.EndDate,
-                    BudgetLineName = line.Name,
-                    PlannedCredit = line.Allocated,
-                    ActualCredit = line.ActualAmount,
-                    CreditVariance = line.ActualAmount - line.Allocated
-                }));
-
-            db.CumulativeBudgetLineBalances.AddRange(summary.Lines
-                .Where(x => x.RolloverType == BudgetLineRolloverType.Cumulative)
-                .Select(line => new CumulativeBudgetLineBalanceProjection
-                {
-                    BudgetId = budgetId,
-                    BudgetPeriodId = period.Id,
-                    BudgetLineId = line.BudgetLineId,
-                    OpeningBalance = line.OpeningBalance,
-                    ClosingBalance = line.ClosingBalance
-                }));
         }
 
-        await ProjectTransactions(budgetId, ct);
         await ProjectAuditTimeline(budgetId, ct);
         var projectedAt = DateTimeOffset.UtcNow;
         await db.OutboxMessages
@@ -157,61 +112,23 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
         await db.SaveChangesAsync(ct);
     }
 
-    private async Task ProjectTransactions(Guid budgetId, CancellationToken ct)
-    {
-        var transactions = await db.Transactions
-            .AsNoTracking()
-            .Where(x => x.BudgetId == budgetId)
-            .ToListAsync(ct);
-        var transactionIds = transactions.Select(x => x.Id).ToArray();
-        var assignmentTotals = await db.TransactionAssignments
-            .AsNoTracking()
-            .Where(x => transactionIds.Contains(x.TransactionId))
-            .GroupBy(x => x.TransactionId)
-            .Select(x => new { TransactionId = x.Key, AssignedAmount = x.Sum(y => y.Amount) })
-            .ToDictionaryAsync(x => x.TransactionId, x => x.AssignedAmount, ct);
-        var periods = await db.BudgetPeriods
-            .AsNoTracking()
-            .Where(x => x.BudgetId == budgetId)
-            .ToListAsync(ct);
-
-        db.TransactionAssignmentSummaries.AddRange(transactions.Select(transaction =>
-        {
-            var assignedAmount = assignmentTotals.GetValueOrDefault(transaction.Id);
-            var periodId = periods.FirstOrDefault(x =>
-                x.StartDate <= transaction.TransactionDate
-                && transaction.TransactionDate <= x.EndDate)?.Id;
-            return new TransactionAssignmentSummaryProjection
-            {
-                TransactionId = transaction.Id,
-                BudgetId = budgetId,
-                BudgetPeriodId = periodId,
-                TransactionAmount = transaction.Amount,
-                AssignedAmount = assignedAmount,
-                UnassignedAmount = Math.Max(0, transaction.Amount - assignedAmount),
-                Direction = transaction.Direction,
-                IsIgnored = transaction.IsIgnored
-            };
-        }));
-    }
-
     private async Task ProjectAuditTimeline(Guid budgetId, CancellationToken ct)
     {
         var audits = await db.AuditEvents
             .AsNoTracking()
-            .Where(x => x.BudgetId == budgetId && x.BudgetPeriodId.HasValue)
+            .Where(x => x.BudgetId == budgetId)
             .ToListAsync(ct);
 
         db.BudgetAuditTimelines.AddRange(audits.Select(audit => new BudgetAuditTimelineProjection
         {
             AuditEventId = audit.Id,
             BudgetId = audit.BudgetId,
-            BudgetPeriodId = audit.BudgetPeriodId,
             OccurredAt = audit.OccurredAt,
             EventType = audit.EventType,
             EntityType = audit.EntityType,
             EntityId = audit.EntityId,
-            Description = audit.Description
+            Description = audit.Description,
+            Details = audit.Details
         }));
     }
 }

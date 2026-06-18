@@ -25,6 +25,7 @@ public sealed class Phase1SpecGapBehaviorTests
         Assert.Contains("/api/budgets/{budgetId}/reallocations", paths);
         Assert.Contains("/api/budgets/{budgetId}/transactions/{transactionId}/allocations", paths);
         Assert.Contains("/api/budgets/{budgetId}/snapshot", paths);
+        Assert.Contains("/api/budgets/{budgetId}/audit-events", paths);
 
         Assert.DoesNotContain("/api/budgets/{budgetId}/periods", paths);
         Assert.DoesNotContain("/api/budgets/{budgetId}/periods/for-date", paths);
@@ -108,7 +109,7 @@ public sealed class Phase1SpecGapBehaviorTests
     }
 
     [Fact]
-    public async Task CanonicalAdjustmentsSnapshotAndArchivedHistoryUseLedgerSigns()
+    public async Task CanonicalAdjustmentsSnapshotAndArchivedHistoryUsePlannedVsActualBalances()
     {
         await using var app = new BudgetApiFactory();
         var client = app.CreateClient();
@@ -252,6 +253,25 @@ public sealed class Phase1SpecGapBehaviorTests
             $"/api/budgets/{budget.Id}/snapshot?date=2026-06-05");
         Assert.Equal(-30m, snapshot!.BudgetItems.Single(x => x.BudgetItemId == dining.Id).Balance);
         Assert.Equal(30m, snapshot.BudgetItems.Single(x => x.BudgetItemId == groceries.Id).Balance);
+    }
+
+    [Fact]
+    public async Task AuditEventsEndpointReturnsDurableLocalAuditTimeline()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
+        await RecordBudgetItemAdjustment(client, budget.Id, groceries.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 1), "Initial groceries.");
+
+        var events = await client.GetFromJsonAsync<IReadOnlyList<AuditEventDto>>(
+            $"/api/budgets/{budget.Id}/audit-events");
+
+        Assert.NotNull(events);
+        Assert.Contains(events!, x => x.EventType == "BudgetCreated" && x.EntityId == budget.Id);
+        Assert.Contains(events!, x => x.EventType == "BudgetLineCreated" && x.EntityId == groceries.Id);
+        Assert.Contains(events!, x => x.EventType == "BudgetAdjustmentRecorded");
     }
 
     private static async Task<Budget> CreateBudget(HttpClient client)

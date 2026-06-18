@@ -3,26 +3,19 @@
   "$id": "https://budgetytzar.local/contracts/events/transactions/transaction-imported.v1.schema.json",
   "title": "Transaction Imported",
   "type": "object",
-  "required": [
-    "auditEventId",
-    "budgetId",
-    "budgetPeriodId",
-    "entityType",
-    "entityId",
-    "eventName",
-    "description",
-    "appliesToAllPeriods"
-  ],
+  "required": ["auditEventId", "transactionId", "budgetId", "importBatchId", "transactionDate", "description", "amount", "direction", "isIgnored"],
   "properties": {
     "auditEventId": { "type": "string", "format": "uuid" },
+    "transactionId": { "type": "string", "format": "uuid" },
     "budgetId": { "type": "string", "format": "uuid" },
-    "budgetPeriodId": { "type": ["string", "null"], "format": "uuid" },
-    "entityType": { "const": "FinancialTransaction" },
-    "entityId": { "type": "string", "format": "uuid" },
-    "eventName": { "const": "TransactionImported" },
+    "importBatchId": { "type": ["string", "null"], "format": "uuid" },
+    "transactionDate": { "type": "string" },
     "description": { "type": "string" },
-    "details": { "type": ["string", "null"] },
-    "appliesToAllPeriods": { "type": "boolean" }
-  },
-  "additionalProperties": false
+    "amount": { "type": "number" },
+    "direction": { "type": "string" },
+    "sourceAccount": { "type": ["string", "null"] },
+    "externalReference": { "type": ["string", "null"] },
+    "notes": { "type": ["string", "null"] },
+    "isIgnored": { "type": "boolean" }
+  }
 }

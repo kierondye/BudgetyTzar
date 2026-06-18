@@ -67,7 +67,6 @@ public static partial class Endpoints
     {
         budgets.MapGet("/{budgetId:guid}/transactions", async (
             Guid budgetId,
-            Guid? periodId,
             DateOnly? from,
             DateOnly? to,
             TransactionAssignmentStatus? assignmentStatus,
@@ -77,20 +76,6 @@ public static partial class Endpoints
             if (!await BudgetExists(db, budgetId, ct))
             {
                 return Results.NotFound();
-            }
-
-            if (periodId.HasValue)
-            {
-                var period = await db.BudgetPeriods
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.Id == periodId.Value && x.BudgetId == budgetId, ct);
-                if (period is null)
-                {
-                    return Results.NotFound();
-                }
-
-                from = period.StartDate;
-                to = period.EndDate;
             }
 
             var query = db.Transactions.AsNoTracking().Where(x => x.BudgetId == budgetId);

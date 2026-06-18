@@ -3,17 +3,12 @@
   "$id": "https://budgetytzar.local/contracts/events/transactions/transaction-assigned.v1.schema.json",
   "title": "Transaction Assigned",
   "type": "object",
-  "required": ["auditEventId", "budgetId", "budgetPeriodId", "entityType", "entityId", "eventName", "description", "appliesToAllPeriods"],
+  "required": ["auditEventId", "transactionId", "budgetId", "transactionAmount", "assignments"],
   "properties": {
     "auditEventId": { "type": "string", "format": "uuid" },
+    "transactionId": { "type": "string", "format": "uuid" },
     "budgetId": { "type": "string", "format": "uuid" },
-    "budgetPeriodId": { "type": ["string", "null"], "format": "uuid" },
-    "entityType": { "const": "FinancialTransaction" },
-    "entityId": { "type": "string", "format": "uuid" },
-    "eventName": { "const": "TransactionAssigned" },
-    "description": { "type": "string" },
-    "details": { "type": ["string", "null"] },
-    "appliesToAllPeriods": { "type": "boolean" }
-  },
-  "additionalProperties": false
+    "transactionAmount": { "type": "number" },
+    "assignments": { "type": "array" }
+  }
 }

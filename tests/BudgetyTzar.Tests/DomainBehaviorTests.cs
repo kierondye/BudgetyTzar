@@ -57,11 +57,7 @@ public sealed class DomainBehaviorTests
     public void BudgetLineArchiveChangesStateAndProducesDomainEvent()
     {
         var budgetId = Guid.NewGuid();
-        var line = BudgetLine.Create(
-            budgetId,
-            "Old category",
-            BudgetLineDirection.Debit,
-            BudgetLineRolloverType.PeriodReset);
+        var line = BudgetLine.Create(budgetId, "Old category");
 
         var domainEvent = line.Archive();
 

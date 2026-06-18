@@ -27,7 +27,7 @@ public sealed class PostgresPhase1ApiIntegrationTests
         await app.ResetDatabaseAsync();
         var client = app.CreateClient();
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
         var transaction = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 15), 1234.56m);
 
         var assignmentResponse = await client.PutAsJsonAsync(
@@ -63,7 +63,7 @@ public sealed class PostgresPhase1ApiIntegrationTests
         await app.ResetDatabaseAsync();
         var client = app.CreateClient();
         var budget = await CreateBudget(client);
-        await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        await CreateBudgetLine(client, budget.Id, "Groceries");
 
         var duplicateLine = await client.PostAsJsonAsync(
             $"/api/budgets/{budget.Id}/budget-items",
@@ -82,8 +82,7 @@ public sealed class PostgresPhase1ApiIntegrationTests
     private static async Task<BudgetItemDto> CreateBudgetLine(
         HttpClient client,
         Guid budgetId,
-        string name,
-        BudgetLineDirection direction)
+        string name)
     {
         var response = await client.PostAsJsonAsync(
             $"/api/budgets/{budgetId}/budget-items",

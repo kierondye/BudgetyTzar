@@ -1,6 +1,6 @@
 # BudgetyTzar
 
-BudgetyTzar is a personal budgeting MVP that replaces a monthly spreadsheet with a PostgreSQL-backed HTTP API. The target domain model is a dated ledger: budgets contain budget items, debit and credit budget adjustments, zero-sum reallocations, debit and credit transactions, transaction allocations, snapshots, and durable audit records. Phase 2 introduces Kafka-compatible local infrastructure, outbox publishing, and projection-backed reporting behind disabled-by-default feature flags.
+BudgetyTzar is a personal budgeting MVP that replaces a monthly spreadsheet with a PostgreSQL-backed HTTP API. The target domain model compares planned budget activity with actual transaction activity: budgets contain budget items, debit and credit budget adjustments, zero-sum reallocations, debit and credit transactions, transaction allocations, snapshots, and durable audit records. Phase 2 introduces Kafka-compatible local infrastructure, outbox publishing, and projection-backed snapshots/audit behind disabled-by-default feature flags.
 
 ## Phase 1 API
 
@@ -25,12 +25,12 @@ The current implementation is being migrated from an older period-based model to
 - `GET /api/budgets/{budgetId}/transactions/{transactionId}`
 - `PUT /api/budgets/{budgetId}/transactions/{transactionId}`
 - `POST /api/budgets/{budgetId}/transactions/{transactionId}/ignore`
-- `POST /api/budgets/{budgetId}/transactions/{transactionId}/allocations`
 - `PUT /api/budgets/{budgetId}/transactions/{transactionId}/allocations`
 - `GET /api/budgets/{budgetId}/transactions/{transactionId}/allocations`
 - `DELETE /api/budgets/{budgetId}/transactions/{transactionId}/allocations`
+- `GET /api/budgets/{budgetId}/audit-events`
 
-Balances use ledger signs: credits minus debits. Budget item balances are cumulative by default. Unallocated debit and credit transaction values remain visible in snapshots until they are allocated to budget items.
+Snapshot balances are planned-vs-actual positions: `actualCredits - plannedCredits + plannedDebits - actualDebits`. Budget item balances are cumulative by default. Unallocated debit and credit transaction values remain visible in snapshots until they are allocated to budget items.
 
 ## Local Development
 
@@ -78,7 +78,7 @@ The API applies EF Core migrations on startup when `Database:MigrateOnStartup` i
 
 ### Phase 2 Kafka, Outbox, and Projection Flags
 
-The API remains runnable with only PostgreSQL. Kafka publishing, Kafka consuming, and projection-backed reports are disabled by default in `src/BudgetyTzar.Api/appsettings.json`.
+The API remains runnable with only PostgreSQL. Kafka publishing, Kafka consuming, and projection-backed snapshots are disabled by default in `src/BudgetyTzar.Api/appsettings.json`.
 
 Default local settings:
 
@@ -109,8 +109,8 @@ dotnet test
 
 ## Architecture Notes
 
-Phase 1 is intentionally a local modular MVP. It keeps the language, domain model, audit vocabulary, and API surface aligned with the later event-driven service architecture from `SPECIFICATION.md`, while deferring service decomposition, Kubernetes, and the Go implementation to later phases. Phase 2 starts introducing Kafka-compatible local infrastructure, outbox publishing, and projection-backed reporting behind explicit opt-in flags.
+Phase 1 is intentionally a local modular MVP. It keeps the language, domain model, audit vocabulary, and API surface aligned with the later event-driven architecture from `SPECIFICATION.md`, while deferring service decomposition, Kubernetes, and the Go implementation to later phases. Phase 2 starts introducing Kafka-compatible local infrastructure, domain-contract-shaped events, outbox publishing, and projection-backed snapshots/audit behind explicit opt-in flags.
 
-Budgets are the root resource. Budget items are named ledger buckets, not fixed debit or credit lines. Dated budget adjustments and transaction allocations can be debits or credits against any budget item, and item balances are cumulative by default. Date-range reports are read models over the ledger rather than separate period state. A budget has one currency, and all child amounts use that currency.
+Budgets are the root resource. Budget items are named buckets, not fixed debit or credit lines. Dated budget adjustments and transaction allocations can be debits or credits against any budget item, and item balances are cumulative planned-vs-actual positions. A budget has one currency, and all child amounts use that currency.
 
 The Phase 1 audit timeline is backed by durable local audit records for imports, allocation changes, splits, ignores, reallocations, adjustments, and budget item archival. Kafka-published audit events, outbox records, and projection-backed reporting are Phase 2 concerns and should stay disabled in local config unless that behavior is being developed or tested.

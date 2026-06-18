@@ -25,7 +25,7 @@ public sealed class Phase1ApiIntegrationTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
         var refund = await CreateTransaction(client, budget.Id, 25m, TransactionDirection.Credit);
 
         var response = await client.PutAsJsonAsync(
@@ -59,7 +59,7 @@ public sealed class Phase1ApiIntegrationTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
         var transaction = await CreateTransaction(client, budget.Id, 20m, TransactionDirection.Debit);
 
         var response = await client.PutAsJsonAsync(
@@ -76,7 +76,7 @@ public sealed class Phase1ApiIntegrationTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
         var transaction = await CreateTransaction(client, budget.Id, 20m, TransactionDirection.Debit);
         var assignResponse = await client.PutAsJsonAsync(
             $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
@@ -99,8 +99,8 @@ public sealed class Phase1ApiIntegrationTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
-        var household = await CreateBudgetLine(client, budget.Id, "Household", BudgetLineDirection.Debit);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
+        var household = await CreateBudgetLine(client, budget.Id, "Household");
         var transaction = await CreateTransaction(client, budget.Id, 50m, TransactionDirection.Debit);
 
         var response = await client.PutAsJsonAsync(
@@ -125,7 +125,7 @@ public sealed class Phase1ApiIntegrationTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
         var transaction = await CreateTransaction(client, budget.Id, 20m, TransactionDirection.Debit);
 
         var response = await client.PutAsJsonAsync(
@@ -143,7 +143,7 @@ public sealed class Phase1ApiIntegrationTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
         var transaction = await CreateTransaction(client, budget.Id, 20m, TransactionDirection.Debit);
         var assignResponse = await client.PutAsJsonAsync(
             $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
@@ -165,7 +165,7 @@ public sealed class Phase1ApiIntegrationTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
         var transaction = await CreateTransaction(client, budget.Id, 25m, TransactionDirection.Debit);
         var assignResponse = await client.PutAsJsonAsync(
             $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
@@ -204,7 +204,7 @@ public sealed class Phase1ApiIntegrationTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries", BudgetLineDirection.Debit);
+        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
         var transaction = await CreateTransaction(client, budget.Id, 25m, TransactionDirection.Debit);
         var assignResponse = await client.PutAsJsonAsync(
             $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
@@ -278,8 +278,7 @@ date,description,amount,direction,source account,external reference,notes
     private static async Task<BudgetItemDto> CreateBudgetLine(
         HttpClient client,
         Guid budgetId,
-        string name,
-        BudgetLineDirection direction)
+        string name)
     {
         var response = await client.PostAsJsonAsync(
             $"/api/budgets/{budgetId}/budget-items",

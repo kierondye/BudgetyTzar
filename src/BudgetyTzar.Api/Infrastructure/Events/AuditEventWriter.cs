@@ -1,7 +1,7 @@
 using BudgetyTzar.Api.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace BudgetyTzar.Api.Infrastructure.Events;
 
@@ -14,7 +14,6 @@ public sealed class AuditEventWriter(BudgetDbContext db, IOptions<EventTopicOpti
         {
             OccurredAt = occurredAt,
             BudgetId = domainEvent.BudgetId,
-            BudgetPeriodId = domainEvent.BudgetPeriodId,
             AppliesToAllPeriods = domainEvent.AppliesToAllPeriods,
             EntityType = domainEvent.EntityType,
             EntityId = domainEvent.EntityId,
@@ -26,7 +25,7 @@ public sealed class AuditEventWriter(BudgetDbContext db, IOptions<EventTopicOpti
 
         var canonicalEventType = EventTypes.ToCanonical(domainEvent.EventType);
         var outboxId = Guid.NewGuid();
-        var envelope = new EventEnvelope<CanonicalEventPayload>(
+        var envelope = new EventEnvelope<JsonObject>(
             outboxId,
             canonicalEventType,
             occurredAt,
@@ -35,7 +34,7 @@ public sealed class AuditEventWriter(BudgetDbContext db, IOptions<EventTopicOpti
             domainEvent.EntityId,
             domainEvent.EntityType,
             1,
-            CanonicalEventPayload.From(domainEvent, audit.Id));
+            CreatePayload(domainEvent, audit.Id));
 
         db.OutboxMessages.Add(new OutboxMessage
         {
@@ -45,48 +44,17 @@ public sealed class AuditEventWriter(BudgetDbContext db, IOptions<EventTopicOpti
             AggregateId = domainEvent.EntityId,
             AggregateType = domainEvent.EntityType,
             BudgetId = domainEvent.BudgetId,
-            BudgetPeriodId = domainEvent.BudgetPeriodId,
             EnvelopeJson = JsonSerializer.Serialize(envelope, EventSerialization.Options)
         });
     }
 
-    public async Task AddImportBatchPeriodAudits(
-        Guid budgetId,
-        Guid batchId,
-        string fileName,
-        IReadOnlyCollection<TransactionImportRow> rows,
-        string eventType,
-        string verb,
-        CancellationToken ct)
+    private static JsonObject CreatePayload(DomainEvent domainEvent, Guid auditEventId)
     {
-        if (rows.Count == 0)
-        {
-            return;
-        }
-
-        var firstDate = rows.Min(x => x.TransactionDate);
-        var lastDate = rows.Max(x => x.TransactionDate);
-        var periods = await db.BudgetPeriods
-            .AsNoTracking()
-            .Where(x => x.BudgetId == budgetId && x.StartDate <= lastDate && x.EndDate >= firstDate)
-            .ToListAsync(ct);
-
-        foreach (var period in periods.OrderBy(x => x.StartDate))
-        {
-            var affectedRowCount = rows.Count(x => x.TransactionDate >= period.StartDate && x.TransactionDate <= period.EndDate);
-            if (affectedRowCount == 0)
-            {
-                continue;
-            }
-
-            Add(new DomainEvent(
-                eventType,
-                budgetId,
-                period.Id,
-                nameof(TransactionImportBatch),
-                batchId,
-                $"{verb} import batch {fileName} with {affectedRowCount} row(s) affecting period {period.Name}."));
-        }
+        var payload = domainEvent.Payload is null
+            ? JsonSerializer.SerializeToNode(CanonicalEventPayload.From(domainEvent, auditEventId), EventSerialization.Options)!.AsObject()
+            : JsonSerializer.SerializeToNode(domainEvent.Payload, EventSerialization.Options)!.AsObject();
+        payload["auditEventId"] = auditEventId;
+        payload["budgetId"] = domainEvent.BudgetId;
+        return payload;
     }
-
 }

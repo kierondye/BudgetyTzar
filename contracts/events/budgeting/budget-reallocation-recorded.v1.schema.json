@@ -3,26 +3,13 @@
   "$id": "https://budgetytzar.local/contracts/events/budgeting/budget-reallocation-recorded.v1.schema.json",
   "title": "Budget Reallocation Recorded",
   "type": "object",
-  "required": [
-    "auditEventId",
-    "budgetId",
-    "budgetPeriodId",
-    "entityType",
-    "entityId",
-    "eventName",
-    "description",
-    "appliesToAllPeriods"
-  ],
+  "required": ["auditEventId", "budgetReallocationId", "budgetId", "date", "adjustments"],
   "properties": {
     "auditEventId": { "type": "string", "format": "uuid" },
+    "budgetReallocationId": { "type": "string", "format": "uuid" },
     "budgetId": { "type": "string", "format": "uuid" },
-    "budgetPeriodId": { "type": "string", "format": "uuid" },
-    "entityType": { "const": "BudgetReallocation" },
-    "entityId": { "type": "string", "format": "uuid" },
-    "eventName": { "const": "BudgetReallocationRecorded" },
-    "description": { "type": "string" },
-    "details": { "type": ["string", "null"] },
-    "appliesToAllPeriods": { "type": "boolean" }
-  },
-  "additionalProperties": false
+    "date": { "type": "string" },
+    "notes": { "type": ["string", "null"] },
+    "adjustments": { "type": "array" }
+  }
 }

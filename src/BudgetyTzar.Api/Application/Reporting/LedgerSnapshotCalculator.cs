@@ -15,6 +15,16 @@ public sealed record BudgetSnapshotItem(
     string Name,
     decimal Balance);
 
+public sealed record AuditEventDto(
+    Guid Id,
+    Guid BudgetId,
+    DateTimeOffset OccurredAt,
+    string EventType,
+    string EntityType,
+    Guid EntityId,
+    string Description,
+    string? Details);
+
 file sealed record BudgetSnapshotCalculationItem(
     Guid BudgetItemId,
     string Name,
@@ -79,7 +89,7 @@ public static class LedgerSnapshotCalculator
                 var actualDebit = lineAssignments
                     .Where(x => transactionsById[x.TransactionId].Direction == TransactionDirection.Debit)
                     .Sum(x => x.Amount);
-                var balance = plannedDebit - plannedCredit + actualCredit - actualDebit;
+                var balance = actualCredit - plannedCredit + plannedDebit - actualDebit;
 
                 return new BudgetSnapshotCalculationItem(
                     line.Id,
@@ -118,7 +128,7 @@ public static class LedgerSnapshotCalculator
                         && x.Type == BudgetAdjustmentType.Debit)
                     .Sum(x => x.Amount);
 
-                return plannedDebitAtLatestTransaction - plannedCreditAtLatestTransaction + item.ActualCredit - item.ActualDebit;
+                return item.ActualCredit - plannedCreditAtLatestTransaction + plannedDebitAtLatestTransaction - item.ActualDebit;
             });
             unbudgetedBalance = totalTransactionBalance - budgetedBalanceAtLatestTransaction;
         }
@@ -131,5 +141,42 @@ public static class LedgerSnapshotCalculator
             calculatedItems
                 .Select(x => new BudgetSnapshotItem(x.BudgetItemId, x.Name, x.Balance))
                 .ToList());
+    }
+
+    public static async Task<BudgetSnapshot?> GetProjectedOrCalculate(
+        BudgetDbContext db,
+        Guid budgetId,
+        DateOnly date,
+        bool useProjectionBackedReports,
+        CancellationToken ct)
+    {
+        if (!useProjectionBackedReports)
+        {
+            return await Calculate(db, budgetId, date, ct);
+        }
+
+        var projection = await db.BudgetSnapshotProjections
+            .AsNoTracking()
+            .Where(x => x.BudgetId == budgetId && x.Date <= date)
+            .OrderByDescending(x => x.Date)
+            .FirstOrDefaultAsync(ct);
+        if (projection is null)
+        {
+            return await Calculate(db, budgetId, date, ct);
+        }
+
+        var items = await db.BudgetSnapshotItemProjections
+            .AsNoTracking()
+            .Where(x => x.SnapshotId == projection.Id)
+            .OrderBy(x => x.Name)
+            .Select(x => new BudgetSnapshotItem(x.BudgetItemId, x.Name, x.Balance))
+            .ToListAsync(ct);
+
+        return new BudgetSnapshot(
+            budgetId,
+            date,
+            projection.UnbudgetedBalance,
+            projection.TotalBalance,
+            items);
     }
 }

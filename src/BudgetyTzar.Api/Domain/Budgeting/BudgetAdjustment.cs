@@ -13,7 +13,6 @@ public sealed class BudgetAdjustment
 {
     public Guid Id { get; init; } = Guid.NewGuid();
     public Guid BudgetId { get; set; }
-    public Guid BudgetPeriodId { get; set; }
     public Guid BudgetLineId { get; set; }
     public Guid? ReallocationId { get; set; }
     public DateOnly Date { get; set; }
@@ -24,23 +23,6 @@ public sealed class BudgetAdjustment
     public decimal LegacySignedAmount { get; set; }
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
 
-    public static BudgetAdjustment Create(Guid budgetPeriodId, Guid budgetLineId, decimal amount, string reason) =>
-        CreateLegacy(Guid.Empty, budgetPeriodId, budgetLineId, DateOnly.MinValue, amount, reason);
-
-    public static BudgetAdjustment CreateLegacy(Guid budgetId, Guid budgetPeriodId, Guid budgetLineId, DateOnly date, decimal amount, string reason) =>
-        new()
-        {
-            BudgetId = budgetId,
-            BudgetPeriodId = budgetPeriodId,
-            BudgetLineId = budgetLineId,
-            Date = date,
-            Amount = MoneyAmount.Positive(Math.Abs(MoneyAmount.NonZero(amount).Value)).Value,
-            Type = amount < 0 ? BudgetAdjustmentType.Debit : BudgetAdjustmentType.Credit,
-            Reason = reason.Trim(),
-            Notes = reason.Trim(),
-            LegacySignedAmount = amount
-        };
-
     public static BudgetAdjustment Create(
         Guid budgetId,
         Guid budgetLineId,
@@ -48,12 +30,10 @@ public sealed class BudgetAdjustment
         BudgetAdjustmentType type,
         DateOnly date,
         string? notes,
-        Guid? budgetPeriodId = null,
         Guid? reallocationId = null) =>
         new()
         {
             BudgetId = budgetId,
-            BudgetPeriodId = budgetPeriodId ?? Guid.Empty,
             BudgetLineId = budgetLineId,
             ReallocationId = reallocationId,
             Date = date,
@@ -68,8 +48,17 @@ public sealed class BudgetAdjustment
         new(
             "BudgetAdjustmentRecorded",
             budgetId,
-            BudgetPeriodId == Guid.Empty ? null : BudgetPeriodId,
             nameof(BudgetAdjustment),
             Id,
-            $"Recorded {Type} adjustment {Amount} for budget line {budgetLineName}: {Reason}");
+            $"Recorded {Type} adjustment {Amount} for budget line {budgetLineName}: {Reason}",
+            Payload: new
+            {
+                BudgetAdjustmentId = Id,
+                BudgetId = budgetId,
+                BudgetItemId = BudgetLineId,
+                Amount,
+                Direction = Type,
+                Date,
+                Notes
+            });
 }

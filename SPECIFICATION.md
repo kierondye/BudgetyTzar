@@ -164,11 +164,11 @@ A transaction allocation has:
 
 Amounts are positive. The transaction type determines whether the allocation contributes a debit or credit movement to the budget item. For example, a credit salary transaction allocated to Salary increases the Salary item's credit activity; a debit correction allocated to Salary reduces that item's net credit position.
 
-The sum of allocations for a transaction must not exceed the transaction amount. A transaction can remain partially allocated, with the unallocated amount appearing in snapshots and reconciliation.
+The sum of allocations for a transaction must not exceed the transaction amount. A transaction can remain partially allocated, with the unallocated amount appearing in snapshots.
 
 ### 5.7 Snapshot
 
-A snapshot is the calculated state of a budget as of a date.
+A snapshot is the calculated state of a budget as of a date. Budget item balances are planned-vs-actual positions, not pure accounting ledger balances.
 
 A snapshot includes:
 
@@ -177,14 +177,15 @@ A snapshot includes:
 - Total transaction balance.
 - Optional activity totals for a selected date range.
 
-Balance calculation uses ledger signs:
+Balance calculation compares the planned budget ledger with the actual transaction ledger:
 
-- Credits increase the ledger balance.
-- Debits decrease the ledger balance.
-- Every budget item uses the same rule.
-- Net value is calculated as credits minus debits.
+- Planned credits represent expected incoming value for a budget item.
+- Planned debits represent expected outgoing value or planned funding need for a budget item.
+- Actual credits come from credit transactions allocated to the budget item.
+- Actual debits come from debit transactions allocated to the budget item.
+- Snapshot item balance is calculated as actual credits minus planned credits plus planned debits minus actual debits.
 
-When presenting budget need, the API or UI may display positive debit needs and negative credit needs, but internal calculation must use one consistent ledger rule.
+A negative balance means expected credit has not yet arrived or planned debit has been exceeded. A positive balance means actual credit has exceeded expectation or planned debit remains available.
 
 ## 6. Functional Requirements
 
@@ -254,7 +255,6 @@ The user can:
 - View item balances derived from all activity up to that date.
 - View unallocated transaction value.
 - View total transaction balance.
-- See planned and actual activity by budget item over a date range.
 - See a clear distinction between real transactions, budget adjustments, reallocations, and unallocated amounts.
 
 Acceptance criteria:
@@ -262,7 +262,7 @@ Acceptance criteria:
 - A snapshot can be recalculated from persisted ledger entries.
 - Budget item balances are cumulative by default.
 - No reset operation is required to start a new month or planning cycle.
-- Date-range reports can show monthly or custom-period activity without changing the underlying ledger model.
+- Snapshot and audit views do not require period reset state.
 
 ### 6.5 Audit Trail
 
@@ -279,9 +279,9 @@ Acceptance criteria:
 - Phase 1 stores durable local audit records before Kafka-backed audit events are introduced.
 - The user can understand an old snapshot without relying on spreadsheet context.
 
-### 6.6 Reporting and Analysis
+### 6.6 Later Reporting and Analysis
 
-The user can:
+Later phases may allow the user to:
 
 - Compare spending across months or custom date ranges.
 - View trends by budget item.
@@ -617,7 +617,6 @@ POST /api/budgets/{budgetId}/transactions
 GET /api/budgets/{budgetId}/transactions?from={date}&to={date}&allocationStatus={status}
 GET /api/budgets/{budgetId}/transactions/{transactionId}
 PUT /api/budgets/{budgetId}/transactions/{transactionId}
-POST /api/budgets/{budgetId}/transactions/{transactionId}/allocations
 PUT /api/budgets/{budgetId}/transactions/{transactionId}/allocations
 GET /api/budgets/{budgetId}/transactions/{transactionId}/allocations
 DELETE /api/budgets/{budgetId}/transactions/{transactionId}/allocations
@@ -834,9 +833,7 @@ Deliver:
 - Partial transaction allocation and unallocated value.
 - Durable local audit records for imports, allocations, splits, ignores, reallocations, adjustments, and budget item archival.
 - Snapshot by date.
-- Reconciliation by date range.
-- Basic reports for budget item trends and expected-vs-actual activity.
-- CSV export.
+- Audit timeline.
 - PostgreSQL persistence.
 - Unit and integration tests.
 
@@ -846,8 +843,8 @@ Introduce:
 
 - Kafka.
 - Outbox pattern.
-- Service decomposition with service-owned schemas.
-- Projection-backed reporting and audit timelines.
+- Domain-contract-shaped events.
+- Projection-backed snapshots and audit timelines.
 - Docker Compose for local infrastructure.
 - Scheduled and recurring adjustments or reallocations, if still needed.
 
