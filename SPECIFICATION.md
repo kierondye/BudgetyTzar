@@ -1001,11 +1001,10 @@ Cover:
 - Transaction allocation total validation.
 - Archived budget item historical correction rules.
 - Snapshot calculation.
-- Reconciliation calculation.
 
 ### 20.2 Integration Tests
 
-Cover:
+Phase 1 integration tests should cover:
 
 - PostgreSQL persistence.
 - PostgreSQL-backed API integration tests for provider-specific schema, precision, query, and index behaviour.
@@ -1013,12 +1012,12 @@ Cover:
 - Duplicate detection.
 - Transaction allocation.
 - Snapshot queries.
-- Reconciliation.
-- CSV export.
 - Outbox publishing in Phase 2.
 - Kafka consumer behaviour in Phase 2.
 - Reporting projections in Phase 2.
 - Runtime version endpoint and OpenAPI version metadata in Phase 2.5.
+
+Later reporting coverage should include reconciliation calculations, date-range reports, and CSV export once those capabilities are introduced.
 
 Use Testcontainers where practical. SQLite or in-memory tests may be used for fast feedback, but they do not replace PostgreSQL integration coverage for Phase 1 persistence requirements.
 
@@ -1146,11 +1145,8 @@ The smallest useful version should include:
 - Allocate transactions to budget items.
 - Leave transactions unallocated or partially allocated until classification.
 - View snapshot by date.
-- View reconciliation for a date range.
-- View basic reports across date ranges.
 - View transaction-level detail.
 - View durable local audit history for imports, allocations, splits, ignores, reallocations, adjustments, and archival.
-- Export data to CSV.
 
 ## 26. Future Enhancements
 
