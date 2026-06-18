@@ -834,12 +834,14 @@ Version rules:
 
 Release requirements:
 
-- Git release tags should use SemVer tags such as `v0.1.0`, `v0.2.0`, and `v1.0.0`.
+- Git release tags should use SemVer tags such as `v0.1.0`, `v0.2.0`, and `v1.0.0`; these tags are the canonical released versions.
+- Builds should generate version metadata from the latest reachable tag and subsequent Conventional Commits. Tagged commits expose the tag version; commits after a tag expose deterministic preview metadata.
 - The runtime API should expose product version metadata separately from health status.
 - OpenAPI metadata should include the product SemVer.
 - Container image tags introduced in Phase 3 should include explicit SemVer tags such as `budgetytzar-api:0.2.0`; `latest` may exist only as a convenience tag and must not be the release identity.
 - Kubernetes manifests or Helm values should reference explicit SemVer image tags.
-- The repository should maintain release notes or a changelog grouped by SemVer.
+- GitHub Releases should be the human changelog and release-notes surface.
+- Generated version metadata and generated release-note files should be excluded from source control.
 - Local development should provide a versioned commit-message hook that validates Conventional Commits without requiring Node tooling.
 
 ## 18. Implementation Strategy
@@ -887,7 +889,7 @@ Deliver:
 - Git release tag convention.
 - Runtime version endpoint.
 - OpenAPI version metadata.
-- Release notes or changelog structure.
+- GitHub Release notes workflow.
 - Build validation that rejects invalid SemVer values.
 - Conventional Commits documentation and local commit-message validation.
 

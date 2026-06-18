@@ -74,7 +74,7 @@ Open `http://localhost:7070/` or `http://localhost:7070/swagger` to browse the A
 
 The API applies EF Core migrations on startup when `Database:MigrateOnStartup` is `true`.
 
-Runtime version metadata is available at `http://localhost:7070/version`. BudgetyTzar uses one product-wide SemVer, currently `0.1.0`, with release notes grouped in `CHANGELOG.md` and future Git release tags using values such as `v0.1.0`.
+Runtime version metadata is available at `http://localhost:7070/version`. BudgetyTzar uses one product-wide SemVer derived from Git tags and Conventional Commits. Tagged commits expose the tag version, such as `0.1.0`; commits after a tag expose deterministic preview metadata, such as `0.2.0-preview.3+abc1234`.
 
 Conventional Commits are required from Phase 2.5 onward. Enable the versioned local hook once per clone:
 
@@ -83,6 +83,14 @@ git config core.hooksPath .githooks
 ```
 
 Use commit subjects such as `feat: add budget export`, `fix(api): preserve version endpoint metadata`, or `feat(events)!: rename transaction event`.
+
+Cut a local release tag intentionally with:
+
+```bash
+scripts/release.sh
+```
+
+Git tags are the canonical released versions. Human release notes live in GitHub Releases; the release script prints the matching `gh release create` command when the GitHub CLI is available.
 
 ### Phase 2 Kafka, Outbox, and Projection Flags
 
