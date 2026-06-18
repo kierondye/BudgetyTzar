@@ -1,45 +1,41 @@
 # BudgetyTzar
 
-BudgetyTzar is a personal budgeting MVP that replaces a monthly spreadsheet with a PostgreSQL-backed HTTP API. Phase 1 focuses on the local .NET implementation: budgets, budget periods, budget lines, durable audit records, manual and imported transactions, transaction assignment, budget reallocations, adjustments, reconciliation, basic multi-period reports, and CSV export. Phase 2 introduces Kafka-compatible local infrastructure, outbox publishing, and projection-backed reporting behind disabled-by-default feature flags.
+BudgetyTzar is a personal budgeting MVP that replaces a monthly spreadsheet with a PostgreSQL-backed HTTP API. The target domain model is a dated ledger: budgets contain budget items, debit and credit budget adjustments, zero-sum reallocations, debit and credit transactions, transaction allocations, snapshots, reconciliation, reports, and durable audit records. Phase 2 introduces Kafka-compatible local infrastructure, outbox publishing, and projection-backed reporting behind disabled-by-default feature flags.
 
 ## Phase 1 API
+
+The current implementation is being migrated from an older period-based model toward the ledger-first API described in `SPECIFICATION.md`. The intended Phase 1 surface is:
 
 - `POST /api/budgets`
 - `GET /api/budgets`
 - `GET /api/budgets/{budgetId}`
-- `POST /api/budgets/{budgetId}/periods`
-- `GET /api/budgets/{budgetId}/periods`
-- `GET /api/budgets/{budgetId}/periods/{periodId}`
-- `GET /api/budgets/{budgetId}/periods/for-date?date={date}`
-- `POST /api/budgets/{budgetId}/budget-lines`
-- `GET /api/budgets/{budgetId}/budget-lines`
-- `POST /api/budgets/{budgetId}/budget-lines/{lineId}/archive`
-- `PUT /api/budgets/{budgetId}/periods/{periodId}/allocations`
-- `GET /api/budgets/{budgetId}/periods/{periodId}/allocations`
+- `POST /api/budgets/{budgetId}/budget-items`
+- `GET /api/budgets/{budgetId}/budget-items`
+- `POST /api/budgets/{budgetId}/budget-items/{budgetItemId}/archive`
+- `POST /api/budgets/{budgetId}/budget-items/{budgetItemId}/adjustments`
+- `GET /api/budgets/{budgetId}/budget-items/{budgetItemId}/adjustments`
+- `POST /api/budgets/{budgetId}/reallocations`
+- `GET /api/budgets/{budgetId}/reallocations`
+- `GET /api/budgets/{budgetId}/snapshot?date={date}`
 - `POST /api/budgets/{budgetId}/transaction-imports/preview`
 - `POST /api/budgets/{budgetId}/transaction-imports/{importBatchId}/commit`
 - `GET /api/budgets/{budgetId}/transaction-imports/{importBatchId}`
 - `POST /api/budgets/{budgetId}/transactions`
-- `GET /api/budgets/{budgetId}/transactions?periodId={periodId}`
-- `GET /api/budgets/{budgetId}/transactions?from={date}&to={date}&assignmentStatus={status}`
+- `GET /api/budgets/{budgetId}/transactions?from={date}&to={date}&allocationStatus={status}`
 - `GET /api/budgets/{budgetId}/transactions/{transactionId}`
 - `PUT /api/budgets/{budgetId}/transactions/{transactionId}`
 - `POST /api/budgets/{budgetId}/transactions/{transactionId}/ignore`
-- `PUT /api/budgets/{budgetId}/transactions/{transactionId}/assignments`
-- `GET /api/budgets/{budgetId}/transactions/{transactionId}/assignments`
-- `DELETE /api/budgets/{budgetId}/transactions/{transactionId}/assignments`
-- `POST /api/budgets/{budgetId}/periods/{periodId}/reallocations`
-- `GET /api/budgets/{budgetId}/periods/{periodId}/reallocations`
-- `POST /api/budgets/{budgetId}/periods/{periodId}/adjustments`
-- `GET /api/budgets/{budgetId}/periods/{periodId}/adjustments`
-- `GET /api/budgets/{budgetId}/reports/period-summary?periodId={periodId}`
-- `GET /api/budgets/{budgetId}/reports/budget-line-trends?budgetLineId={lineId}&from={date}&to={date}`
-- `GET /api/budgets/{budgetId}/reports/credit-variance?from={date}&to={date}`
-- `GET /api/budgets/{budgetId}/reports/reconciliation?periodId={periodId}`
-- `GET /api/budgets/{budgetId}/reports/audit-timeline?periodId={periodId}`
-- `GET /api/budgets/{budgetId}/reports/period-summary.csv?periodId={periodId}`
+- `POST /api/budgets/{budgetId}/transactions/{transactionId}/allocations`
+- `PUT /api/budgets/{budgetId}/transactions/{transactionId}/allocations`
+- `GET /api/budgets/{budgetId}/transactions/{transactionId}/allocations`
+- `DELETE /api/budgets/{budgetId}/transactions/{transactionId}/allocations`
+- `GET /api/budgets/{budgetId}/reports/activity?from={date}&to={date}`
+- `GET /api/budgets/{budgetId}/reports/budget-item-trends?budgetItemId={itemId}&from={date}&to={date}`
+- `GET /api/budgets/{budgetId}/reports/reconciliation?from={date}&to={date}`
+- `GET /api/budgets/{budgetId}/reports/audit-timeline?from={date}&to={date}`
+- `GET /api/budgets/{budgetId}/reports/activity.csv?from={date}&to={date}`
 
-Period summary `ActualDebit` and `ActualCredit` values are based on assigned transaction amounts. Unassigned debit and credit transactions remain visible in `UnassignedDebitTotal` and `UnassignedCreditTotal` until they are assigned to budget lines.
+Balances use ledger signs: credits minus debits. Budget item balances are cumulative by default. Unallocated debit and credit transaction values remain visible in snapshots and reconciliation until they are allocated to budget items.
 
 ## Local Development
 
@@ -120,6 +116,6 @@ dotnet test
 
 Phase 1 is intentionally a local modular MVP. It keeps the language, domain model, audit vocabulary, and API surface aligned with the later event-driven service architecture from `SPECIFICATION.md`, while deferring service decomposition, Kubernetes, and the Go implementation to later phases. Phase 2 starts introducing Kafka-compatible local infrastructure, outbox publishing, and projection-backed reporting behind explicit opt-in flags.
 
-Budgets are the root resource. Budget periods cannot overlap within a budget, transactions belong to a budget, and a transaction's date determines which period reports include it in. Budget lines can be debit or credit lines, and debit lines can either reset each period or carry cumulative balances forward. Archived budget lines remain visible in historical periods. A budget has one currency, and all child amounts use that currency.
+Budgets are the root resource. Budget items are named ledger buckets, not fixed debit or credit lines. Dated budget adjustments and transaction allocations can be debits or credits against any budget item, and item balances are cumulative by default. Date-range reports are read models over the ledger rather than separate period state. A budget has one currency, and all child amounts use that currency.
 
-The Phase 1 audit timeline is backed by durable local audit records for imports, assignment changes, splits, ignores, reallocations, adjustments, and budget line archival. Kafka-published audit events, outbox records, and projection-backed reporting are Phase 2 concerns and should stay disabled in local config unless that behavior is being developed or tested.
+The Phase 1 audit timeline is backed by durable local audit records for imports, allocation changes, splits, ignores, reallocations, adjustments, and budget item archival. Kafka-published audit events, outbox records, and projection-backed reporting are Phase 2 concerns and should stay disabled in local config unless that behavior is being developed or tested.

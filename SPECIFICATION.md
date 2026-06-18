@@ -2,26 +2,31 @@
 
 ## 1. Purpose
 
-BudgetyTzar is a personal budgeting application that replaces a manual period-based spreadsheet process with an auditable, event-driven system. It tracks planned credits, actual credits, planned debits, actual debits, budget allocations, spending, credits, reallocations between budget lines, and cumulative budget lines across multiple periods.
+BudgetyTzar is a personal budgeting application that replaces a manual spreadsheet with an auditable ledger-backed HTTP API. It tracks planned budget movements, real transactions, transaction allocations, budget reallocations, balances, snapshots, and historical reporting without relying on period resets.
 
-The application is also intended to demonstrate senior software engineering capability through two equivalent implementations:
+The core product model is intentionally small:
 
-- A .NET implementation.
-- A Go implementation.
+- Budget.
+- Budget item.
+- Budget adjustment.
+- Budget reallocation.
+- Transaction.
+- Transaction allocation.
 
-Both implementations should use the same product model, event contracts, test scenarios, container strategy, Kubernetes deployment model, and cloud architecture.
+The application is also intended to demonstrate senior software engineering capability through equivalent .NET and Go implementations that share the same product model, event contracts, test scenarios, container strategy, Kubernetes deployment model, and cloud architecture.
 
 ## 2. Goals
 
 ### 2.1 Product Goals
 
 - Reduce manual budgeting effort.
-- Preserve transaction-level detail instead of flattening everything into a single period spent column.
-- Clearly distinguish planned credits, actual credits, planned debits, actual debits, budget allocations, and budget reallocations.
-- Support budget lines that reset each period and budget lines that accumulate over time.
-- Track planned credits against actual credits.
-- Provide confidence that the budget is correct through audit trails and reconciliation views.
-- Support analysis across many months, not just one sheet at a time.
+- Preserve transaction-level detail instead of flattening activity into period totals.
+- Model the budget as a dated ledger where every budget item can receive debit and credit adjustments and debit and credit transaction allocations.
+- Avoid period reset rules that lose track of funds.
+- Avoid separate cumulative/reset configuration on budget items.
+- Track expected income, expected spending, actual income, actual spending, reallocations, and unallocated transaction value.
+- Provide confidence that the budget is correct through audit trails, snapshots, and reconciliation views.
+- Support analysis across arbitrary date ranges, not just one sheet at a time.
 
 ### 2.2 Engineering Goals
 
@@ -40,10 +45,11 @@ Both implementations should use the same product model, event contracts, test sc
 - Mobile applications are not required for the first version.
 - Investment portfolio tracking is not required.
 - Mixed-currency budgets are not required for the first version.
+- Scheduled and recurring adjustments are not required for the first version, though the domain should not prevent adding them later.
 
 ## 4. Target User
 
-The primary user is an individual who budgets by period, reviews bank transactions, allocates those transactions to budget lines, adjusts budget during the period, and wants clear historical analysis.
+The primary user is an individual who budgets from a spreadsheet-like ledger, records planned adjustments, reviews bank transactions, allocates those transactions to budget items, moves budget between items, and wants clear historical analysis.
 
 The secondary audience is prospective employers reviewing the project as evidence of engineering capability.
 
@@ -51,7 +57,7 @@ The secondary audience is prospective employers reviewing the project as evidenc
 
 ### 5.1 Budget
 
-A budget is the root container for periods, budget lines, transactions, allocations, reallocations, and reports.
+A budget is the root container for budget items, budget adjustments, budget reallocations, transactions, transaction allocations, snapshots, and reports.
 
 A budget has:
 
@@ -60,109 +66,125 @@ A budget has:
 
 All child amounts in a budget use the budget currency. Multi-currency budgets, exchange rates, and currency conversion are out of scope for the first version.
 
-### 5.2 Budget Period
+### 5.2 Budget Item
 
-A budget period is a date range within a budget. It often represents one calendar month, but the period is the source of truth rather than the month.
-
-Examples:
-
-- January 2026
-- February 2026
-
-A period has:
-
-- Budget.
-- Start date.
-- End date.
-- Opening balances for cumulative debit budget lines.
-- Planned credit allocations.
-- Planned debit allocations.
-- Actual credits.
-- Actual debits.
-- Closing balances.
-
-Budget periods cannot overlap within the same budget. Periods in different budgets may overlap.
-
-### 5.3 Budget Line
-
-A budget line represents a planned credit or debit line in the budget.
+A budget item is a named ledger bucket within a budget.
 
 Examples:
 
-- Mortgage
-- Groceries
-- Petrol
-- Eating out
-- Holiday fund
-- Car maintenance
-- Christmas
-- Salary
-- Bonus
+- Salary.
+- Bonus.
+- Mortgage.
+- Groceries.
+- Petrol.
+- Eating out.
+- Holiday fund.
+- Car maintenance.
+- Christmas.
 
-Budget lines have a planning direction:
+Budget items do not have a fixed debit/credit direction. A single budget item can receive:
 
-- `Debit`: used for planned and actual spending.
-- `Credit`: used for planned and actual income or other incoming money.
+- Debit budget adjustments.
+- Credit budget adjustments.
+- Debit transaction allocations.
+- Credit transaction allocations.
 
-The planning direction defines how the line is budgeted and reported, but it does not prevent assigning a transaction with the opposite direction. Opposite-direction assignments are allowed when they naturally offset the line. For example, a debit medical expenses line may receive debit transactions for up-front payments and credit transactions for insurance reimbursements.
+Budget items do not have a reset/cumulative setting. All budget item balances are cumulative by default and are derived from dated ledger entries.
 
-Budget lines have a rollover type:
+Budget items may be active or archived. Archived budget items remain visible in historical snapshots and reports where they had activity.
 
-- `PeriodReset`: unused debit budget does not carry forward automatically.
-- `Cumulative`: unused debit budget carries forward into future periods.
+### 5.3 Budget Adjustment
 
-Budget lines may be active or archived.
+A budget adjustment is a dated planned movement on one budget item. It changes the budget ledger without representing a bank transaction.
 
-### 5.4 Transaction
+Examples:
 
-A transaction is an imported or manually entered financial movement.
+- Credit Salary by 2,500.00 for expected income.
+- Debit Groceries by 500.00 for planned grocery spending.
+- Debit Mortgage by 800.00 for planned mortgage spending.
+- Credit Groceries by 50.00 to reduce planned grocery need.
 
-Transactions preserve:
+A budget adjustment has:
 
-- Date.
-- Description.
+- Budget item.
 - Amount.
-- Direction: debit or credit.
-- Source account.
-- External reference, if available.
-- Import batch, if imported.
-- Budget line assignments.
+- Type: debit or credit.
+- Date.
 - Notes.
 
-Transactions belong to a budget. A transaction's date determines which budget period includes it in period reports.
+Amounts are positive. The type determines whether the adjustment is a debit or a credit.
 
-### 5.5 Allocation
+### 5.4 Budget Reallocation
 
-An allocation sets the planned amount for a budget line in a budget period.
+A budget reallocation is a grouped set of budget adjustments that moves budget between two or more budget items without representing a bank transaction.
 
-Examples:
+A reallocation must:
 
-- Allocate 400.00 to Groceries for June 2026.
-- Allocate 3,000.00 to Salary for June 2026.
-
-### 5.6 Budget Reallocation
-
-A budget reallocation transfers available budget from one debit budget line to another without representing a bank transaction.
+- Contain two or more budget adjustments.
+- Sum to zero.
+- Belong to one budget.
+- Have a shared reallocation identifier for auditability.
+- Have a date and notes.
 
 Example:
 
-- Move 50.00 from Eating out to Groceries.
+- Credit Eating out by 30.00.
+- Debit Groceries by 30.00.
 
-Budget reallocations must be stored separately from real transactions.
+This records that budget was moved from Eating out to Groceries. It does not alter actual transaction totals.
 
-The source budget line must have enough available balance in the target period for the reallocation amount. Reallocations must not be allowed to create or conceal overspending on the source line.
+### 5.5 Transaction
 
-### 5.7 Adjustment
+A transaction is an imported or manually entered financial movement.
 
-An adjustment corrects or explains a balance without pretending it was a bank transaction.
+A transaction has:
 
-Examples:
+- Amount.
+- Type: debit or credit.
+- Date.
+- Description or notes.
+- Source account, if available.
+- External reference, if available.
+- Import batch, if imported.
 
-- Opening balance correction.
-- Manual reconciliation adjustment.
-- Write-off.
+Amounts are positive. The type determines whether the transaction is a debit or a credit.
 
-Adjustments should require a reason.
+Transactions belong to a budget. Transactions may be unallocated, partially allocated, fully allocated, or ignored.
+
+### 5.6 Transaction Allocation
+
+A transaction allocation assigns part of a transaction to a budget item.
+
+A transaction allocation has:
+
+- Transaction.
+- Budget item.
+- Amount.
+- Notes.
+
+Amounts are positive. The transaction type determines whether the allocation contributes a debit or credit movement to the budget item. For example, a credit salary transaction allocated to Salary increases the Salary item's credit activity; a debit correction allocated to Salary reduces that item's net credit position.
+
+The sum of allocations for a transaction must not exceed the transaction amount. A transaction can remain partially allocated, with the unallocated amount appearing in snapshots and reconciliation.
+
+### 5.7 Snapshot
+
+A snapshot is the calculated state of a budget as of a date.
+
+A snapshot includes:
+
+- One row per budget item with its balance as of the snapshot date.
+- Unbudgeted or unallocated balance.
+- Total transaction balance.
+- Optional activity totals for a selected date range.
+
+Balance calculation uses ledger signs:
+
+- Credits increase the ledger balance.
+- Debits decrease the ledger balance.
+- Every budget item uses the same rule.
+- Net value is calculated as credits minus debits.
+
+When presenting budget need, the API or UI may display positive debit needs and negative credit needs, but internal calculation must use one consistent ledger rule.
 
 ## 6. Functional Requirements
 
@@ -170,22 +192,39 @@ Adjustments should require a reason.
 
 The user can:
 
-- Create budget lines.
-- Mark budget lines as debit or credit.
-- Mark budget lines as period reset or cumulative.
-- Archive budget lines that are no longer used.
-- Configure expected recurring credit and debit allocations.
-- Start a new budget period from a template or previous period.
+- Create a budget.
+- Create budget items.
+- Archive budget items that are no longer used.
+- Record dated debit and credit budget adjustments.
+- Record budget reallocations as grouped zero-sum adjustments.
 
 Acceptance criteria:
 
-- A new period can be created with expected credit and debit budget lines pre-populated.
-- Cumulative debit budget lines start with their previous closing balance.
-- Period reset debit budget lines start from zero unless explicitly allocated.
-- Archived budget lines remain visible in historical periods and reports where they had activity.
-- Archived budget lines can still be used for retrospective corrections in historical periods where they already had allocation, transaction assignment, reallocation, adjustment, or carried cumulative balance activity.
+- A budget item is created with a name only; it does not require a direction or rollover type.
+- Archived budget items remain visible in historical snapshots and reports where they had activity.
+- Archived budget items can still be used for retrospective corrections when needed for audit accuracy.
+- Budget state can be recalculated from dated adjustments, reallocations, transactions, and transaction allocations.
 
-### 6.2 Transaction Entry and Import
+### 6.2 Budget Adjustments and Reallocations
+
+The user can:
+
+- Record a debit or credit adjustment against any budget item.
+- Record expected income as credit adjustments.
+- Record expected spending as debit adjustments.
+- Move budget between items through a reallocation.
+- Add notes explaining adjustments and reallocations.
+
+Acceptance criteria:
+
+- Adjustment amounts must be positive.
+- Adjustment type must be debit or credit.
+- Net planned spending must not exceed net planned income for the budget as of the relevant date: budget adjustment credits minus budget adjustment debits must be greater than or equal to zero.
+- Reallocations must contain at least two adjustments.
+- Reallocation adjustments must sum to zero: reallocation credits must equal reallocation debits.
+- Reallocations must not change actual transaction totals.
+
+### 6.3 Transaction Entry and Import
 
 The user can:
 
@@ -193,124 +232,106 @@ The user can:
 - Import transactions from a CSV file.
 - View imported transactions before committing them.
 - Detect likely duplicate transactions.
-- Assign transactions to budget lines.
-- Split a single transaction across multiple budget lines.
-- Leave transactions unassigned until they are classified.
+- Allocate transactions to budget items.
+- Split a single transaction across multiple budget items.
+- Leave transactions unallocated or partially allocated until they are classified.
 - Mark transactions as ignored when they are not relevant to the budget.
 
 Acceptance criteria:
 
-- Imported transaction details remain visible after assignment.
-- Debit transactions reduce available debit budget line balances.
-- Credit transactions assigned to credit budget lines increase actual credit totals.
-- Credit transactions assigned to debit budget lines reduce net spending for those lines, such as refunds or reimbursements.
-- Debit transactions assigned to credit budget lines reduce net credit for those lines, such as reversals or corrections.
-- Transaction assignments can be empty, single-line, or split across multiple budget lines.
+- Imported transaction details remain visible after allocation.
+- Transaction amounts must be positive.
+- Transaction type must be debit or credit.
+- Transaction allocations can be empty, single-item, or split across multiple budget items.
+- The sum of transaction allocations must not exceed the transaction amount.
+- Debit and credit transactions can be allocated to any budget item.
 
-### 6.3 Budget Tracking
+### 6.4 Budget Tracking
 
 The user can:
 
-- View planned credits vs actual credits for a period.
-- View planned debits vs actual debits by budget line.
-- View current remaining budget by debit budget line.
-- See over-budget debit budget lines.
-- Reallocate budget between debit budget lines.
-- See a clear distinction between real spending, refunds, allocations, transfers, and adjustments.
+- View a budget snapshot as of a date.
+- View item balances derived from all activity up to that date.
+- View unallocated transaction value.
+- View total transaction balance.
+- See planned and actual activity by budget item over a date range.
+- See a clear distinction between real transactions, budget adjustments, reallocations, and unallocated amounts.
 
 Acceptance criteria:
 
-- Overspending is visible without needing to inspect formulas.
-- Reallocating budget between budget lines does not alter actual spending totals.
-- Reallocation commands validate that both budget lines are debit lines in the same budget and that the source line has sufficient available balance in the period.
-- Budget line balances can be recalculated from event history.
+- A snapshot can be recalculated from persisted ledger entries.
+- Budget item balances are cumulative by default.
+- No reset operation is required to start a new month or planning cycle.
+- Date-range reports can show monthly or custom-period activity without changing the underlying ledger model.
 
-### 6.4 Cumulative Budget Lines
-
-The user can:
-
-- Carry unused budget forward for cumulative debit budget lines.
-- Spend from accumulated balances.
-- View opening balance, period allocation, spending, reallocations, adjustments, and closing balance.
-
-Acceptance criteria:
-
-- A cumulative debit budget line's closing balance becomes the next period's opening balance.
-- Period reset debit budget line balances do not carry forward by default.
-
-### 6.5 Income Tracking
+### 6.5 Audit Trail
 
 The user can:
 
-- Define expected credit allocations for a period.
-- Assign credit transactions to credit budget lines.
-- Compare planned credits with actual credits.
-- See credit variance by budget line and by period.
-
-Acceptance criteria:
-
-- The system shows whether actual earnings matched expected earnings.
-- Credit totals are not mixed into debit spending totals.
-
-### 6.6 Audit Trail
-
-The user can:
-
-- View the history of changes affecting a budget period.
-- See when transactions were imported, assigned, split, edited, or ignored.
-- See when budget was reallocated between budget lines.
-- See why adjustments were made.
+- View the history of changes affecting a budget.
+- See when transactions were imported, allocated, split, edited, or ignored.
+- See when budget was adjusted or reallocated.
+- See why adjustments and reallocations were made.
 
 Acceptance criteria:
 
 - The current budget state can be explained from recorded events.
 - Phase 1 stores durable local audit records before Kafka-backed audit events are introduced.
-- The user can understand an old period without relying on spreadsheet context.
-- A period audit timeline includes only events that affected that period, plus explicitly marked budget-level events whose effect genuinely applies to that period.
-- Import preview and commit audit records should be linked to affected transaction periods when possible, so unrelated imports do not appear in every period timeline.
+- The user can understand an old snapshot without relying on spreadsheet context.
 
-### 6.7 Reporting and Analysis
+### 6.6 Reporting and Analysis
 
 The user can:
 
-- Compare spending across months.
-- View trends by budget line.
-- View credit trends.
-- View budget variance over time.
+- Compare spending across months or custom date ranges.
+- View trends by budget item.
+- View expected income against actual income.
+- View expected spending against actual spending.
 - Export data to CSV.
 
 Acceptance criteria:
 
-- The user can answer: "How much did I spend on groceries over the last 12 months?"
-- The user can answer: "Which budget lines am I consistently overspending?"
-- The user can answer: "Did I earn what I expected over the last year?"
+- The user can answer: "What was my grocery activity over the last 12 months?"
+- The user can answer: "Which budget items consistently need more planned funding?"
+- The user can answer: "Did actual income match expected income over the last year?"
+- Reports can present period-style summaries as read models over the ledger, not as separate period state.
 
 ## 7. Example User Journeys
 
-### 7.1 Start a New Period
+### 7.1 Set Up an Initial Budget
 
-1. User selects "Create Budget Period".
-2. User chooses July 2026.
-3. System copies recurring credit and debit allocation templates.
-4. System carries forward balances for cumulative debit budget lines.
-5. User reviews and confirms the new period.
+1. User creates a budget named UK with currency GBP.
+2. User creates budget items for Salary, Groceries, Mortgage, and Incidentals.
+3. User records dated adjustments for expected salary and planned spending.
+4. System validates that net planned spending does not exceed net planned income.
+5. User views a snapshot as of the adjustment date.
 
-### 7.2 Import and Assign Transactions
+### 7.2 Receive and Allocate Salary
 
-1. User uploads a bank CSV.
-2. System parses and previews transactions.
-3. System flags possible duplicates.
-4. User commits the import.
-5. User assigns each transaction to one or more budget lines, or leaves it unassigned.
-6. System updates projected budget balances.
+1. User records or imports a 3,000.00 credit transaction.
+2. User allocates the transaction to Salary.
+3. System updates the Salary budget item balance.
+4. Any credit value not absorbed by planned budget need appears as unbudgeted balance.
 
-### 7.3 Cover Overspending
+### 7.3 Allocate Spending
 
-1. User sees Groceries is 30.00 over budget.
-2. User reallocates 30.00 from Eating out to Groceries.
-3. System records a budget reallocation.
-4. Groceries is no longer over budget.
-5. Actual spending remains unchanged.
+1. User records or imports a 200.00 debit transaction.
+2. User allocates 150.00 to Groceries and 40.00 to Incidentals.
+3. System leaves 10.00 unallocated.
+4. User sees updated item balances and unallocated value in the snapshot.
+
+### 7.4 Plan a Future Income Event
+
+1. User records a future-dated credit adjustment for the next salary payment.
+2. A snapshot before that date is unchanged.
+3. A snapshot on or after that date includes the expected income adjustment.
+
+### 7.5 Move Budget Between Items
+
+1. User decides Groceries needs 30.00 more planned funding.
+2. User records a reallocation containing a credit adjustment to Eating out and a debit adjustment to Groceries.
+3. System validates that the grouped adjustments sum to zero.
+4. Actual transaction totals remain unchanged.
 
 ## 8. Domain Events
 
@@ -326,23 +347,22 @@ budgetytzar.<bounded-context>.<event-name>.v1
 
 Examples:
 
-- `budgetytzar.budgeting.budget-period-created.v1`
-- `budgetytzar.transactions.transaction-imported.v1`
+- `budgetytzar.budgeting.budget-created.v1`
+- `budgetytzar.budgeting.budget-item-created.v1`
+- `budgetytzar.budgeting.budget-adjustment-recorded.v1`
 - `budgetytzar.budgeting.budget-reallocation-recorded.v1`
+- `budgetytzar.transactions.transaction-created.v1`
+- `budgetytzar.transactions.transaction-allocation-recorded.v1`
 
 ### 8.2 Core Events
 
 Budgeting events:
 
 - `BudgetCreated`
-- `BudgetPeriodCreated`
-- `BudgetLineCreated`
-- `BudgetLineArchived`
-- `BudgetLineChanged`
-- `BudgetLineAllocationPlanned`
-- `BudgetLineAllocationChanged`
-- `BudgetReallocationRecorded`
+- `BudgetItemCreated`
+- `BudgetItemArchived`
 - `BudgetAdjustmentRecorded`
+- `BudgetReallocationRecorded`
 
 Transaction events:
 
@@ -350,16 +370,16 @@ Transaction events:
 - `TransactionImported`
 - `TransactionManuallyCreated`
 - `TransactionDuplicateDetected`
-- `TransactionAssigned`
-- `TransactionSplit`
+- `TransactionAllocationRecorded`
+- `TransactionAllocationsReplaced`
 - `TransactionIgnored`
 - `TransactionEdited`
 
 Reporting events:
 
+- `BudgetSnapshotCalculated`
 - `BudgetProjectionUpdated`
-- `PeriodSummaryCalculated`
-- `BudgetLineTrendCalculated`
+- `BudgetItemTrendCalculated`
 
 ### 8.3 Event Envelope
 
@@ -381,19 +401,17 @@ All events should share a common envelope:
 
 ### 8.4 Example Event Payloads
 
-#### TransactionImported
+#### BudgetAdjustmentRecorded
 
 ```json
 {
-  "transactionId": "uuid",
-  "importBatchId": "uuid",
-  "accountId": "uuid",
+  "budgetAdjustmentId": "uuid",
   "budgetId": "uuid",
-  "transactionDate": "2026-06-12",
-  "description": "SUPERMARKET",
-  "amount": "42.30",
-  "direction": "Debit",
-  "externalReference": "bank-reference"
+  "budgetItemId": "uuid",
+  "amount": "500.00",
+  "type": "Debit",
+  "date": "2026-06-18T00:00:00Z",
+  "notes": "Initial budget for groceries."
 }
 ```
 
@@ -402,11 +420,34 @@ All events should share a common envelope:
 ```json
 {
   "budgetReallocationId": "uuid",
-  "budgetPeriodId": "uuid",
-  "fromBudgetLineId": "uuid",
-  "toBudgetLineId": "uuid",
-  "amount": "30.00",
-  "reason": "Cover grocery overspend"
+  "budgetId": "uuid",
+  "date": "2026-06-20T00:00:00Z",
+  "notes": "Move planned budget to groceries.",
+  "adjustments": [
+    {
+      "budgetItemId": "uuid",
+      "amount": "30.00",
+      "type": "Credit"
+    },
+    {
+      "budgetItemId": "uuid",
+      "amount": "30.00",
+      "type": "Debit"
+    }
+  ]
+}
+```
+
+#### TransactionAllocationRecorded
+
+```json
+{
+  "transactionAllocationId": "uuid",
+  "transactionId": "uuid",
+  "budgetId": "uuid",
+  "budgetItemId": "uuid",
+  "amount": "150.00",
+  "notes": "Partially allocate to groceries."
 }
 ```
 
@@ -433,31 +474,28 @@ Suggested implementation:
 Responsibilities:
 
 - Budgets.
-- Budget periods.
-- Budget lines.
-- Planned allocations.
+- Budget items.
+- Budget adjustments.
 - Budget reallocations.
-- Adjustments.
+- Snapshot rules for planned budget state.
 
 Owns:
 
 - Budgets.
-- Budget periods.
-- Budget lines.
-- Allocations.
+- Budget items.
+- Budget adjustments.
 - Budget reallocations.
-- Adjustments.
 
 Publishes:
 
-- Budget period events.
-- Budget line events.
-- Allocation events.
+- Budget events.
+- Budget item events.
+- Adjustment events.
 - Reallocation events.
 
 Consumes:
 
-- Assigned transaction events.
+- Transaction allocation events for balance projections, if projections are service-local.
 
 ### 9.3 Transaction Service
 
@@ -466,32 +504,33 @@ Responsibilities:
 - Manual transaction entry.
 - CSV import.
 - Duplicate detection.
-- Transaction assignment.
+- Transaction allocation.
 - Transaction splitting.
 
 Owns:
 
 - Transactions.
 - Import batches.
-- Assignment records.
+- Transaction allocations.
 
 Publishes:
 
 - Transaction imported events.
-- Transaction assigned events.
-- Transaction split events.
+- Transaction allocation events.
 - Transaction ignored events.
+- Transaction edited events.
 
 Consumes:
 
-- Budget line reference events.
+- Budget item reference events.
 
 ### 9.4 Reporting Service
 
 Responsibilities:
 
-- Read models for dashboards.
-- Period summaries.
+- Read models for snapshots.
+- Date-range summaries.
+- Reconciliation.
 - Multi-month analysis.
 - CSV exports.
 
@@ -514,8 +553,9 @@ Responsibilities:
 
 - User interface.
 - Authentication flow.
-- Budget period views.
-- Transaction assignment workflow.
+- Budget snapshot views.
+- Budget item management.
+- Transaction import and allocation workflow.
 - Reporting views.
 
 Suggested implementation:
@@ -540,11 +580,11 @@ The reporting service should build query-optimised read models from events.
 
 Suggested read models:
 
-- `period_budget_summary`
-- `budget_line_period_summary`
-- `credit_budget_line_period_summary`
-- `transaction_assignment_summary`
-- `cumulative_budget_line_balance`
+- `budget_snapshot`
+- `budget_item_balance`
+- `budget_item_activity_summary`
+- `transaction_allocation_summary`
+- `unallocated_transaction_summary`
 - `budget_audit_timeline`
 
 ## 12. APIs
@@ -557,19 +597,14 @@ APIs should be HTTP/JSON for user-driven commands and queries. Kafka should be u
 POST /api/budgets
 GET /api/budgets
 GET /api/budgets/{budgetId}
-POST /api/budgets/{budgetId}/periods
-GET /api/budgets/{budgetId}/periods
-GET /api/budgets/{budgetId}/periods/{budgetPeriodId}
-GET /api/budgets/{budgetId}/periods/for-date?date={date}
-POST /api/budgets/{budgetId}/budget-lines
-GET /api/budgets/{budgetId}/budget-lines
-POST /api/budgets/{budgetId}/budget-lines/{budgetLineId}/archive
-PUT /api/budgets/{budgetId}/periods/{budgetPeriodId}/allocations
-GET /api/budgets/{budgetId}/periods/{budgetPeriodId}/allocations
-POST /api/budgets/{budgetId}/periods/{budgetPeriodId}/reallocations
-GET /api/budgets/{budgetId}/periods/{budgetPeriodId}/reallocations
-POST /api/budgets/{budgetId}/periods/{budgetPeriodId}/adjustments
-GET /api/budgets/{budgetId}/periods/{budgetPeriodId}/adjustments
+POST /api/budgets/{budgetId}/budget-items
+GET /api/budgets/{budgetId}/budget-items
+POST /api/budgets/{budgetId}/budget-items/{budgetItemId}/archive
+POST /api/budgets/{budgetId}/budget-items/{budgetItemId}/adjustments
+GET /api/budgets/{budgetId}/budget-items/{budgetItemId}/adjustments
+POST /api/budgets/{budgetId}/reallocations
+GET /api/budgets/{budgetId}/reallocations
+GET /api/budgets/{budgetId}/snapshot?date={date}
 ```
 
 ### 12.2 Example Transaction API
@@ -579,109 +614,129 @@ POST /api/budgets/{budgetId}/transaction-imports/preview
 POST /api/budgets/{budgetId}/transaction-imports/{importBatchId}/commit
 GET /api/budgets/{budgetId}/transaction-imports/{importBatchId}
 POST /api/budgets/{budgetId}/transactions
-GET /api/budgets/{budgetId}/transactions?periodId={id}
-GET /api/budgets/{budgetId}/transactions?from={date}&to={date}&assignmentStatus={status}
+GET /api/budgets/{budgetId}/transactions?from={date}&to={date}&allocationStatus={status}
 GET /api/budgets/{budgetId}/transactions/{transactionId}
-PUT /api/budgets/{budgetId}/transactions/{transactionId}/assignments
-GET /api/budgets/{budgetId}/transactions/{transactionId}/assignments
-DELETE /api/budgets/{budgetId}/transactions/{transactionId}/assignments
+PUT /api/budgets/{budgetId}/transactions/{transactionId}
+POST /api/budgets/{budgetId}/transactions/{transactionId}/allocations
+PUT /api/budgets/{budgetId}/transactions/{transactionId}/allocations
+GET /api/budgets/{budgetId}/transactions/{transactionId}/allocations
+DELETE /api/budgets/{budgetId}/transactions/{transactionId}/allocations
 POST /api/budgets/{budgetId}/transactions/{transactionId}/ignore
 ```
 
 ### 12.3 Example Reporting API
 
 ```http
-GET /api/budgets/{budgetId}/reports/period-summary?periodId={id}
-GET /api/budgets/{budgetId}/reports/budget-line-trends?budgetLineId={id}&from={date}&to={date}
-GET /api/budgets/{budgetId}/reports/credit-variance?from={date}&to={date}
-GET /api/budgets/{budgetId}/reports/reconciliation?periodId={id}
-GET /api/budgets/{budgetId}/reports/audit-timeline?periodId={id}
-GET /api/budgets/{budgetId}/reports/period-summary.csv?periodId={id}
+GET /api/budgets/{budgetId}/reports/activity?from={date}&to={date}
+GET /api/budgets/{budgetId}/reports/budget-item-trends?budgetItemId={id}&from={date}&to={date}
+GET /api/budgets/{budgetId}/reports/reconciliation?from={date}&to={date}
+GET /api/budgets/{budgetId}/reports/audit-timeline?from={date}&to={date}
+GET /api/budgets/{budgetId}/reports/activity.csv?from={date}&to={date}
+```
+
+### 12.4 Example Snapshot Response
+
+```json
+{
+  "budgetItems": [
+    {
+      "id": "budget-item-guid-1",
+      "name": "Salary",
+      "balance": "500.00"
+    },
+    {
+      "id": "budget-item-guid-2",
+      "name": "Groceries",
+      "balance": "-350.00"
+    }
+  ],
+  "unbudgetedBalance": "190.00",
+  "totalBalance": "2800.00"
+}
 ```
 
 ## 13. User Interface
 
 ### 13.1 Main Views
 
-- Budget dashboard.
-- Budget period setup.
-- Budget line management.
+- Budget snapshot.
+- Budget item management.
+- Budget adjustment entry.
+- Budget reallocation entry.
 - Transaction import.
-- Transaction assignment inbox.
-- Budget line detail.
+- Transaction allocation inbox.
+- Budget item detail.
 - Audit timeline.
 - Reports.
 
-### 13.2 Budget Dashboard
+### 13.2 Budget Snapshot
 
-The dashboard should show:
+The snapshot should show:
 
-- Current period.
-- Planned credits.
-- Actual credits.
-- Credit variance.
-- Planned debits.
-- Actual debits.
-- Remaining debit budget.
-- Unassigned and partially assigned transaction totals.
-- Over-budget debit budget lines.
-- Cumulative budget line balances.
+- Snapshot date.
+- Budget item balances.
+- Total budgeted balance.
+- Unbudgeted or unallocated balance.
+- Total transaction balance.
+- Items with negative or unexpected balances.
 
-### 13.3 Transaction Assignment Inbox
+### 13.3 Transaction Allocation Inbox
 
 The inbox should show:
 
-- Unassigned transactions.
+- Unallocated and partially allocated transactions.
 - Possible duplicates.
-- Suggested budget lines, if implemented.
-- Split transaction action.
+- Suggested budget items, if implemented.
+- Split allocation action.
 - Ignore action.
-- Assignment history.
+- Allocation history.
 
 ### 13.4 Reports
 
 Reports should include:
 
-- Period spending by budget line.
-- Budget line trends.
-- Credit variance over time.
+- Activity by budget item.
+- Budget item trends.
+- Expected vs actual income.
+- Expected vs actual spending.
 - Budget vs actual.
-- Cumulative balance history.
+- Balance history.
 
 ## 14. Business Rules
 
-- Transactions must never be deleted once committed; they may be corrected, ignored, or superseded.
-- Budget reallocations must not change actual spending.
-- Budget reallocations may only move currently available budget between debit budget lines in the same budget, within the selected budget period.
-- Credit totals must not be mixed into debit spending totals.
-- Debit transactions assigned to debit budget lines increase spending against those lines.
-- Credit transactions assigned to debit budget lines reduce net spending against those lines.
-- Credit transactions assigned to credit budget lines increase actual credit against those lines.
-- Debit transactions assigned to credit budget lines reduce net credit against those lines.
-- Transactions may be unassigned, assigned to one budget line, or split across multiple budget lines.
-- Period reset debit budget lines do not carry forward unused balances by default.
-- Cumulative debit budget lines carry forward closing balances.
-- Periods do not have open or closed status in the first version; retrospective changes are allowed and should be visible through audit/history.
-- Archiving a budget line prevents normal future use but must not prevent audited retrospective corrections for historical periods where the line already had activity.
-- Every adjustment requires a reason.
 - Monetary values must use decimal types, never floating point.
 - Each budget has one currency; all child amounts use the budget currency.
+- Amounts must be positive.
+- Debit or credit type determines sign.
+- Budget item balances are cumulative and are calculated from dated ledger entries.
+- Budget items do not have fixed debit/credit direction.
+- Budget items do not have period reset or cumulative configuration.
+- Net planned spending must not exceed net planned income across budget adjustments: budget adjustment credits minus budget adjustment debits must be greater than or equal to zero.
+- A budget reallocation must contain two or more budget adjustments.
+- A budget reallocation's adjustments must sum to zero: reallocation credits must equal reallocation debits.
+- Budget reallocations must not change actual transaction totals.
+- Transactions must never be deleted once committed; they may be corrected, ignored, or superseded.
+- The sum of transaction allocations for a transaction must not exceed the transaction amount.
+- Transactions may be unallocated, partially allocated, fully allocated, or ignored.
+- Debit and credit transactions may be allocated to any budget item.
+- Archiving a budget item prevents normal future use but must not prevent audited retrospective corrections where needed.
+- Every adjustment and reallocation should include notes.
 
 ## 15. Reconciliation
 
-The system should provide a reconciliation view showing:
+The system should provide a reconciliation view over a date range showing:
 
-- Total imported debits.
-- Total imported credits.
-- Assigned debits.
-- Assigned credits.
+- Total transaction debits.
+- Total transaction credits.
+- Allocated debits.
+- Allocated credits.
 - Ignored transactions.
-- Unassigned transactions.
+- Unallocated transaction value.
+- Budget adjustments.
 - Budget reallocations.
-- Adjustments.
-- Difference between bank activity and budgeted activity.
+- Difference between transaction activity and allocated activity.
 
-This view exists to answer: "Is this period correct?"
+This view exists to answer: "Is this date range correct?"
 
 ## 16. Architecture
 
@@ -772,21 +827,19 @@ Build one implementation first, preferably .NET because it matches existing expe
 Deliver:
 
 - Budgets.
-- Budget periods.
-- Budget lines.
-- Historical visibility of archived budget lines in old periods.
-- Audited retrospective corrections for archived budget lines in historical periods where they had activity.
+- Budget items.
+- Archived budget item history.
+- Budget adjustments with debit/credit type, date, and notes.
+- Budget reallocations as grouped zero-sum adjustments.
 - Manual transactions.
 - CSV import preview and commit.
 - Duplicate detection for imported transactions.
-- Transaction assignment.
-- Opposite-direction assignments for refunds, reimbursements, reversals, and corrections.
-- Budget reallocations with available-balance validation.
-- Adjustments with reasons.
-- Durable local audit records for imports, assignments, splits, ignores, reallocations, adjustments, and budget line archival, with period timelines filtered to events that affected the selected period.
-- Period summary.
-- Reconciliation view.
-- Basic multi-period reports for budget line trends and credit variance.
+- Transaction allocations.
+- Partial transaction allocation and unallocated value.
+- Durable local audit records for imports, allocations, splits, ignores, reallocations, adjustments, and budget item archival.
+- Snapshot by date.
+- Reconciliation by date range.
+- Basic reports for budget item trends and expected-vs-actual activity.
 - CSV export.
 - PostgreSQL persistence.
 - Unit and integration tests.
@@ -800,6 +853,7 @@ Introduce:
 - Service decomposition with service-owned schemas.
 - Projection-backed reporting and audit timelines.
 - Docker Compose for local infrastructure.
+- Scheduled and recurring adjustments or reallocations, if still needed.
 
 ### 17.3 Phase 3: Containerisation and Kubernetes
 
@@ -899,13 +953,14 @@ For job-search value, a side-by-side architecture is compelling:
 
 Cover:
 
-- Budget line balance calculations.
-- Period reset behaviour.
-- Cumulative carry-forward behaviour.
-- Budget reallocation validation.
-- Archived budget line historical correction rules.
-- Credit variance calculations.
-- Transaction assignment rules.
+- Budget item balance calculations.
+- Adjustment sign handling.
+- Net planned spending validation.
+- Budget reallocation zero-sum validation.
+- Transaction allocation total validation.
+- Archived budget item historical correction rules.
+- Snapshot calculation.
+- Reconciliation calculation.
 
 ### 19.2 Integration Tests
 
@@ -915,6 +970,8 @@ Cover:
 - PostgreSQL-backed API integration tests for provider-specific schema, precision, query, and index behaviour.
 - CSV import.
 - Duplicate detection.
+- Transaction allocation.
+- Snapshot queries.
 - Reconciliation.
 - CSV export.
 - Outbox publishing in Phase 2.
@@ -935,11 +992,13 @@ Cover:
 
 Cover:
 
-- Create a budget period.
+- Create a budget.
+- Create budget items.
+- Record budget adjustments.
 - Import transactions.
-- Assign transactions.
-- Reallocate budget to cover overspending.
-- View reports across periods.
+- Allocate transactions.
+- Reallocate budget.
+- View snapshots and reports.
 
 ## 20. Observability
 
@@ -1023,43 +1082,42 @@ The repository should include:
 
 Suggested portfolio narrative:
 
-> BudgetyTzar replaces an error-prone spreadsheet budgeting workflow with an event-driven, auditable budgeting platform. It uses Kafka for asynchronous service integration, PostgreSQL for service-owned data, Kubernetes for deployment, and equivalent .NET and Go implementations to demonstrate language versatility and cloud-native engineering practice.
+> BudgetyTzar replaces an error-prone spreadsheet budgeting workflow with an event-driven, auditable budgeting platform. It models personal budgets as dated ledger entries, uses Kafka for asynchronous service integration, PostgreSQL for service-owned data, Kubernetes for deployment, and equivalent .NET and Go implementations to demonstrate language versatility and cloud-native engineering practice.
 
 ## 24. Minimum Viable Product Scope
 
 The smallest useful version should include:
 
 - Create a budget.
-- Create a budget period.
-- Create debit and credit budget lines.
-- Mark budget lines as period reset or cumulative.
-- Preserve historical reporting for archived budget lines.
-- Allow audited retrospective corrections for archived budget lines in periods where they had activity.
-- Enter planned credit and debit allocations.
+- Create budget items.
+- Preserve historical reporting for archived budget items.
+- Allow audited retrospective corrections for archived budget items where needed.
+- Record debit and credit budget adjustments.
+- Record budget reallocations as grouped zero-sum adjustments.
 - Manually add transactions.
 - Preview and commit CSV imports.
 - Detect likely duplicate imported transactions.
-- Assign transactions to budget lines.
-- Leave transactions unassigned until classification.
-- Reallocate available budget between debit budget lines.
-- Record adjustments with reasons.
-- View period summary.
-- View reconciliation for a period.
-- View basic reports across periods.
+- Allocate transactions to budget items.
+- Leave transactions unallocated or partially allocated until classification.
+- View snapshot by date.
+- View reconciliation for a date range.
+- View basic reports across date ranges.
 - View transaction-level detail.
-- View durable local audit history for imports, assignments, splits, ignores, reallocations, adjustments, and archival, scoped to the selected period where applicable.
+- View durable local audit history for imports, allocations, splits, ignores, reallocations, adjustments, and archival.
 - Export data to CSV.
 
 ## 25. Future Enhancements
 
+- Scheduled and recurring adjustments.
+- Scheduled and recurring reallocations.
 - Bank feed integration through Open Banking.
-- Automatic budget line suggestions.
+- Automatic budget item suggestions.
 - Recurring transaction detection.
 - Forecasting.
 - Multi-account support.
 - Household sharing.
 - Mobile-friendly PWA.
 - Receipt attachment.
-- Rules engine for transaction assignment.
+- Rules engine for transaction allocation.
 - Anomaly detection.
 - Scenario planning.
