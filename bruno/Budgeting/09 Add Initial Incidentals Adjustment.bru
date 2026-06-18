@@ -1,0 +1,35 @@
+meta {
+  name: 09 Add Initial Incidentals Adjustment
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/api/budgets/{{budgetId}}/budget-items/{{incidentalsItemId}}/adjustments
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "amount": 1000,
+    "type": 0,
+    "date": "2026-06-18",
+    "notes": "Initial budget for incidentals."
+  }
+}
+
+script:post-response {
+  bru.setVar("initialIncidentalsAdjustmentId", res.body.id);
+}
+
+tests {
+  test("records initial incidentals debit adjustment", function() {
+    expect(res.status).to.be.within(200, 299);
+    expect(res.body.budgetItemId).to.equal(bru.getVar("incidentalsItemId"));
+  });
+}

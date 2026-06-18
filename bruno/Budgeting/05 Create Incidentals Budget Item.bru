@@ -1,0 +1,32 @@
+meta {
+  name: 05 Create Incidentals Budget Item
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/budgets/{{budgetId}}/budget-items
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Incidentals"
+  }
+}
+
+script:post-response {
+  bru.setVar("incidentalsItemId", res.body.id);
+}
+
+tests {
+  test("creates Incidentals budget item", function() {
+    expect(res.status).to.be.within(200, 299);
+    expect(res.body.name).to.equal("Incidentals");
+  });
+}

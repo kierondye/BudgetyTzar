@@ -1,0 +1,35 @@
+meta {
+  name: 17 Add Second Salary Adjustment
+  type: http
+  seq: 17
+}
+
+post {
+  url: {{baseUrl}}/api/budgets/{{budgetId}}/budget-items/{{salaryItemId}}/adjustments
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "amount": 2500,
+    "type": 1,
+    "date": "2026-07-18",
+    "notes": "Second expected salary."
+  }
+}
+
+script:post-response {
+  bru.setVar("secondSalaryAdjustmentId", res.body.id);
+}
+
+tests {
+  test("records second salary credit adjustment", function() {
+    expect(res.status).to.be.within(200, 299);
+    expect(res.body.budgetItemId).to.equal(bru.getVar("salaryItemId"));
+  });
+}

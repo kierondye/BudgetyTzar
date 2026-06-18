@@ -1,0 +1,33 @@
+meta {
+  name: 01 Create UK Budget
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/budgets
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "UK",
+    "currency": "GBP"
+  }
+}
+
+script:post-response {
+  bru.setVar("budgetId", res.body.id);
+}
+
+tests {
+  test("creates UK budget", function() {
+    expect(res.status).to.be.within(200, 299);
+    expect(res.body.name).to.equal("UK");
+  });
+}

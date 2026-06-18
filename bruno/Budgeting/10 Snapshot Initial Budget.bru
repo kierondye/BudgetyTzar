@@ -1,0 +1,27 @@
+meta {
+  name: 10 Snapshot Initial Budget
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{baseUrl}}/api/budgets/{{budgetId}}/snapshot?date=2026-06-18
+  body: none
+  auth: none
+}
+
+tests {
+  function itemBalance(id) {
+    return res.body.budgetItems.find((item) => item.budgetItemId === id).balance;
+  }
+
+  test("initial snapshot matches planned budget", function() {
+    expect(res.status).to.equal(200);
+    expect(itemBalance(bru.getVar("salaryItemId"))).to.equal(-2500);
+    expect(itemBalance(bru.getVar("groceriesItemId"))).to.equal(500);
+    expect(itemBalance(bru.getVar("mortgageItemId"))).to.equal(800);
+    expect(itemBalance(bru.getVar("incidentalsItemId"))).to.equal(1000);
+    expect(res.body.unbudgetedBalance).to.equal(0);
+    expect(res.body.totalBalance).to.equal(-200);
+  });
+}

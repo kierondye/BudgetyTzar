@@ -1,0 +1,32 @@
+meta {
+  name: 02 Create Salary Budget Item
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/budgets/{{budgetId}}/budget-items
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Salary"
+  }
+}
+
+script:post-response {
+  bru.setVar("salaryItemId", res.body.id);
+}
+
+tests {
+  test("creates Salary budget item", function() {
+    expect(res.status).to.be.within(200, 299);
+    expect(res.body.name).to.equal("Salary");
+  });
+}

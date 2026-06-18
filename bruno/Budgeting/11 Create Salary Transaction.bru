@@ -1,0 +1,38 @@
+meta {
+  name: 11 Create Salary Transaction
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{baseUrl}}/api/budgets/{{budgetId}}/transactions
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "transactionDate": "2026-06-19",
+    "description": "Initial salary.",
+    "amount": 3000,
+    "direction": 1,
+    "sourceAccount": "Current account",
+    "externalReference": null,
+    "notes": "Initial salary."
+  }
+}
+
+script:post-response {
+  bru.setVar("salaryTransactionId", res.body.id);
+}
+
+tests {
+  test("creates salary credit transaction", function() {
+    expect(res.status).to.be.within(200, 299);
+    expect(res.body.amount).to.equal(3000);
+  });
+}

@@ -1,0 +1,27 @@
+meta {
+  name: 18 Snapshot After Second Salary Adjustment
+  type: http
+  seq: 18
+}
+
+get {
+  url: {{baseUrl}}/api/budgets/{{budgetId}}/snapshot?date=2026-07-18
+  body: none
+  auth: none
+}
+
+tests {
+  function itemBalance(id) {
+    return res.body.budgetItems.find((item) => item.budgetItemId === id).balance;
+  }
+
+  test("second salary adjustment updates July snapshot", function() {
+    expect(res.status).to.equal(200);
+    expect(itemBalance(bru.getVar("salaryItemId"))).to.equal(-2000);
+    expect(itemBalance(bru.getVar("groceriesItemId"))).to.equal(350);
+    expect(itemBalance(bru.getVar("mortgageItemId"))).to.equal(800);
+    expect(itemBalance(bru.getVar("incidentalsItemId"))).to.equal(960);
+    expect(res.body.unbudgetedBalance).to.equal(190);
+    expect(res.body.totalBalance).to.equal(300);
+  });
+}

@@ -1,0 +1,32 @@
+meta {
+  name: 04 Create Mortgage Budget Item
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/budgets/{{budgetId}}/budget-items
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Mortgage"
+  }
+}
+
+script:post-response {
+  bru.setVar("mortgageItemId", res.body.id);
+}
+
+tests {
+  test("creates Mortgage budget item", function() {
+    expect(res.status).to.be.within(200, 299);
+    expect(res.body.name).to.equal("Mortgage");
+  });
+}

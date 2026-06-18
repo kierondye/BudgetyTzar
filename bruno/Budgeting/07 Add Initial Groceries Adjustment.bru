@@ -1,0 +1,35 @@
+meta {
+  name: 07 Add Initial Groceries Adjustment
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/api/budgets/{{budgetId}}/budget-items/{{groceriesItemId}}/adjustments
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "amount": 500,
+    "type": 0,
+    "date": "2026-06-18",
+    "notes": "Initial budget for groceries."
+  }
+}
+
+script:post-response {
+  bru.setVar("initialGroceriesAdjustmentId", res.body.id);
+}
+
+tests {
+  test("records initial groceries debit adjustment", function() {
+    expect(res.status).to.be.within(200, 299);
+    expect(res.body.budgetItemId).to.equal(bru.getVar("groceriesItemId"));
+  });
+}
