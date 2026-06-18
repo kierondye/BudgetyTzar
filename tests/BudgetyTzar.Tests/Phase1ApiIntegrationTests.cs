@@ -193,7 +193,7 @@ public sealed class Phase1ApiIntegrationTests
         Assert.Equal(1, await app.CountAssignmentsAsync(transaction.Id));
 
         var audit = await client.GetFromJsonAsync<IReadOnlyList<AuditTimelineItem>>(
-            $"/api/budgets/{budget.Id}/reports/audit-timeline?periodId={period.Id}");
+            $"/api/budgets/{budget.Id}/reports/audit-timeline?from=2026-06-01&to=2026-06-30");
         var editAudit = audit!.Single(x => x.EventType == "TransactionEdited");
         Assert.NotEqual(Guid.Empty, editAudit.AuditEventId);
         Assert.Equal(nameof(FinancialTransaction), editAudit.EntityType);
@@ -449,7 +449,7 @@ public sealed class Phase1ApiIntegrationTests
         Assert.Equal(HttpStatusCode.NoContent, clearResponse.StatusCode);
 
         var audit = await client.GetFromJsonAsync<IReadOnlyList<AuditTimelineItem>>(
-            $"/api/budgets/{budget.Id}/reports/audit-timeline?periodId={period.Id}");
+            $"/api/budgets/{budget.Id}/reports/audit-timeline?from=2026-06-01&to=2026-06-30");
 
         Assert.Contains(audit!, x => x.EventType == "TransactionAssigned");
         Assert.Contains(audit!, x => x.EventType == "TransactionAssignmentsCleared");
@@ -481,10 +481,9 @@ public sealed class Phase1ApiIntegrationTests
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
-        var summary = await client.GetFromJsonAsync<PeriodSummary>(
-            $"/api/budgets/{budget.Id}/reports/period-summary?periodId={period.Id}");
+        var summary = await GetPeriodSummary(app, budget.Id, period.Id);
 
-        Assert.Equal(12m, summary!.Lines.Single(x => x.BudgetLineId == groceries.Id).AdjustmentAmount);
+        Assert.Equal(12m, summary.Lines.Single(x => x.BudgetLineId == groceries.Id).AdjustmentAmount);
         Assert.Equal(112m, summary.Lines.Single(x => x.BudgetLineId == groceries.Id).ClosingBalance);
     }
 
@@ -544,6 +543,8 @@ date,description,amount,direction,source account,external reference,notes
             budget.Id,
             period.Id,
             [new BudgetLineAllocationItem(groceries.Id, 100m), new BudgetLineAllocationItem(salary.Id, 2_500m)]);
+        await RecordBudgetItemAdjustment(client, budget.Id, salary.Id, 2_500m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 1));
+        await RecordBudgetItemAdjustment(client, budget.Id, groceries.Id, 100m, BudgetAdjustmentType.Debit, new DateOnly(2026, 6, 1));
         var spend = await CreateTransaction(client, budget.Id, 20m, TransactionDirection.Debit);
         var pay = await CreateTransaction(client, budget.Id, 2_500m, TransactionDirection.Credit);
         await client.PutAsJsonAsync(
@@ -553,20 +554,19 @@ date,description,amount,direction,source account,external reference,notes
             $"/api/budgets/{budget.Id}/transactions/{pay.Id}/assignments",
             new ReplaceTransactionAssignmentsRequest([new TransactionAssignmentItem(salary.Id, 2_500m)]));
 
-        var reconciliation = await client.GetAsync($"/api/budgets/{budget.Id}/reports/reconciliation?periodId={period.Id}");
-        var trends = await client.GetFromJsonAsync<IReadOnlyList<BudgetLineTrendItem>>(
-            $"/api/budgets/{budget.Id}/reports/budget-line-trends?budgetLineId={groceries.Id}&from=2026-06-01&to=2026-06-30");
-        var creditVariance = await client.GetFromJsonAsync<IReadOnlyList<CreditVarianceItem>>(
-            $"/api/budgets/{budget.Id}/reports/credit-variance?from=2026-06-01&to=2026-06-30");
-        var csv = await client.GetStringAsync($"/api/budgets/{budget.Id}/reports/period-summary.csv?periodId={period.Id}");
+        var reconciliation = await client.GetAsync($"/api/budgets/{budget.Id}/reports/reconciliation?from=2026-06-01&to=2026-06-30");
+        var trends = await client.GetFromJsonAsync<IReadOnlyList<BudgetItemTrendItem>>(
+            $"/api/budgets/{budget.Id}/reports/budget-item-trends?budgetItemId={groceries.Id}&from=2026-06-01&to=2026-06-30");
+        var activity = await client.GetFromJsonAsync<BudgetActivityReport>(
+            $"/api/budgets/{budget.Id}/reports/activity?from=2026-06-01&to=2026-06-30");
+        var csv = await client.GetStringAsync($"/api/budgets/{budget.Id}/reports/activity.csv?from=2026-06-01&to=2026-06-30");
 
         Assert.Equal(HttpStatusCode.OK, reconciliation.StatusCode);
         Assert.Single(trends!);
-        var creditVarianceItem = Assert.Single(creditVariance!);
-        Assert.Equal(0m, creditVarianceItem.CreditVariance);
-        Assert.Equal(salary.Id, creditVarianceItem.BudgetLineId);
-        Assert.Equal("Salary", creditVarianceItem.BudgetLineName);
-        Assert.Contains("budgetLineId,name,direction", csv);
+        var salaryActivity = activity!.BudgetItems.Single(x => x.BudgetItemId == salary.Id);
+        Assert.Equal(2_500m, salaryActivity.PlannedCredit);
+        Assert.Equal(2_500m, salaryActivity.ActualCredit);
+        Assert.Contains("budgetItemId,name,plannedCredit", csv);
         Assert.Contains("Groceries", csv);
     }
 
@@ -592,7 +592,7 @@ date,description,amount,direction,source account,external reference,notes
         creditAssignResponse.EnsureSuccessStatusCode();
 
         var report = await client.GetFromJsonAsync<ReconciliationReport>(
-            $"/api/budgets/{budget.Id}/reports/reconciliation?periodId={period.Id}");
+            $"/api/budgets/{budget.Id}/reports/reconciliation?from=2026-06-01&to=2026-06-30");
 
         Assert.Equal(60m, report!.DebitDifference);
         Assert.Equal(50m, report.CreditDifference);
@@ -613,18 +613,20 @@ date,description,amount,direction,source account,external reference,notes
             budget.Id,
             period.Id,
             [new BudgetLineAllocationItem(salary.Id, 2_500m), new BudgetLineAllocationItem(bonus.Id, 500m)]);
+        await RecordBudgetItemAdjustment(client, budget.Id, salary.Id, 2_500m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 1));
+        await RecordBudgetItemAdjustment(client, budget.Id, bonus.Id, 500m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 1));
         var pay = await CreateTransaction(client, budget.Id, 2_400m, TransactionDirection.Credit);
         var assignResponse = await client.PutAsJsonAsync(
             $"/api/budgets/{budget.Id}/transactions/{pay.Id}/assignments",
             new ReplaceTransactionAssignmentsRequest([new TransactionAssignmentItem(salary.Id, 2_400m)]));
         assignResponse.EnsureSuccessStatusCode();
 
-        var items = await client.GetFromJsonAsync<IReadOnlyList<CreditVarianceItem>>(
-            $"/api/budgets/{budget.Id}/reports/credit-variance?from=2026-06-01&to=2026-06-30");
+        var activity = await client.GetFromJsonAsync<BudgetActivityReport>(
+            $"/api/budgets/{budget.Id}/reports/activity?from=2026-06-01&to=2026-06-30");
 
-        Assert.Equal(2, items!.Count);
-        Assert.Contains(items, x => x.BudgetLineId == salary.Id && x.BudgetLineName == "Salary" && x.PlannedCredit == 2_500m && x.ActualCredit == 2_400m && x.CreditVariance == -100m);
-        Assert.Contains(items, x => x.BudgetLineId == bonus.Id && x.BudgetLineName == "Bonus" && x.PlannedCredit == 500m && x.ActualCredit == 0m && x.CreditVariance == -500m);
+        Assert.Equal(2, activity!.BudgetItems.Count);
+        Assert.Contains(activity.BudgetItems, x => x.BudgetItemId == salary.Id && x.Name == "Salary" && x.PlannedCredit == 2_500m && x.ActualCredit == 2_400m);
+        Assert.Contains(activity.BudgetItems, x => x.BudgetItemId == bonus.Id && x.Name == "Bonus" && x.PlannedCredit == 500m && x.ActualCredit == 0m);
     }
 
     private static async Task<Budget> CreateBudget(HttpClient client, string name = "Personal")
@@ -682,6 +684,27 @@ date,description,amount,direction,source account,external reference,notes
         var response = await client.PutAsJsonAsync(
             $"/api/budgets/{budgetId}/periods/{periodId}/allocations",
             new ReplaceBudgetLineAllocationsRequest(allocations));
+        response.EnsureSuccessStatusCode();
+    }
+
+    private static async Task<PeriodSummary> GetPeriodSummary(BudgetApiFactory app, Guid budgetId, Guid periodId)
+    {
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        return (await DashboardQueries.GetPeriodSummaryFromOperationalTables(db, budgetId, periodId, CancellationToken.None))!;
+    }
+
+    private static async Task RecordBudgetItemAdjustment(
+        HttpClient client,
+        Guid budgetId,
+        Guid budgetItemId,
+        decimal amount,
+        BudgetAdjustmentType type,
+        DateOnly date)
+    {
+        var response = await client.PostAsJsonAsync(
+            $"/api/budgets/{budgetId}/budget-items/{budgetItemId}/adjustments",
+            new CreateBudgetItemAdjustmentRequest(amount, type, date, null));
         response.EnsureSuccessStatusCode();
     }
 

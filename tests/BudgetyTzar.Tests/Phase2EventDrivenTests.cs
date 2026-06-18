@@ -59,20 +59,16 @@ public sealed class Phase2EventDrivenTests
             await projector.RebuildFromOutbox(CancellationToken.None);
         }
 
-        var summary = await client.GetFromJsonAsync<PeriodSummary>(
-            $"/api/budgets/{budget.Id}/reports/period-summary?periodId={period.Id}");
-
-        Assert.NotNull(summary);
-        Assert.Equal(100m, summary!.PlannedDebit);
-        Assert.Equal(35m, summary.ActualDebit);
-        Assert.Equal(70m, summary.DebitRemaining);
-        Assert.Single(summary.Lines);
-        Assert.Equal(5m, summary.Lines[0].AdjustmentAmount);
-
         using var verifyScope = app.Services.CreateScope();
         var db = verifyScope.ServiceProvider.GetRequiredService<BudgetDbContext>();
-        Assert.True(await db.PeriodBudgetSummaries.AnyAsync(x => x.BudgetPeriodId == period.Id));
-        Assert.True(await db.BudgetLinePeriodSummaries.AnyAsync(x => x.BudgetLineId == groceries.Id));
+        var periodSummary = await db.PeriodBudgetSummaries.AsNoTracking().SingleAsync(x => x.BudgetPeriodId == period.Id);
+        var lineSummary = await db.BudgetLinePeriodSummaries.AsNoTracking().SingleAsync(x => x.BudgetLineId == groceries.Id);
+
+        Assert.Equal(100m, periodSummary.PlannedDebit);
+        Assert.Equal(35m, periodSummary.ActualDebit);
+        Assert.Equal(70m, periodSummary.DebitRemaining);
+        Assert.Equal(5m, lineSummary.AdjustmentAmount);
+        Assert.Equal(70m, lineSummary.ClosingBalance);
         Assert.True(await db.TransactionAssignmentSummaries.AnyAsync(x => x.TransactionId == transaction.Id));
     }
 

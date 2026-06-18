@@ -5,6 +5,9 @@ using BudgetyTzar.Api;
 using BudgetyTzar.Api.Application.Reporting;
 using BudgetyTzar.Api.Application.Transactions;
 using BudgetyTzar.Api.Features;
+using BudgetyTzar.Api.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace BudgetyTzar.Tests;
@@ -25,6 +28,11 @@ public sealed class Phase1SpecGapBehaviorTests
         Assert.Contains("/api/budgets/{budgetId}/reallocations", paths);
         Assert.Contains("/api/budgets/{budgetId}/transactions/{transactionId}/allocations", paths);
         Assert.Contains("/api/budgets/{budgetId}/snapshot", paths);
+        Assert.Contains("/api/budgets/{budgetId}/reports/activity", paths);
+        Assert.Contains("/api/budgets/{budgetId}/reports/activity.csv", paths);
+        Assert.Contains("/api/budgets/{budgetId}/reports/audit-timeline", paths);
+        Assert.Contains("/api/budgets/{budgetId}/reports/budget-item-trends", paths);
+        Assert.Contains("/api/budgets/{budgetId}/reports/reconciliation", paths);
 
         Assert.DoesNotContain("/api/budgets/{budgetId}/periods/{periodId}/adjustments", paths);
         Assert.DoesNotContain("/api/budgets/{budgetId}/periods/{periodId}/reallocations", paths);
@@ -32,8 +40,33 @@ public sealed class Phase1SpecGapBehaviorTests
         Assert.DoesNotContain("/api/budgets/{budgetId}/budget-lines", paths);
         Assert.DoesNotContain("/api/budgets/{budgetId}/transactions/{transactionId}/assignments", paths);
         Assert.DoesNotContain("/api/budgets/{budgetId}/reports/period-summary", paths);
+        Assert.DoesNotContain("/api/budgets/{budgetId}/reports/period-summary.csv", paths);
         Assert.DoesNotContain("/api/budgets/{budgetId}/reports/budget-line-trends", paths);
+        Assert.DoesNotContain("/api/budgets/{budgetId}/reports/credit-variance", paths);
+        Assert.DoesNotContain("/api/budgets/{budgetId}/reports/reconciliation/date-range", paths);
+        Assert.DoesNotContain("/api/budgets/{budgetId}/reports/audit-timeline/date-range", paths);
         Assert.Equal(orderedPaths.Order(StringComparer.Ordinal).ToList(), orderedPaths);
+    }
+
+    [Fact]
+    public async Task LegacyReportRoutesAreRemovedFromThePublicApi()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        var budgetId = Guid.NewGuid();
+        var periodId = Guid.NewGuid();
+
+        var responses = new[]
+        {
+            await client.GetAsync($"/api/budgets/{budgetId}/reports/period-summary?periodId={periodId}"),
+            await client.GetAsync($"/api/budgets/{budgetId}/reports/period-summary.csv?periodId={periodId}"),
+            await client.GetAsync($"/api/budgets/{budgetId}/reports/budget-line-trends?budgetLineId={Guid.NewGuid()}&from=2026-06-01&to=2026-06-30"),
+            await client.GetAsync($"/api/budgets/{budgetId}/reports/credit-variance?from=2026-06-01&to=2026-06-30"),
+            await client.GetAsync($"/api/budgets/{budgetId}/reports/reconciliation/date-range?from=2026-06-01&to=2026-06-30"),
+            await client.GetAsync($"/api/budgets/{budgetId}/reports/audit-timeline/date-range?from=2026-06-01&to=2026-06-30")
+        };
+
+        Assert.All(responses, response => Assert.Equal(HttpStatusCode.NotFound, response.StatusCode));
     }
 
     [Fact]
@@ -266,7 +299,7 @@ public sealed class Phase1SpecGapBehaviorTests
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
-        var summary = await GetPeriodSummary(client, budget.Id, period.Id);
+        var summary = await GetPeriodSummary(app, budget.Id, period.Id);
         var grocerySummary = summary.Lines.Single(x => x.BudgetLineId == groceries.Id);
         Assert.Equal(70m, grocerySummary.ActualAmount);
         Assert.Equal(30m, grocerySummary.ClosingBalance);
@@ -296,7 +329,7 @@ public sealed class Phase1SpecGapBehaviorTests
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
-        var summary = await GetPeriodSummary(client, budget.Id, period.Id);
+        var summary = await GetPeriodSummary(app, budget.Id, period.Id);
         var grocerySummary = summary.Lines.Single(x => x.BudgetLineId == groceries.Id);
         var diningSummary = summary.Lines.Single(x => x.BudgetLineId == dining.Id);
         Assert.Equal(70m, grocerySummary.ActualAmount);
@@ -333,14 +366,14 @@ public sealed class Phase1SpecGapBehaviorTests
         response.EnsureSuccessStatusCode();
         var transaction = (await response.Content.ReadFromJsonAsync<FinancialTransaction>())!;
 
-        var unassignedSummary = await GetPeriodSummary(client, budget.Id, period.Id);
+        var unassignedSummary = await GetPeriodSummary(app, budget.Id, period.Id);
         Assert.Equal(TransactionDirection.Credit, transaction.Direction);
         Assert.Equal(3000m, unassignedSummary.UnassignedCreditTotal);
         Assert.Equal(0m, unassignedSummary.ActualCredit);
 
         await ReplaceAssignments(client, budget.Id, transaction.Id, [new TransactionAssignmentItem(salary.Id, 3000m)]);
 
-        var assignedSummary = await GetPeriodSummary(client, budget.Id, period.Id);
+        var assignedSummary = await GetPeriodSummary(app, budget.Id, period.Id);
         Assert.Equal(0m, assignedSummary.UnassignedCreditTotal);
         Assert.Equal(3000m, assignedSummary.ActualCredit);
         Assert.Equal(3000m, assignedSummary.Lines.Single(x => x.BudgetLineId == salary.Id).ActualAmount);
@@ -487,8 +520,8 @@ date,description,amount,direction,source account,external reference,notes
         var commitResponse = await client.PostAsync($"/api/budgets/{budget.Id}/transaction-imports/{preview.Batch.Id}/commit", null);
         commitResponse.EnsureSuccessStatusCode();
 
-        var juneAudit = await GetAuditTimeline(client, budget.Id, june.Id);
-        var julyAudit = await GetAuditTimeline(client, budget.Id, july.Id);
+        var juneAudit = await GetAuditTimeline(app, budget.Id, june.Id);
+        var julyAudit = await GetAuditTimeline(app, budget.Id, july.Id);
 
         Assert.DoesNotContain(juneAudit, x => x.EventType is "BudgetCreated" or "BudgetLineCreated" or "BudgetLineArchived");
         Assert.DoesNotContain(julyAudit, x => x.EventType is "BudgetCreated" or "BudgetLineCreated" or "BudgetLineArchived");
@@ -634,15 +667,30 @@ date,description,amount,direction,source account,external reference,notes
         response.EnsureSuccessStatusCode();
     }
 
-    private static async Task<PeriodSummary> GetPeriodSummary(HttpClient client, Guid budgetId, Guid periodId)
+    private static async Task<PeriodSummary> GetPeriodSummary(BudgetApiFactory app, Guid budgetId, Guid periodId)
     {
-        return (await client.GetFromJsonAsync<PeriodSummary>(
-            $"/api/budgets/{budgetId}/reports/period-summary?periodId={periodId}"))!;
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        return (await DashboardQueries.GetPeriodSummaryFromOperationalTables(db, budgetId, periodId, CancellationToken.None))!;
     }
 
-    private static async Task<IReadOnlyList<AuditTimelineItem>> GetAuditTimeline(HttpClient client, Guid budgetId, Guid periodId)
+    private static async Task<IReadOnlyList<AuditTimelineItem>> GetAuditTimeline(BudgetApiFactory app, Guid budgetId, Guid periodId)
     {
-        return (await client.GetFromJsonAsync<IReadOnlyList<AuditTimelineItem>>(
-            $"/api/budgets/{budgetId}/reports/audit-timeline?periodId={periodId}"))!;
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var items = await db.AuditEvents
+            .AsNoTracking()
+            .Where(x => x.BudgetId == budgetId && (x.BudgetPeriodId == periodId || x.AppliesToAllPeriods))
+            .Select(x => new AuditTimelineItem(
+                x.Id,
+                x.OccurredAt,
+                x.EventType,
+                x.EntityType,
+                x.EntityId,
+                x.BudgetPeriodId,
+                x.Description))
+            .ToListAsync();
+
+        return items.OrderByDescending(x => x.OccurredAt).ToList();
     }
 }
