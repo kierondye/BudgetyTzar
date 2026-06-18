@@ -76,6 +76,14 @@ The API applies EF Core migrations on startup when `Database:MigrateOnStartup` i
 
 Runtime version metadata is available at `http://localhost:5000/version`. BudgetyTzar uses one product-wide SemVer, currently `0.1.0`, with release notes grouped in `CHANGELOG.md` and future Git release tags using values such as `v0.1.0`.
 
+Conventional Commits are required from Phase 2.5 onward. Enable the versioned local hook once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Use commit subjects such as `feat: add budget export`, `fix(api): preserve version endpoint metadata`, or `feat(events)!: rename transaction event`.
+
 ### Phase 2 Kafka, Outbox, and Projection Flags
 
 Kafka publishing, Kafka consuming, and projection-backed snapshots are enabled by default in `src/BudgetyTzar.Api/appsettings.json`.

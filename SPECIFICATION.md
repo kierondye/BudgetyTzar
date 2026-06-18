@@ -826,6 +826,8 @@ Version rules:
 - Increment `MAJOR` for incompatible public HTTP API behaviour, event-contract behaviour, or release packaging changes.
 - Increment `MINOR` for backward-compatible functionality.
 - Increment `PATCH` for backward-compatible fixes.
+- Use Conventional Commits to describe release intent: `feat` maps to `MINOR`, `fix` and `perf` map to `PATCH`, and `!` or a `BREAKING CHANGE:` footer maps to `MAJOR` once the product reaches `1.0.0`.
+- Commit types `refactor`, `docs`, `test`, `build`, `ci`, `chore`, `style`, and `revert` do not imply a product version bump unless they include breaking-change notation.
 - Pre-`1.0.0` releases may evolve faster, but breaking changes must still be documented.
 - Event schema names remain independently versioned with suffixes such as `.v1` and `.v2`; the product SemVer records which contract versions ship together.
 - Database migrations do not automatically require a major version unless they remove or change supported behaviour incompatibly.
@@ -838,6 +840,7 @@ Release requirements:
 - Container image tags introduced in Phase 3 should include explicit SemVer tags such as `budgetytzar-api:0.2.0`; `latest` may exist only as a convenience tag and must not be the release identity.
 - Kubernetes manifests or Helm values should reference explicit SemVer image tags.
 - The repository should maintain release notes or a changelog grouped by SemVer.
+- Local development should provide a versioned commit-message hook that validates Conventional Commits without requiring Node tooling.
 
 ## 18. Implementation Strategy
 
@@ -886,6 +889,7 @@ Deliver:
 - OpenAPI version metadata.
 - Release notes or changelog structure.
 - Build validation that rejects invalid SemVer values.
+- Conventional Commits documentation and local commit-message validation.
 
 Phase 2.5 must be complete before Phase 3 so Docker image tags, Kubernetes manifests, deployment documentation, and future cloud release artefacts can use stable version identity.
 
