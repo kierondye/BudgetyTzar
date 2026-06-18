@@ -1,7 +1,19 @@
 <Project>
   <PropertyGroup>
+    <ProductVersion>0.1.0</ProductVersion>
+    <Version>$(ProductVersion)</Version>
+    <PackageVersion>$(ProductVersion)</PackageVersion>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <FileVersion>0.1.0.0</FileVersion>
+    <InformationalVersion>$(ProductVersion)</InformationalVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+
+  <Target Name="ValidateProductVersion" BeforeTargets="CoreCompile">
+    <Error
+      Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(ProductVersion)', '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$')) != 'true'"
+      Text="ProductVersion '$(ProductVersion)' must be a valid SemVer 2.0.0 value." />
+  </Target>
 </Project>

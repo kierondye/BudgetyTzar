@@ -813,9 +813,35 @@ Reasons:
 
 The system should store event schemas in source control and validate events in tests. A schema registry can be added later if it becomes useful, but it is not required for the first implementation.
 
-## 17. Implementation Strategy
+## 17. Product Versioning
 
-### 17.1 Phase 1: Domain and Local MVP
+BudgetyTzar should use one product-wide semantic version for the repository and released application, following SemVer 2.0.0:
+
+```text
+MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]
+```
+
+Version rules:
+
+- Increment `MAJOR` for incompatible public HTTP API behaviour, event-contract behaviour, or release packaging changes.
+- Increment `MINOR` for backward-compatible functionality.
+- Increment `PATCH` for backward-compatible fixes.
+- Pre-`1.0.0` releases may evolve faster, but breaking changes must still be documented.
+- Event schema names remain independently versioned with suffixes such as `.v1` and `.v2`; the product SemVer records which contract versions ship together.
+- Database migrations do not automatically require a major version unless they remove or change supported behaviour incompatibly.
+
+Release requirements:
+
+- Git release tags should use SemVer tags such as `v0.1.0`, `v0.2.0`, and `v1.0.0`.
+- The runtime API should expose product version metadata separately from health status.
+- OpenAPI metadata should include the product SemVer.
+- Container image tags introduced in Phase 3 should include explicit SemVer tags such as `budgetytzar-api:0.2.0`; `latest` may exist only as a convenience tag and must not be the release identity.
+- Kubernetes manifests or Helm values should reference explicit SemVer image tags.
+- The repository should maintain release notes or a changelog grouped by SemVer.
+
+## 18. Implementation Strategy
+
+### 18.1 Phase 1: Domain and Local MVP
 
 Build one implementation first, preferably .NET because it matches existing experience.
 
@@ -837,7 +863,7 @@ Deliver:
 - PostgreSQL persistence.
 - Unit and integration tests.
 
-### 17.2 Phase 2: Event-Driven Services
+### 18.2 Phase 2: Event-Driven Services
 
 Introduce:
 
@@ -848,18 +874,34 @@ Introduce:
 - Docker Compose for local infrastructure.
 - Scheduled and recurring adjustments or reallocations, if still needed.
 
-### 17.3 Phase 3: Containerisation and Kubernetes
+### 18.3 Phase 2.5: Semantic Versioning and Release Metadata
+
+Introduce semantic versioning before containerisation and Kubernetes work begins.
+
+Deliver:
+
+- Product-wide SemVer source of truth.
+- Git release tag convention.
+- Runtime version endpoint.
+- OpenAPI version metadata.
+- Release notes or changelog structure.
+- Build validation that rejects invalid SemVer values.
+
+Phase 2.5 must be complete before Phase 3 so Docker image tags, Kubernetes manifests, deployment documentation, and future cloud release artefacts can use stable version identity.
+
+### 18.4 Phase 3: Containerisation and Kubernetes
 
 Introduce:
 
 - Dockerfiles for each service.
 - Kubernetes manifests or Helm charts.
+- Explicit SemVer image tags for release builds.
 - Local Kubernetes support with kind, k3d, or Docker Desktop Kubernetes.
 - Health checks.
 - Readiness probes.
 - Liveness probes.
 
-### 17.4 Phase 4: Cloud Deployment
+### 18.5 Phase 4: Cloud Deployment
 
 Deploy to one cloud provider.
 
@@ -877,7 +919,7 @@ Include:
 - Infrastructure as Code.
 - CI/CD pipeline.
 
-### 17.5 Phase 5: Go Implementation
+### 18.6 Phase 5: Go Implementation
 
 Build Go services that implement the same contracts as the .NET services.
 
@@ -894,9 +936,9 @@ For job-search value, a side-by-side architecture is compelling:
 - Shared event contracts.
 - Shared Kubernetes deployment.
 
-## 18. Technology Choices
+## 19. Technology Choices
 
-### 18.1 .NET Stack
+### 19.1 .NET Stack
 
 - .NET 9 or current LTS .NET version.
 - ASP.NET Core Web API.
@@ -908,7 +950,7 @@ For job-search value, a side-by-side architecture is compelling:
 - Testcontainers.
 - OpenTelemetry.
 
-### 18.2 Go Stack
+### 19.2 Go Stack
 
 - Current stable Go version.
 - chi, Gin, Echo, or standard `net/http`.
@@ -918,7 +960,7 @@ For job-search value, a side-by-side architecture is compelling:
 - testcontainers-go.
 - OpenTelemetry Go.
 
-### 18.3 Frontend Stack
+### 19.3 Frontend Stack
 
 - TypeScript.
 - React.
@@ -927,7 +969,7 @@ For job-search value, a side-by-side architecture is compelling:
 - A charting library such as Recharts.
 - Playwright for end-to-end tests.
 
-### 18.4 Infrastructure
+### 19.4 Infrastructure
 
 - Docker.
 - Docker Compose.
@@ -940,9 +982,9 @@ For job-search value, a side-by-side architecture is compelling:
 - OpenTelemetry Collector.
 - Prometheus and Grafana, or cloud-native monitoring.
 
-## 19. Testing Strategy
+## 20. Testing Strategy
 
-### 19.1 Unit Tests
+### 20.1 Unit Tests
 
 Cover:
 
@@ -955,7 +997,7 @@ Cover:
 - Snapshot calculation.
 - Reconciliation calculation.
 
-### 19.2 Integration Tests
+### 20.2 Integration Tests
 
 Cover:
 
@@ -970,10 +1012,11 @@ Cover:
 - Outbox publishing in Phase 2.
 - Kafka consumer behaviour in Phase 2.
 - Reporting projections in Phase 2.
+- Runtime version endpoint and OpenAPI version metadata in Phase 2.5.
 
 Use Testcontainers where practical. SQLite or in-memory tests may be used for fast feedback, but they do not replace PostgreSQL integration coverage for Phase 1 persistence requirements.
 
-### 19.3 Contract Tests
+### 20.3 Contract Tests
 
 Cover:
 
@@ -981,7 +1024,7 @@ Cover:
 - API contracts between frontend and backend.
 - Shared event behaviour between .NET and Go services.
 
-### 19.4 End-to-End Tests
+### 20.4 End-to-End Tests
 
 Cover:
 
@@ -993,7 +1036,7 @@ Cover:
 - Reallocate budget.
 - View snapshots and reports.
 
-## 20. Observability
+## 21. Observability
 
 The application should include:
 
@@ -1012,7 +1055,7 @@ Important signals:
 - API error rate.
 - Projection freshness.
 
-## 21. Security and Privacy
+## 22. Security and Privacy
 
 - Use HTTPS in deployed environments.
 - Protect APIs with authentication.
@@ -1022,9 +1065,9 @@ Important signals:
 - Support full data deletion for the user.
 - Encrypt cloud databases at rest.
 
-## 22. Deployment
+## 23. Deployment
 
-### 22.1 Local Development
+### 23.1 Local Development
 
 Use Docker Compose for:
 
@@ -1034,7 +1077,7 @@ Use Docker Compose for:
 - Backend services.
 - Frontend.
 
-### 22.2 Kubernetes
+### 23.2 Kubernetes
 
 Each service should define:
 
@@ -1045,8 +1088,9 @@ Each service should define:
 - Readiness probe.
 - Liveness probe.
 - Horizontal Pod Autoscaler where appropriate.
+- Explicit SemVer image tag for release deployments.
 
-### 22.3 Cloud
+### 23.3 Cloud
 
 Use Infrastructure as Code to provision:
 
@@ -1058,7 +1102,7 @@ Use Infrastructure as Code to provision:
 - TLS certificates.
 - Monitoring.
 
-## 23. Portfolio Demonstration
+## 24. Portfolio Demonstration
 
 The repository should include:
 
@@ -1071,13 +1115,16 @@ The repository should include:
 - Deployment guide.
 - Architecture decision records.
 - CI/CD workflow.
+- SemVer release tags.
+- Changelog or release notes grouped by SemVer.
+- Visible runtime version metadata.
 - Test coverage summary.
 
 Suggested portfolio narrative:
 
 > BudgetyTzar replaces an error-prone spreadsheet budgeting workflow with an event-driven, auditable budgeting platform. It models personal budgets as dated ledger entries, uses Kafka for asynchronous service integration, PostgreSQL for service-owned data, Kubernetes for deployment, and equivalent .NET and Go implementations to demonstrate language versatility and cloud-native engineering practice.
 
-## 24. Minimum Viable Product Scope
+## 25. Minimum Viable Product Scope
 
 The smallest useful version should include:
 
@@ -1099,7 +1146,7 @@ The smallest useful version should include:
 - View durable local audit history for imports, allocations, splits, ignores, reallocations, adjustments, and archival.
 - Export data to CSV.
 
-## 25. Future Enhancements
+## 26. Future Enhancements
 
 - Scheduled and recurring adjustments.
 - Scheduled and recurring reallocations.

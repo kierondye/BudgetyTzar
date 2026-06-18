@@ -74,6 +74,8 @@ Open `http://localhost:5000/` or `http://localhost:5000/swagger` to browse the A
 
 The API applies EF Core migrations on startup when `Database:MigrateOnStartup` is `true`.
 
+Runtime version metadata is available at `http://localhost:5000/version`. BudgetyTzar uses one product-wide SemVer, currently `0.1.0`, with release notes grouped in `CHANGELOG.md` and future Git release tags using values such as `v0.1.0`.
+
 ### Phase 2 Kafka, Outbox, and Projection Flags
 
 Kafka publishing, Kafka consuming, and projection-backed snapshots are enabled by default in `src/BudgetyTzar.Api/appsettings.json`.

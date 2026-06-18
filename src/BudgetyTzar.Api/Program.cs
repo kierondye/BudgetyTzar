@@ -49,6 +49,11 @@ builder.Services.AddScoped<ClearTransactionAssignmentsHandler>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = ProductVersion.ProductName,
+        Version = ProductVersion.SemanticVersion
+    });
     options.OrderActionsBy(apiDescription =>
         $"{apiDescription.RelativePath} {apiDescription.HttpMethod}");
     options.DocumentFilter<AlphabeticalPathsDocumentFilter>();
@@ -71,6 +76,14 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/version", (IHostEnvironment environment) => Results.Ok(new
+{
+    product = ProductVersion.ProductName,
+    version = ProductVersion.SemanticVersion,
+    informationalVersion = ProductVersion.InformationalVersion,
+    buildMetadata = ProductVersion.BuildMetadata,
+    environment = environment.EnvironmentName
+}));
 
 var api = app.MapGroup("/api");
 api.MapBudgetEndpoints();
