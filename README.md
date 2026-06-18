@@ -70,11 +70,11 @@ Run the API:
 dotnet run --project src/BudgetyTzar.Api
 ```
 
-Open `http://localhost:5000/` or `http://localhost:5000/swagger` to browse the API. The Swagger JSON is available at `http://localhost:5000/swagger/v1/swagger.json`, and the health check is available at `http://localhost:5000/health`.
+Open `http://localhost:7070/` or `http://localhost:7070/swagger` to browse the API. The Swagger JSON is available at `http://localhost:7070/swagger/v1/swagger.json`, and the health check is available at `http://localhost:7070/health`.
 
 The API applies EF Core migrations on startup when `Database:MigrateOnStartup` is `true`.
 
-Runtime version metadata is available at `http://localhost:5000/version`. BudgetyTzar uses one product-wide SemVer, currently `0.1.0`, with release notes grouped in `CHANGELOG.md` and future Git release tags using values such as `v0.1.0`.
+Runtime version metadata is available at `http://localhost:7070/version`. BudgetyTzar uses one product-wide SemVer, currently `0.1.0`, with release notes grouped in `CHANGELOG.md` and future Git release tags using values such as `v0.1.0`.
 
 Conventional Commits are required from Phase 2.5 onward. Enable the versioned local hook once per clone:
 
