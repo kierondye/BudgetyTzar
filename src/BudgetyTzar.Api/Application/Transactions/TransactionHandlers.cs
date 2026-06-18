@@ -29,7 +29,7 @@ public sealed class CreateTransactionHandler(BudgetDbContext db, AuditEventWrite
 
         var transaction = FinancialTransaction.Create(budgetId, transactionDate, description, amount, direction, sourceAccount, externalReference, notes);
         db.Transactions.Add(transaction);
-        var periodId = await FindPeriodIdForDate(budgetId, transaction.TransactionDate, ct);
+        var periodId = await BudgetPeriodLookup.FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
         audit.Add(new DomainEvent(
             "TransactionManuallyCreated",
             budgetId,
@@ -40,11 +40,6 @@ public sealed class CreateTransactionHandler(BudgetDbContext db, AuditEventWrite
         await db.SaveChangesAsync(ct);
         return CommandResult<FinancialTransaction>.Created(transaction);
     }
-
-    private async Task<Guid?> FindPeriodIdForDate(Guid budgetId, DateOnly date, CancellationToken ct) =>
-        (await db.BudgetPeriods
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.BudgetId == budgetId && x.StartDate <= date && x.EndDate >= date, ct))?.Id;
 }
 
 public sealed class UpdateTransactionHandler(BudgetDbContext db, AuditEventWriter audit)
@@ -79,14 +74,14 @@ public sealed class UpdateTransactionHandler(BudgetDbContext db, AuditEventWrite
             });
         }
 
-        var previousPeriodId = await FindPeriodIdForDate(budgetId, transaction.TransactionDate, ct);
+        var previousPeriodId = await BudgetPeriodLookup.FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
         var previousDescription = transaction.Description;
         var previousAmount = transaction.Amount;
         var previousDirection = transaction.Direction;
 
         transaction.Edit(transactionDate, description, amount, direction, sourceAccount, externalReference, notes);
 
-        var periodId = await FindPeriodIdForDate(budgetId, transaction.TransactionDate, ct);
+        var periodId = await BudgetPeriodLookup.FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
         audit.Add(new DomainEvent(
             "TransactionEdited",
             budgetId,
@@ -98,11 +93,6 @@ public sealed class UpdateTransactionHandler(BudgetDbContext db, AuditEventWrite
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent();
     }
-
-    private async Task<Guid?> FindPeriodIdForDate(Guid budgetId, DateOnly date, CancellationToken ct) =>
-        (await db.BudgetPeriods
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.BudgetId == budgetId && x.StartDate <= date && x.EndDate >= date, ct))?.Id;
 }
 
 public sealed class IgnoreTransactionHandler(BudgetDbContext db, AuditEventWriter audit)
@@ -116,7 +106,7 @@ public sealed class IgnoreTransactionHandler(BudgetDbContext db, AuditEventWrite
         }
 
         transaction.Ignore();
-        var periodId = await FindPeriodIdForDate(budgetId, transaction.TransactionDate, ct);
+        var periodId = await BudgetPeriodLookup.FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
         audit.Add(new DomainEvent(
             "TransactionIgnored",
             budgetId,
@@ -127,11 +117,6 @@ public sealed class IgnoreTransactionHandler(BudgetDbContext db, AuditEventWrite
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent();
     }
-
-    private async Task<Guid?> FindPeriodIdForDate(Guid budgetId, DateOnly date, CancellationToken ct) =>
-        (await db.BudgetPeriods
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.BudgetId == budgetId && x.StartDate <= date && x.EndDate >= date, ct))?.Id;
 }
 
 public sealed class ReplaceTransactionAssignmentsHandler(BudgetDbContext db, AuditEventWriter audit, BudgetLineEligibilityService eligibility)
@@ -153,7 +138,7 @@ public sealed class ReplaceTransactionAssignmentsHandler(BudgetDbContext db, Aud
             });
         }
 
-        var periodId = await FindPeriodIdForDate(budgetId, transaction.TransactionDate, ct);
+        var periodId = await BudgetPeriodLookup.FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
         var budgetLines = await eligibility.GetEligibleBudgetLines(budgetId, periodId, requestedLineIds, ct);
         if (budgetLines.Count != requestedLineIds.Length)
         {
@@ -181,21 +166,10 @@ public sealed class ReplaceTransactionAssignmentsHandler(BudgetDbContext db, Aud
             nameof(FinancialTransaction),
             transactionId,
             $"Replaced assignments for transaction {transaction.Description}.",
-            $"Previous={FormatAssignments(existing)}; New={FormatAssignments(assignments)}"));
+            $"Previous={TransactionAssignmentFormatting.Format(existing)}; New={TransactionAssignmentFormatting.Format(assignments)}"));
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent();
     }
-
-    private async Task<Guid?> FindPeriodIdForDate(Guid budgetId, DateOnly date, CancellationToken ct) =>
-        (await db.BudgetPeriods
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.BudgetId == budgetId && x.StartDate <= date && x.EndDate >= date, ct))?.Id;
-
-    private static string FormatAssignments(IEnumerable<TransactionAssignment> assignments) =>
-        string.Join("; ", assignments.Select(x => $"{x.BudgetLineId}:{x.Amount}"));
-
-    private static string FormatAssignments(IEnumerable<TransactionAssignmentItem> assignments) =>
-        string.Join("; ", assignments.Select(x => $"{x.BudgetLineId}:{x.Amount}"));
 }
 
 public sealed class ClearTransactionAssignmentsHandler(BudgetDbContext db, AuditEventWriter audit)
@@ -212,7 +186,7 @@ public sealed class ClearTransactionAssignmentsHandler(BudgetDbContext db, Audit
             .Where(x => x.TransactionId == transactionId)
             .ToListAsync(ct);
         db.TransactionAssignments.RemoveRange(assignments);
-        var periodId = await FindPeriodIdForDate(budgetId, transaction.TransactionDate, ct);
+        var periodId = await BudgetPeriodLookup.FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
         audit.Add(new DomainEvent(
             "TransactionAssignmentsCleared",
             budgetId,
@@ -220,18 +194,10 @@ public sealed class ClearTransactionAssignmentsHandler(BudgetDbContext db, Audit
             nameof(FinancialTransaction),
             transactionId,
             $"Cleared assignments for transaction {transaction.Description}.",
-            FormatAssignments(assignments)));
+            TransactionAssignmentFormatting.Format(assignments)));
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent();
     }
-
-    private async Task<Guid?> FindPeriodIdForDate(Guid budgetId, DateOnly date, CancellationToken ct) =>
-        (await db.BudgetPeriods
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.BudgetId == budgetId && x.StartDate <= date && x.EndDate >= date, ct))?.Id;
-
-    private static string FormatAssignments(IEnumerable<TransactionAssignment> assignments) =>
-        string.Join("; ", assignments.Select(x => $"{x.BudgetLineId}:{x.Amount}"));
 }
 
 public sealed class PreviewTransactionImportHandler(BudgetDbContext db, AuditEventWriter audit)
@@ -346,7 +312,7 @@ public sealed class CommitTransactionImportHandler(BudgetDbContext db, AuditEven
             db.Transactions.Add(transaction);
             row.MarkCommitted(transaction.Id);
 
-            var periodId = await FindPeriodIdForDate(budgetId, transaction.TransactionDate, ct);
+            var periodId = await BudgetPeriodLookup.FindPeriodIdForDate(db, budgetId, transaction.TransactionDate, ct);
             audit.Add(new DomainEvent(
                 "TransactionImported",
                 budgetId,
@@ -369,9 +335,4 @@ public sealed class CommitTransactionImportHandler(BudgetDbContext db, AuditEven
 
         return CommandResult<TransactionImportDetail>.Success(new TransactionImportDetail(batch, rows));
     }
-
-    private async Task<Guid?> FindPeriodIdForDate(Guid budgetId, DateOnly date, CancellationToken ct) =>
-        (await db.BudgetPeriods
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.BudgetId == budgetId && x.StartDate <= date && x.EndDate >= date, ct))?.Id;
 }

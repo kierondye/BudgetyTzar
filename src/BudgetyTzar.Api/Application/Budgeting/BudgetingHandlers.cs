@@ -237,7 +237,7 @@ public sealed class RecordAdjustmentHandler(BudgetDbContext db, AuditEventWriter
             return CommandResult<BudgetAdjustment>.NotFound();
         }
 
-        var periodId = await FindPeriodIdForDate(budgetId, date, ct);
+        var periodId = await BudgetPeriodLookup.FindPeriodIdForDate(db, budgetId, date, ct);
         var line = await eligibility.GetEligibleBudgetLine(budgetId, periodId, budgetLineId, ct);
         if (line is null)
         {
@@ -258,11 +258,6 @@ public sealed class RecordAdjustmentHandler(BudgetDbContext db, AuditEventWriter
         await db.SaveChangesAsync(ct);
         return CommandResult<BudgetAdjustment>.Created(adjustment);
     }
-
-    private async Task<Guid?> FindPeriodIdForDate(Guid budgetId, DateOnly date, CancellationToken ct) =>
-        (await db.BudgetPeriods
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.BudgetId == budgetId && x.StartDate <= date && x.EndDate >= date, ct))?.Id;
 
     private async Task<bool> NetPlannedSpendingIsValid(Guid budgetId, BudgetAdjustment pending, CancellationToken ct)
     {
@@ -372,7 +367,7 @@ public sealed class RecordReallocationHandler(BudgetDbContext db, AuditEventWrit
             });
         }
 
-        var periodId = await FindPeriodIdForDate(budgetId, date, ct);
+        var periodId = await BudgetPeriodLookup.FindPeriodIdForDate(db, budgetId, date, ct);
         var lineIds = adjustments.Select(x => x.BudgetItemId).Distinct().ToArray();
         var lines = await eligibility.GetEligibleBudgetLines(budgetId, periodId, lineIds, ct);
         if (lines.Count != lineIds.Length)
@@ -388,9 +383,4 @@ public sealed class RecordReallocationHandler(BudgetDbContext db, AuditEventWrit
         await db.SaveChangesAsync(ct);
         return CommandResult<BudgetReallocation>.Created(reallocation);
     }
-
-    private async Task<Guid?> FindPeriodIdForDate(Guid budgetId, DateOnly date, CancellationToken ct) =>
-        (await db.BudgetPeriods
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.BudgetId == budgetId && x.StartDate <= date && x.EndDate >= date, ct))?.Id;
 }
