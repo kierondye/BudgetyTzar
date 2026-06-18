@@ -12,16 +12,19 @@ public sealed class ReportingProjectionConsumerService(
     IOptions<ProjectionOptions> projectionOptions,
     ILogger<ReportingProjectionConsumerService> logger) : BackgroundService
 {
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!projectionOptions.Value.ConsumerEnabled)
         {
             logger.LogInformation("Reporting projection Kafka consumer is disabled.");
-            return;
+            return Task.CompletedTask;
         }
 
-        await Task.Yield();
+        return Task.Run(() => ConsumeEvents(stoppingToken), stoppingToken);
+    }
 
+    private async Task ConsumeEvents(CancellationToken stoppingToken)
+    {
         var groupId = configuration["Kafka:ConsumerGroups:Reporting"] ?? "budgetytzar-reporting-local";
         using var consumer = new ConsumerBuilder<string, string>(new ConsumerConfig
         {
