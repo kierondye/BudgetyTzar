@@ -340,6 +340,8 @@ internal sealed class BudgetApiFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("Database:MigrateOnStartup", "false");
+        builder.UseSetting("Outbox:PublisherEnabled", "false");
+        builder.UseSetting("Projections:ConsumerEnabled", "false");
         builder.UseSetting("Projections:UseProjectionBackedReports", _useProjectionBackedReports.ToString());
         builder.ConfigureServices(services =>
         {

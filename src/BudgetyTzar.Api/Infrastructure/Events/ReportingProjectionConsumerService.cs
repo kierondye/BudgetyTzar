@@ -20,6 +20,8 @@ public sealed class ReportingProjectionConsumerService(
             return;
         }
 
+        await Task.Yield();
+
         var groupId = configuration["Kafka:ConsumerGroups:Reporting"] ?? "budgetytzar-reporting-local";
         using var consumer = new ConsumerBuilder<string, string>(new ConsumerConfig
         {

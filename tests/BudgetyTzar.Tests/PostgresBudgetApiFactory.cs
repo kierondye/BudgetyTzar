@@ -28,6 +28,9 @@ internal sealed class PostgresBudgetApiFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("Database:MigrateOnStartup", "false");
+        builder.UseSetting("Outbox:PublisherEnabled", "false");
+        builder.UseSetting("Projections:ConsumerEnabled", "false");
+        builder.UseSetting("Projections:UseProjectionBackedReports", "false");
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<BudgetDbContext>();

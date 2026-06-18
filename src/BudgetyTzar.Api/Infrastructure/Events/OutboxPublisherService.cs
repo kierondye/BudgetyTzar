@@ -19,6 +19,8 @@ public sealed class OutboxPublisherService(
             return;
         }
 
+        await Task.Yield();
+
         using var producer = new ProducerBuilder<string, string>(new ProducerConfig
         {
             BootstrapServers = kafkaOptions.Value.BootstrapServers,

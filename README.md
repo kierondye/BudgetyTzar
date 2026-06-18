@@ -1,6 +1,6 @@
 # BudgetyTzar
 
-BudgetyTzar is a personal budgeting MVP that replaces a monthly spreadsheet with a PostgreSQL-backed HTTP API. The target domain model compares planned budget activity with actual transaction activity: budgets contain budget items, debit and credit budget adjustments, zero-sum reallocations, debit and credit transactions, transaction allocations, snapshots, and durable audit records. Phase 2 introduces Kafka-compatible local infrastructure, outbox publishing, and projection-backed snapshots/audit behind disabled-by-default feature flags.
+BudgetyTzar is a personal budgeting MVP that replaces a monthly spreadsheet with a PostgreSQL-backed HTTP API. The target domain model compares planned budget activity with actual transaction activity: budgets contain budget items, debit and credit budget adjustments, zero-sum reallocations, debit and credit transactions, transaction allocations, snapshots, and durable audit records. Phase 2 introduces Kafka-compatible local infrastructure, outbox publishing, and projection-backed snapshots/audit as the default local event-driven path.
 
 ## Phase 1 API
 
@@ -34,16 +34,20 @@ Snapshot balances are planned-vs-actual positions: `actualCredits - plannedCredi
 
 ## Local Development
 
-Start PostgreSQL:
+Start the local infrastructure:
+
+```bash
+docker compose up -d
+```
+
+For database-only work, you can start PostgreSQL on its own and disable the Kafka-backed workers with environment variables when running the API:
 
 ```bash
 docker compose up -d postgres
-```
-
-Start the optional Phase 2 local event infrastructure:
-
-```bash
-docker compose up -d redpanda kafka-ui
+Outbox__PublisherEnabled=false \
+Projections__ConsumerEnabled=false \
+Projections__UseProjectionBackedReports=false \
+dotnet run --project src/BudgetyTzar.Api
 ```
 
 Kafka UI is available at `http://localhost:8080/`. The local Kafka-compatible broker is Redpanda:
@@ -51,12 +55,6 @@ Kafka UI is available at `http://localhost:8080/`. The local Kafka-compatible br
 - API or host tools: `localhost:19092`
 - Other Compose services: `redpanda:9092`
 - Redpanda admin API: `http://localhost:9644`
-
-To start all local infrastructure:
-
-```bash
-docker compose up -d
-```
 
 If you are moving from the old local `EnsureCreated` schema, reset the disposable
 PostgreSQL volume first:
@@ -78,7 +76,7 @@ The API applies EF Core migrations on startup when `Database:MigrateOnStartup` i
 
 ### Phase 2 Kafka, Outbox, and Projection Flags
 
-The API remains runnable with only PostgreSQL. Kafka publishing, Kafka consuming, and projection-backed snapshots are disabled by default in `src/BudgetyTzar.Api/appsettings.json`.
+Kafka publishing, Kafka consuming, and projection-backed snapshots are enabled by default in `src/BudgetyTzar.Api/appsettings.json`.
 
 Default local settings:
 
@@ -86,20 +84,20 @@ Default local settings:
 - `Kafka:Topics:BudgetingEvents`: `budgetytzar.budgeting.events`
 - `Kafka:Topics:TransactionEvents`: `budgetytzar.transactions.events`
 - `Kafka:Topics:ReportingEvents`: `budgetytzar.reporting.events`
-- `Outbox:PublisherEnabled`: `false`
-- `Projections:ConsumerEnabled`: `false`
-- `Projections:UseProjectionBackedReports`: `false`
+- `Outbox:PublisherEnabled`: `true`
+- `Projections:ConsumerEnabled`: `true`
+- `Projections:UseProjectionBackedReports`: `true`
 
-Opt in locally with environment variables when working on Phase 2 behavior:
+Opt out locally with environment variables when you want to run the API without Kafka:
 
 ```bash
-Outbox__PublisherEnabled=true \
-Projections__ConsumerEnabled=true \
-Projections__UseProjectionBackedReports=true \
+Outbox__PublisherEnabled=false \
+Projections__ConsumerEnabled=false \
+Projections__UseProjectionBackedReports=false \
 dotnet run --project src/BudgetyTzar.Api
 ```
 
-Only enable these flags after starting `redpanda`. Leave them disabled for normal API work that does not need Kafka.
+Start `redpanda` before using the default settings.
 
 Run tests:
 
@@ -109,8 +107,8 @@ dotnet test
 
 ## Architecture Notes
 
-Phase 1 is intentionally a local modular MVP. It keeps the language, domain model, audit vocabulary, and API surface aligned with the later event-driven architecture from `SPECIFICATION.md`, while deferring service decomposition, Kubernetes, and the Go implementation to later phases. Phase 2 starts introducing Kafka-compatible local infrastructure, domain-contract-shaped events, outbox publishing, and projection-backed snapshots/audit behind explicit opt-in flags.
+Phase 1 is intentionally a local modular MVP. It keeps the language, domain model, audit vocabulary, and API surface aligned with the later event-driven architecture from `SPECIFICATION.md`, while deferring service decomposition, Kubernetes, and the Go implementation to later phases. Phase 2 starts introducing Kafka-compatible local infrastructure, domain-contract-shaped events, outbox publishing, and projection-backed snapshots/audit as the default local path.
 
 Budgets are the root resource. Budget items are named buckets, not fixed debit or credit lines. Dated budget adjustments and transaction allocations can be debits or credits against any budget item, and item balances are cumulative planned-vs-actual positions. A budget has one currency, and all child amounts use that currency.
 
-The Phase 1 audit timeline is backed by durable local audit records for imports, allocation changes, splits, ignores, reallocations, adjustments, and budget item archival. Kafka-published audit events, outbox records, and projection-backed reporting are Phase 2 concerns and should stay disabled in local config unless that behavior is being developed or tested.
+The Phase 1 audit timeline is backed by durable local audit records for imports, allocation changes, splits, ignores, reallocations, adjustments, and budget item archival. Kafka-published audit events, outbox records, and projection-backed reporting are Phase 2 concerns and are enabled in local config by default.
