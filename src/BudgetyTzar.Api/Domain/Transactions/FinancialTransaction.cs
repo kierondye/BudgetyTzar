@@ -1,11 +1,15 @@
+using System.Text.Json.Serialization;
+
 namespace BudgetyTzar.Api;
 
+[JsonConverter(typeof(CamelCaseStringEnumConverter))]
 public enum TransactionDirection
 {
     Debit,
     Credit
 }
 
+[JsonConverter(typeof(CamelCaseStringEnumConverter))]
 public enum TransactionAssignmentStatus
 {
     Unassigned,

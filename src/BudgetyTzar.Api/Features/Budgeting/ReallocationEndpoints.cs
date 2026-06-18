@@ -35,7 +35,7 @@ public sealed class CreateBudgetItemReallocationValidator : AbstractValidator<Cr
         {
             item.RuleFor(x => x.BudgetItemId).NotEmpty();
             item.RuleFor(x => x.Amount).PositiveAmount();
-            item.RuleFor(x => x.Type).IsInEnum();
+            item.RuleFor(x => x.Direction).IsInEnum();
         });
     }
 }

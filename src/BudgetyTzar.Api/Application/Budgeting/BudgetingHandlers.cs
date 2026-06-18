@@ -362,8 +362,8 @@ public sealed class RecordReallocationHandler(BudgetDbContext db, AuditEventWrit
             });
         }
 
-        var creditTotal = adjustments.Where(x => x.Type == BudgetAdjustmentType.Credit).Sum(x => x.Amount);
-        var debitTotal = adjustments.Where(x => x.Type == BudgetAdjustmentType.Debit).Sum(x => x.Amount);
+        var creditTotal = adjustments.Where(x => x.Direction == BudgetAdjustmentType.Credit).Sum(x => x.Amount);
+        var debitTotal = adjustments.Where(x => x.Direction == BudgetAdjustmentType.Debit).Sum(x => x.Amount);
         if (creditTotal != debitTotal)
         {
             return CommandResult<BudgetReallocation>.ValidationProblem(new Dictionary<string, string[]>
@@ -383,7 +383,7 @@ public sealed class RecordReallocationHandler(BudgetDbContext db, AuditEventWrit
         var reallocation = BudgetReallocation.Create(budgetId, date, notes);
         db.BudgetReallocations.Add(reallocation);
         db.BudgetAdjustments.AddRange(adjustments.Select(x =>
-            BudgetAdjustment.Create(budgetId, x.BudgetItemId, x.Amount, x.Type, date, notes, periodId, reallocation.Id)));
+            BudgetAdjustment.Create(budgetId, x.BudgetItemId, x.Amount, x.Direction, date, notes, periodId, reallocation.Id)));
         audit.Add(reallocation.RecordedEvent(budgetId));
         await db.SaveChangesAsync(ct);
         return CommandResult<BudgetReallocation>.Created(reallocation);

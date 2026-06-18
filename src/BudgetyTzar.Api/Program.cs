@@ -6,6 +6,7 @@ using BudgetyTzar.Api.Features;
 using BudgetyTzar.Api.Infrastructure.Events;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using FluentValidation;
+using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using Swashbuckle.AspNetCore.SwaggerGen;
@@ -15,6 +16,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<BudgetDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("BudgetyTzar")));
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
+builder.Services.Configure<JsonOptions>(options =>
+{
+    options.SerializerOptions.Converters.Add(new CamelCaseStringEnumConverter());
+});
 builder.Services.Configure<KafkaOptions>(builder.Configuration.GetSection("Kafka"));
 builder.Services.Configure<OutboxOptions>(builder.Configuration.GetSection("Outbox"));
 builder.Services.Configure<ProjectionOptions>(builder.Configuration.GetSection("Projections"));

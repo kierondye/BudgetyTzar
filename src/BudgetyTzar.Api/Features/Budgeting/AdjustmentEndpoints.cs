@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace BudgetyTzar.Api.Features;
 
 public sealed record CreateBudgetAdjustmentRequest(Guid BudgetLineId, decimal Amount, string Reason);
-public sealed record CreateBudgetItemAdjustmentRequest(decimal Amount, BudgetAdjustmentType Type, DateOnly Date, string? Notes);
+public sealed record CreateBudgetItemAdjustmentRequest(decimal Amount, BudgetAdjustmentType Direction, DateOnly Date, string? Notes);
 public sealed record BudgetAdjustmentDto(
     Guid Id,
     Guid BudgetId,
@@ -14,7 +14,7 @@ public sealed record BudgetAdjustmentDto(
     Guid? ReallocationId,
     DateOnly Date,
     decimal Amount,
-    BudgetAdjustmentType Type,
+    BudgetAdjustmentType Direction,
     string? Notes,
     DateTimeOffset CreatedAt);
 public sealed class CreateBudgetAdjustmentValidator : AbstractValidator<CreateBudgetAdjustmentRequest>
@@ -31,7 +31,7 @@ public sealed class CreateBudgetItemAdjustmentValidator : AbstractValidator<Crea
     public CreateBudgetItemAdjustmentValidator()
     {
         RuleFor(x => x.Amount).PositiveAmount();
-        RuleFor(x => x.Type).IsInEnum();
+        RuleFor(x => x.Direction).IsInEnum();
         RuleFor(x => x.Notes).MaximumLength(500);
     }
 }
@@ -89,7 +89,7 @@ public static partial class Endpoints
                 budgetId,
                 budgetItemId,
                 request.Amount,
-                request.Type,
+                request.Direction,
                 request.Date,
                 request.Notes,
                 ct);

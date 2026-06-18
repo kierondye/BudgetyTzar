@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace BudgetyTzar.Api;
 
+[JsonConverter(typeof(CamelCaseStringEnumConverter))]
 public enum BudgetAdjustmentType
 {
     Debit,

@@ -11,12 +11,20 @@ get {
 }
 
 tests {
+  function assertLeanSnapshot() {
+    expect(Object.keys(res.body).sort()).to.eql(["budgetId", "budgetItems", "date", "totalBalance", "unbudgetedBalance"].sort());
+    res.body.budgetItems.forEach((item) => {
+      expect(Object.keys(item).sort()).to.eql(["balance", "budgetItemId", "name"].sort());
+    });
+  }
+
   function itemBalance(id) {
     return res.body.budgetItems.find((item) => item.budgetItemId === id).balance;
   }
 
   test("supermarket spend updates snapshot", function() {
     expect(res.status).to.equal(200);
+    assertLeanSnapshot();
     expect(itemBalance(bru.getVar("salaryItemId"))).to.equal(500);
     expect(itemBalance(bru.getVar("groceriesItemId"))).to.equal(350);
     expect(itemBalance(bru.getVar("mortgageItemId"))).to.equal(800);

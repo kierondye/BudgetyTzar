@@ -6,16 +6,16 @@ namespace BudgetyTzar.Api.Application.Reporting;
 public sealed record BudgetSnapshot(
     Guid BudgetId,
     DateOnly Date,
-    decimal TotalBudgetedBalance,
-    decimal UnallocatedDebitTotal,
-    decimal UnallocatedCreditTotal,
-    decimal UnallocatedBalance,
-    decimal TotalTransactionBalance,
     decimal UnbudgetedBalance,
     decimal TotalBalance,
     IReadOnlyList<BudgetSnapshotItem> BudgetItems);
 
 public sealed record BudgetSnapshotItem(
+    Guid BudgetItemId,
+    string Name,
+    decimal Balance);
+
+file sealed record BudgetSnapshotCalculationItem(
     Guid BudgetItemId,
     string Name,
     decimal Balance,
@@ -62,7 +62,7 @@ public static class LedgerSnapshotCalculator
             .GroupBy(x => x.TransactionId)
             .ToDictionary(x => x.Key, x => x.Sum(y => y.Amount));
 
-        var items = lines
+        var calculatedItems = lines
             .Select(line =>
             {
                 var lineAdjustments = adjustments.Where(x => x.BudgetLineId == line.Id).ToList();
@@ -81,7 +81,7 @@ public static class LedgerSnapshotCalculator
                     .Sum(x => x.Amount);
                 var balance = plannedDebit - plannedCredit + actualCredit - actualDebit;
 
-                return new BudgetSnapshotItem(
+                return new BudgetSnapshotCalculationItem(
                     line.Id,
                     line.Name,
                     balance,
@@ -99,19 +99,13 @@ public static class LedgerSnapshotCalculator
                 || x.ActualDebit != 0)
             .ToList();
 
-        var unallocatedDebit = transactions
-            .Where(x => x.Direction == TransactionDirection.Debit)
-            .Sum(x => Math.Max(0, x.Amount - assignmentTotals.GetValueOrDefault(x.Id)));
-        var unallocatedCredit = transactions
-            .Where(x => x.Direction == TransactionDirection.Credit)
-            .Sum(x => Math.Max(0, x.Amount - assignmentTotals.GetValueOrDefault(x.Id)));
         var totalTransactionBalance = transactions.Sum(x => x.Direction == TransactionDirection.Credit ? x.Amount : -x.Amount);
-        var totalBudgetedBalance = items.Sum(x => x.Balance);
+        var totalBudgetedBalance = calculatedItems.Sum(x => x.Balance);
         var unbudgetedBalance = 0m;
         if (transactions.Count > 0)
         {
             var latestTransactionDate = transactions.Max(x => x.TransactionDate);
-            var budgetedBalanceAtLatestTransaction = items.Sum(item =>
+            var budgetedBalanceAtLatestTransaction = calculatedItems.Sum(item =>
             {
                 var plannedCreditAtLatestTransaction = adjustments
                     .Where(x => x.BudgetLineId == item.BudgetItemId
@@ -132,13 +126,10 @@ public static class LedgerSnapshotCalculator
         return new BudgetSnapshot(
             budgetId,
             date,
-            totalBudgetedBalance,
-            unallocatedDebit,
-            unallocatedCredit,
-            unbudgetedBalance,
-            totalTransactionBalance,
             unbudgetedBalance,
             totalBudgetedBalance + unbudgetedBalance,
-            items);
+            calculatedItems
+                .Select(x => new BudgetSnapshotItem(x.BudgetItemId, x.Name, x.Balance))
+                .ToList());
     }
 }

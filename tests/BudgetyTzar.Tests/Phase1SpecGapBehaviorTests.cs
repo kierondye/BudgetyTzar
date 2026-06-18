@@ -118,7 +118,6 @@ public sealed class Phase1SpecGapBehaviorTests
         Assert.DoesNotContain(beforeDebit.BudgetItems, x => x.BudgetItemId == groceries.Id && x.Balance != 0);
         Assert.Equal(500m, afterDebit!.BudgetItems.Single(x => x.BudgetItemId == groceries.Id).Balance);
         Assert.Equal(-10m, afterDebit.BudgetItems.Single(x => x.BudgetItemId == retired.Id).Balance);
-        Assert.True(afterDebit.BudgetItems.Single(x => x.BudgetItemId == retired.Id).IsArchived);
     }
 
     [Fact]
@@ -358,7 +357,7 @@ public sealed class Phase1SpecGapBehaviorTests
                 transactionDate = "2026-06-17",
                 description = "Visa",
                 amount = 3000m,
-                direction = 1,
+                direction = "credit",
                 sourceAccount = "Spending",
                 externalReference = "Payment",
                 notes = "Earnings"
