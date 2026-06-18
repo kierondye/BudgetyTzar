@@ -1,6 +1,6 @@
 # BudgetyTzar
 
-BudgetyTzar is a personal budgeting MVP that replaces a monthly spreadsheet with a PostgreSQL-backed HTTP API. Phase 1 focuses on the local .NET implementation: budgets, budget periods, budget lines, durable audit records, manual and imported transactions, transaction assignment, budget reallocations, adjustments, reconciliation, basic multi-period reports, and CSV export.
+BudgetyTzar is a personal budgeting MVP that replaces a monthly spreadsheet with a PostgreSQL-backed HTTP API. Phase 1 focuses on the local .NET implementation: budgets, budget periods, budget lines, durable audit records, manual and imported transactions, transaction assignment, budget reallocations, adjustments, reconciliation, basic multi-period reports, and CSV export. Phase 2 introduces Kafka-compatible local infrastructure, outbox publishing, and projection-backed reporting behind disabled-by-default feature flags.
 
 ## Phase 1 API
 
@@ -47,6 +47,24 @@ Start PostgreSQL:
 docker compose up -d postgres
 ```
 
+Start the optional Phase 2 local event infrastructure:
+
+```bash
+docker compose up -d redpanda kafka-ui
+```
+
+Kafka UI is available at `http://localhost:8080/`. The local Kafka-compatible broker is Redpanda:
+
+- API or host tools: `localhost:19092`
+- Other Compose services: `redpanda:9092`
+- Redpanda admin API: `http://localhost:9644`
+
+To start all local infrastructure:
+
+```bash
+docker compose up -d
+```
+
 If you are moving from the old local `EnsureCreated` schema, reset the disposable
 PostgreSQL volume first:
 
@@ -65,6 +83,31 @@ Open `http://localhost:5000/` or `http://localhost:5000/swagger` to browse the A
 
 The API applies EF Core migrations on startup when `Database:MigrateOnStartup` is `true`.
 
+### Phase 2 Kafka, Outbox, and Projection Flags
+
+The API remains runnable with only PostgreSQL. Kafka publishing, Kafka consuming, and projection-backed reports are disabled by default in `src/BudgetyTzar.Api/appsettings.json`.
+
+Default local settings:
+
+- `Kafka:BootstrapServers`: `localhost:19092`
+- `Kafka:Topics:BudgetingEvents`: `budgetytzar.budgeting.events`
+- `Kafka:Topics:TransactionEvents`: `budgetytzar.transactions.events`
+- `Kafka:Topics:ReportingEvents`: `budgetytzar.reporting.events`
+- `Outbox:PublisherEnabled`: `false`
+- `Projections:ConsumerEnabled`: `false`
+- `Projections:UseProjectionBackedReports`: `false`
+
+Opt in locally with environment variables when working on Phase 2 behavior:
+
+```bash
+Outbox__PublisherEnabled=true \
+Projections__ConsumerEnabled=true \
+Projections__UseProjectionBackedReports=true \
+dotnet run --project src/BudgetyTzar.Api
+```
+
+Only enable these flags after starting `redpanda`. Leave them disabled for normal API work that does not need Kafka.
+
 Run tests:
 
 ```bash
@@ -73,8 +116,8 @@ dotnet test
 
 ## Architecture Notes
 
-Phase 1 is intentionally a local modular MVP. It keeps the language, domain model, audit vocabulary, and API surface aligned with the later event-driven service architecture from `SPECIFICATION.md`, while deferring Kafka, outbox publishing, service decomposition, projection-backed reporting, containerised services, Kubernetes, and the Go implementation to later phases.
+Phase 1 is intentionally a local modular MVP. It keeps the language, domain model, audit vocabulary, and API surface aligned with the later event-driven service architecture from `SPECIFICATION.md`, while deferring service decomposition, Kubernetes, and the Go implementation to later phases. Phase 2 starts introducing Kafka-compatible local infrastructure, outbox publishing, and projection-backed reporting behind explicit opt-in flags.
 
 Budgets are the root resource. Budget periods cannot overlap within a budget, transactions belong to a budget, and a transaction's date determines which period reports include it in. Budget lines can be debit or credit lines, and debit lines can either reset each period or carry cumulative balances forward. Archived budget lines remain visible in historical periods. A budget has one currency, and all child amounts use that currency.
 
-The Phase 1 audit timeline is backed by durable local audit records for imports, assignment changes, splits, ignores, reallocations, adjustments, and budget line archival. Kafka-published audit events, outbox records, service-owned schemas, and projection-backed reporting are Phase 2 concerns.
+The Phase 1 audit timeline is backed by durable local audit records for imports, assignment changes, splits, ignores, reallocations, adjustments, and budget line archival. Kafka-published audit events, outbox records, and projection-backed reporting are Phase 2 concerns and should stay disabled in local config unless that behavior is being developed or tested.

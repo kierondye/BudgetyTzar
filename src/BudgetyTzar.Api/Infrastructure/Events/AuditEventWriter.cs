@@ -1,13 +1,19 @@
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace BudgetyTzar.Api.Infrastructure.Events;
 
-public sealed class AuditEventWriter(BudgetDbContext db)
+public sealed class AuditEventWriter(BudgetDbContext db, IOptions<EventTopicOptions> topics)
 {
-    public void Add(DomainEvent domainEvent) =>
-        db.AuditEvents.Add(new AuditEvent
+    public void Add(DomainEvent domainEvent)
+    {
+        var occurredAt = domainEvent.OccurredAt ?? DateTimeOffset.UtcNow;
+        var audit = new AuditEvent
         {
+            OccurredAt = occurredAt,
             BudgetId = domainEvent.BudgetId,
             BudgetPeriodId = domainEvent.BudgetPeriodId,
             AppliesToAllPeriods = domainEvent.AppliesToAllPeriods,
@@ -16,7 +22,34 @@ public sealed class AuditEventWriter(BudgetDbContext db)
             EventType = domainEvent.EventType,
             Description = domainEvent.Description,
             Details = domainEvent.Details
+        };
+        db.AuditEvents.Add(audit);
+
+        var canonicalEventType = EventTypes.ToCanonical(domainEvent.EventType);
+        var outboxId = Guid.NewGuid();
+        var envelope = new EventEnvelope(
+            outboxId,
+            canonicalEventType,
+            occurredAt,
+            Guid.NewGuid(),
+            null,
+            domainEvent.EntityId,
+            domainEvent.EntityType,
+            1,
+            BuildPayload(domainEvent, audit.Id));
+
+        db.OutboxMessages.Add(new OutboxMessage
+        {
+            Id = outboxId,
+            Topic = EventTypes.ToTopic(canonicalEventType, topics.Value),
+            EventType = canonicalEventType,
+            AggregateId = domainEvent.EntityId,
+            AggregateType = domainEvent.EntityType,
+            BudgetId = domainEvent.BudgetId,
+            BudgetPeriodId = domainEvent.BudgetPeriodId,
+            EnvelopeJson = JsonSerializer.Serialize(envelope, EventSerialization.Options)
         });
+    }
 
     public async Task AddImportBatchPeriodAudits(
         Guid budgetId,
@@ -56,4 +89,18 @@ public sealed class AuditEventWriter(BudgetDbContext db)
                 $"{verb} import batch {fileName} with {affectedRowCount} row(s) affecting period {period.Name}."));
         }
     }
+
+    private static JsonObject BuildPayload(DomainEvent domainEvent, Guid auditEventId) =>
+        new()
+        {
+            ["auditEventId"] = auditEventId,
+            ["budgetId"] = domainEvent.BudgetId,
+            ["budgetPeriodId"] = domainEvent.BudgetPeriodId,
+            ["entityType"] = domainEvent.EntityType,
+            ["entityId"] = domainEvent.EntityId,
+            ["eventName"] = domainEvent.EventType,
+            ["description"] = domainEvent.Description,
+            ["details"] = domainEvent.Details,
+            ["appliesToAllPeriods"] = domainEvent.AppliesToAllPeriods
+        };
 }

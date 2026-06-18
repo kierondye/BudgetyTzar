@@ -1,6 +1,8 @@
 using BudgetyTzar.Api.Application.Reporting;
+using BudgetyTzar.Api.Infrastructure.Events;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using System.Text;
 
 namespace BudgetyTzar.Api.Features;
@@ -37,8 +39,9 @@ public static partial class Endpoints
             Guid budgetId,
             Guid periodId,
             BudgetDbContext db,
+            IOptions<ProjectionOptions> projectionOptions,
             CancellationToken ct) =>
-            await DashboardQueries.GetPeriodSummary(db, budgetId, periodId, ct) is { } summary
+            await DashboardQueries.GetPeriodSummary(db, budgetId, periodId, projectionOptions.Value.UseProjectionBackedReports, ct) is { } summary
                 ? Results.Ok(summary)
                 : Results.NotFound());
 
@@ -46,8 +49,9 @@ public static partial class Endpoints
             Guid budgetId,
             Guid periodId,
             BudgetDbContext db,
+            IOptions<ProjectionOptions> projectionOptions,
             CancellationToken ct) =>
-            await DashboardQueries.GetPeriodSummary(db, budgetId, periodId, ct) is { } summary
+            await DashboardQueries.GetPeriodSummary(db, budgetId, periodId, projectionOptions.Value.UseProjectionBackedReports, ct) is { } summary
                 ? Results.Text(ToPeriodSummaryCsv(summary), "text/csv", Encoding.UTF8)
                 : Results.NotFound());
 
@@ -67,6 +71,7 @@ public static partial class Endpoints
             DateOnly from,
             DateOnly to,
             BudgetDbContext db,
+            IOptions<ProjectionOptions> projectionOptions,
             CancellationToken ct) =>
         {
             if (to < from)
@@ -82,6 +87,37 @@ public static partial class Endpoints
                 return Results.NotFound();
             }
 
+            if (projectionOptions.Value.UseProjectionBackedReports
+                && await db.BudgetLinePeriodSummaries.AnyAsync(x => x.BudgetId == budgetId && x.BudgetLineId == budgetLineId, ct))
+            {
+                var projectedTrends = await db.BudgetLinePeriodSummaries
+                    .AsNoTracking()
+                    .Where(x => x.BudgetId == budgetId
+                        && x.BudgetLineId == budgetLineId
+                        && db.PeriodBudgetSummaries.Any(p =>
+                            p.BudgetPeriodId == x.BudgetPeriodId
+                            && p.StartDate <= to
+                            && p.EndDate >= from))
+                    .Join(
+                        db.PeriodBudgetSummaries.AsNoTracking(),
+                        line => line.BudgetPeriodId,
+                        period => period.BudgetPeriodId,
+                        (line, period) => new BudgetLineTrendItem(
+                            line.BudgetPeriodId,
+                            period.PeriodName,
+                            period.StartDate,
+                            period.EndDate,
+                            line.Allocated,
+                            line.ActualAmount,
+                            line.AdjustmentAmount,
+                            line.ClosingBalance,
+                            line.IsOverBudget))
+                    .OrderBy(x => x.StartDate)
+                    .ToListAsync(ct);
+
+                return Results.Ok(projectedTrends);
+            }
+
             var periods = await db.BudgetPeriods
                 .AsNoTracking()
                 .Where(x => x.BudgetId == budgetId && x.StartDate <= to && x.EndDate >= from)
@@ -91,7 +127,7 @@ public static partial class Endpoints
             var trends = new List<BudgetLineTrendItem>();
             foreach (var period in periods)
             {
-                var summary = await DashboardQueries.GetPeriodSummary(db, budgetId, period.Id, ct);
+                var summary = await DashboardQueries.GetPeriodSummary(db, budgetId, period.Id, false, ct);
                 var line = summary?.Lines.FirstOrDefault(x => x.BudgetLineId == budgetLineId);
                 if (summary is not null && line is not null)
                 {
@@ -116,6 +152,7 @@ public static partial class Endpoints
             DateOnly from,
             DateOnly to,
             BudgetDbContext db,
+            IOptions<ProjectionOptions> projectionOptions,
             CancellationToken ct) =>
         {
             if (to < from)
@@ -131,6 +168,29 @@ public static partial class Endpoints
                 return Results.NotFound();
             }
 
+            if (projectionOptions.Value.UseProjectionBackedReports
+                && await db.CreditBudgetLinePeriodSummaries.AnyAsync(x => x.BudgetId == budgetId, ct))
+            {
+                var projectedItems = await db.CreditBudgetLinePeriodSummaries
+                    .AsNoTracking()
+                    .Where(x => x.BudgetId == budgetId && x.StartDate <= to && x.EndDate >= from)
+                    .OrderBy(x => x.StartDate)
+                    .ThenBy(x => x.BudgetLineName)
+                    .Select(x => new CreditVarianceItem(
+                        x.BudgetPeriodId,
+                        x.PeriodName,
+                        x.StartDate,
+                        x.EndDate,
+                        x.BudgetLineId,
+                        x.BudgetLineName,
+                        x.PlannedCredit,
+                        x.ActualCredit,
+                        x.CreditVariance))
+                    .ToListAsync(ct);
+
+                return Results.Ok(projectedItems);
+            }
+
             var periods = await db.BudgetPeriods
                 .AsNoTracking()
                 .Where(x => x.BudgetId == budgetId && x.StartDate <= to && x.EndDate >= from)
@@ -140,7 +200,7 @@ public static partial class Endpoints
             var items = new List<CreditVarianceItem>();
             foreach (var period in periods)
             {
-                var summary = await DashboardQueries.GetPeriodSummary(db, budgetId, period.Id, ct);
+                var summary = await DashboardQueries.GetPeriodSummary(db, budgetId, period.Id, false, ct);
                 if (summary is not null)
                 {
                     items.AddRange(summary.Lines
@@ -166,6 +226,7 @@ public static partial class Endpoints
             Guid budgetId,
             Guid periodId,
             BudgetDbContext db,
+            IOptions<ProjectionOptions> projectionOptions,
             CancellationToken ct) =>
         {
             var period = await db.BudgetPeriods
@@ -174,6 +235,25 @@ public static partial class Endpoints
             if (period is null)
             {
                 return Results.NotFound();
+            }
+
+            if (projectionOptions.Value.UseProjectionBackedReports
+                && await db.BudgetAuditTimelines.AnyAsync(x => x.BudgetId == budgetId && x.BudgetPeriodId == periodId, ct))
+            {
+                var projectedItems = await db.BudgetAuditTimelines
+                    .AsNoTracking()
+                    .Where(x => x.BudgetId == budgetId && x.BudgetPeriodId == periodId)
+                    .Select(x => new AuditTimelineItem(
+                        x.AuditEventId,
+                        x.OccurredAt,
+                        x.EventType,
+                        x.EntityType,
+                        x.EntityId,
+                        x.BudgetPeriodId,
+                        x.Description))
+                    .ToListAsync(ct);
+
+                return Results.Ok(projectedItems.OrderByDescending(x => x.OccurredAt).ToList());
             }
 
             var items = await db.AuditEvents

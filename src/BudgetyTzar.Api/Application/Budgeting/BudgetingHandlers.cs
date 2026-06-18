@@ -263,7 +263,7 @@ public sealed class RecordReallocationHandler(BudgetDbContext db, AuditEventWrit
             return CommandResult<BudgetReallocation>.ValidationProblem(errors);
         }
 
-        var summary = await DashboardQueries.GetPeriodSummary(db, budgetId, periodId, ct);
+        var summary = await DashboardQueries.GetPeriodSummaryFromOperationalTables(db, budgetId, periodId, ct);
         var sourceLine = summary?.Lines.FirstOrDefault(x => x.BudgetLineId == fromBudgetLineId);
         if (sourceLine is null)
         {

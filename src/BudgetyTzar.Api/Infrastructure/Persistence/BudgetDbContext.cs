@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using BudgetyTzar.Api.Application.Reporting;
 
 namespace BudgetyTzar.Api.Infrastructure.Persistence;
 
@@ -15,6 +16,13 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<TransactionImportBatch> TransactionImportBatches => Set<TransactionImportBatch>();
     public DbSet<TransactionImportRow> TransactionImportRows => Set<TransactionImportRow>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+    public DbSet<PeriodBudgetSummaryProjection> PeriodBudgetSummaries => Set<PeriodBudgetSummaryProjection>();
+    public DbSet<BudgetLinePeriodSummaryProjection> BudgetLinePeriodSummaries => Set<BudgetLinePeriodSummaryProjection>();
+    public DbSet<CreditBudgetLinePeriodSummaryProjection> CreditBudgetLinePeriodSummaries => Set<CreditBudgetLinePeriodSummaryProjection>();
+    public DbSet<TransactionAssignmentSummaryProjection> TransactionAssignmentSummaries => Set<TransactionAssignmentSummaryProjection>();
+    public DbSet<CumulativeBudgetLineBalanceProjection> CumulativeBudgetLineBalances => Set<CumulativeBudgetLineBalanceProjection>();
+    public DbSet<BudgetAuditTimelineProjection> BudgetAuditTimelines => Set<BudgetAuditTimelineProjection>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -120,6 +128,99 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
             entity.Property(x => x.DuplicateReason).HasMaxLength(500);
             entity.HasIndex(x => x.ImportBatchId);
             entity.HasIndex(x => x.TransactionId);
+        });
+
+        modelBuilder.Entity<OutboxMessage>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Topic).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.EventType).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.AggregateType).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.EnvelopeJson).HasColumnType("jsonb").IsRequired();
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
+            entity.Property(x => x.LastError).HasMaxLength(1000);
+            entity.HasIndex(x => new { x.Status, x.CreatedAt });
+            entity.HasIndex(x => x.ProjectedAt);
+            entity.HasIndex(x => new { x.BudgetId, x.CreatedAt });
+            entity.HasIndex(x => x.EventType);
+        });
+
+        modelBuilder.Entity<PeriodBudgetSummaryProjection>(entity =>
+        {
+            entity.ToTable("period_budget_summary");
+            entity.HasKey(x => x.BudgetPeriodId);
+            entity.Property(x => x.PeriodName).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.PlannedDebit).HasPrecision(18, 2);
+            entity.Property(x => x.ActualDebit).HasPrecision(18, 2);
+            entity.Property(x => x.DebitRemaining).HasPrecision(18, 2);
+            entity.Property(x => x.DebitVariance).HasPrecision(18, 2);
+            entity.Property(x => x.PlannedCredit).HasPrecision(18, 2);
+            entity.Property(x => x.ActualCredit).HasPrecision(18, 2);
+            entity.Property(x => x.CreditVariance).HasPrecision(18, 2);
+            entity.Property(x => x.UnassignedDebitTotal).HasPrecision(18, 2);
+            entity.Property(x => x.UnassignedCreditTotal).HasPrecision(18, 2);
+            entity.Property(x => x.PartiallyAssignedDebitTotal).HasPrecision(18, 2);
+            entity.Property(x => x.PartiallyAssignedCreditTotal).HasPrecision(18, 2);
+            entity.HasIndex(x => new { x.BudgetId, x.StartDate });
+        });
+
+        modelBuilder.Entity<BudgetLinePeriodSummaryProjection>(entity =>
+        {
+            entity.ToTable("budget_line_period_summary");
+            entity.HasKey(x => new { x.BudgetPeriodId, x.BudgetLineId });
+            entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.Direction).HasConversion<string>().HasMaxLength(16);
+            entity.Property(x => x.RolloverType).HasConversion<string>().HasMaxLength(32);
+            entity.Property(x => x.OpeningBalance).HasPrecision(18, 2);
+            entity.Property(x => x.Allocated).HasPrecision(18, 2);
+            entity.Property(x => x.ReallocationIn).HasPrecision(18, 2);
+            entity.Property(x => x.ReallocationOut).HasPrecision(18, 2);
+            entity.Property(x => x.ActualAmount).HasPrecision(18, 2);
+            entity.Property(x => x.AdjustmentAmount).HasPrecision(18, 2);
+            entity.Property(x => x.ClosingBalance).HasPrecision(18, 2);
+            entity.HasIndex(x => new { x.BudgetId, x.BudgetLineId });
+        });
+
+        modelBuilder.Entity<CreditBudgetLinePeriodSummaryProjection>(entity =>
+        {
+            entity.ToTable("credit_budget_line_period_summary");
+            entity.HasKey(x => new { x.BudgetPeriodId, x.BudgetLineId });
+            entity.Property(x => x.PeriodName).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.BudgetLineName).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.PlannedCredit).HasPrecision(18, 2);
+            entity.Property(x => x.ActualCredit).HasPrecision(18, 2);
+            entity.Property(x => x.CreditVariance).HasPrecision(18, 2);
+            entity.HasIndex(x => new { x.BudgetId, x.StartDate });
+        });
+
+        modelBuilder.Entity<TransactionAssignmentSummaryProjection>(entity =>
+        {
+            entity.ToTable("transaction_assignment_summary");
+            entity.HasKey(x => x.TransactionId);
+            entity.Property(x => x.TransactionAmount).HasPrecision(18, 2);
+            entity.Property(x => x.AssignedAmount).HasPrecision(18, 2);
+            entity.Property(x => x.UnassignedAmount).HasPrecision(18, 2);
+            entity.Property(x => x.Direction).HasConversion<string>().HasMaxLength(16);
+            entity.HasIndex(x => new { x.BudgetId, x.BudgetPeriodId });
+        });
+
+        modelBuilder.Entity<CumulativeBudgetLineBalanceProjection>(entity =>
+        {
+            entity.ToTable("cumulative_budget_line_balance");
+            entity.HasKey(x => new { x.BudgetPeriodId, x.BudgetLineId });
+            entity.Property(x => x.OpeningBalance).HasPrecision(18, 2);
+            entity.Property(x => x.ClosingBalance).HasPrecision(18, 2);
+            entity.HasIndex(x => new { x.BudgetId, x.BudgetLineId });
+        });
+
+        modelBuilder.Entity<BudgetAuditTimelineProjection>(entity =>
+        {
+            entity.ToTable("budget_audit_timeline");
+            entity.HasKey(x => x.AuditEventId);
+            entity.Property(x => x.EventType).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.EntityType).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.Description).HasMaxLength(500).IsRequired();
+            entity.HasIndex(x => new { x.BudgetId, x.BudgetPeriodId, x.OccurredAt });
         });
     }
 }

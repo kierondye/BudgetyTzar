@@ -215,6 +215,29 @@ public static class DashboardQueries
         BudgetDbContext db,
         Guid budgetId,
         Guid budgetPeriodId,
+        bool useProjectionBackedReports,
+        CancellationToken cancellationToken)
+    {
+        if (useProjectionBackedReports
+            && await GetProjectedPeriodSummary(db, budgetId, budgetPeriodId, cancellationToken) is { } projectedSummary)
+        {
+            return projectedSummary;
+        }
+
+        return await GetPeriodSummaryFromOperationalTables(db, budgetId, budgetPeriodId, cancellationToken);
+    }
+
+    public static Task<PeriodSummary?> GetPeriodSummary(
+        BudgetDbContext db,
+        Guid budgetId,
+        Guid budgetPeriodId,
+        CancellationToken cancellationToken) =>
+        GetPeriodSummaryFromOperationalTables(db, budgetId, budgetPeriodId, cancellationToken);
+
+    public static async Task<PeriodSummary?> GetPeriodSummaryFromOperationalTables(
+        BudgetDbContext db,
+        Guid budgetId,
+        Guid budgetPeriodId,
         CancellationToken cancellationToken)
     {
         var period = await db.BudgetPeriods
@@ -257,5 +280,60 @@ public static class DashboardQueries
             .ToListAsync(cancellationToken);
 
         return DashboardCalculator.Calculate(period, periods, budgetLines, allocations, transactions, assignments, reallocations, adjustments);
+    }
+
+    private static async Task<PeriodSummary?> GetProjectedPeriodSummary(
+        BudgetDbContext db,
+        Guid budgetId,
+        Guid budgetPeriodId,
+        CancellationToken cancellationToken)
+    {
+        var period = await db.PeriodBudgetSummaries
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.BudgetId == budgetId && x.BudgetPeriodId == budgetPeriodId, cancellationToken);
+        if (period is null)
+        {
+            return null;
+        }
+
+        var lines = await db.BudgetLinePeriodSummaries
+            .AsNoTracking()
+            .Where(x => x.BudgetId == budgetId && x.BudgetPeriodId == budgetPeriodId)
+            .OrderBy(x => x.Direction)
+            .ThenBy(x => x.Name)
+            .Select(x => new BudgetLineSummary(
+                x.BudgetLineId,
+                x.Name,
+                x.Direction,
+                x.RolloverType,
+                x.OpeningBalance,
+                x.Allocated,
+                x.ReallocationIn,
+                x.ReallocationOut,
+                x.ActualAmount,
+                x.AdjustmentAmount,
+                x.ClosingBalance,
+                x.IsOverBudget,
+                x.IsArchived))
+            .ToListAsync(cancellationToken);
+
+        return new PeriodSummary(
+            period.BudgetId,
+            period.BudgetPeriodId,
+            period.PeriodName,
+            period.StartDate,
+            period.EndDate,
+            period.PlannedDebit,
+            period.ActualDebit,
+            period.DebitRemaining,
+            period.DebitVariance,
+            period.PlannedCredit,
+            period.ActualCredit,
+            period.CreditVariance,
+            period.UnassignedDebitTotal,
+            period.UnassignedCreditTotal,
+            period.PartiallyAssignedDebitTotal,
+            period.PartiallyAssignedCreditTotal,
+            lines);
     }
 }

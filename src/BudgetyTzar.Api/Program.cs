@@ -1,5 +1,6 @@
 using BudgetyTzar.Api;
 using BudgetyTzar.Api.Application.Budgeting;
+using BudgetyTzar.Api.Application.Reporting;
 using BudgetyTzar.Api.Application.Transactions;
 using BudgetyTzar.Api.Features;
 using BudgetyTzar.Api.Infrastructure.Events;
@@ -12,7 +13,19 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<BudgetDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("BudgetyTzar")));
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
+builder.Services.Configure<KafkaOptions>(builder.Configuration.GetSection("Kafka"));
+builder.Services.Configure<OutboxOptions>(builder.Configuration.GetSection("Outbox"));
+builder.Services.Configure<ProjectionOptions>(builder.Configuration.GetSection("Projections"));
+builder.Services.Configure<EventTopicOptions>(options =>
+{
+    options.Budgeting = builder.Configuration["Kafka:Topics:BudgetingEvents"] ?? options.Budgeting;
+    options.Transactions = builder.Configuration["Kafka:Topics:TransactionEvents"] ?? options.Transactions;
+    options.Reporting = builder.Configuration["Kafka:Topics:ReportingEvents"] ?? options.Reporting;
+});
 builder.Services.AddScoped<AuditEventWriter>();
+builder.Services.AddScoped<ReportingProjectionService>();
+builder.Services.AddHostedService<OutboxPublisherService>();
+builder.Services.AddHostedService<ReportingProjectionConsumerService>();
 builder.Services.AddScoped<BudgetLineEligibilityService>();
 builder.Services.AddScoped<CreateBudgetHandler>();
 builder.Services.AddScoped<CreateBudgetPeriodHandler>();

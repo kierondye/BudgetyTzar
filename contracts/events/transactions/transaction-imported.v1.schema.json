@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://budgetytzar.local/contracts/events/transactions/transaction-imported.v1.schema.json",
+  "title": "Transaction Imported",
+  "type": "object",
+  "required": [
+    "auditEventId",
+    "budgetId",
+    "budgetPeriodId",
+    "entityType",
+    "entityId",
+    "eventName",
+    "description",
+    "appliesToAllPeriods"
+  ],
+  "properties": {
+    "auditEventId": { "type": "string", "format": "uuid" },
+    "budgetId": { "type": "string", "format": "uuid" },
+    "budgetPeriodId": { "type": ["string", "null"], "format": "uuid" },
+    "entityType": { "const": "FinancialTransaction" },
+    "entityId": { "type": "string", "format": "uuid" },
+    "eventName": { "const": "TransactionImported" },
+    "description": { "type": "string" },
+    "details": { "type": ["string", "null"] },
+    "appliesToAllPeriods": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}

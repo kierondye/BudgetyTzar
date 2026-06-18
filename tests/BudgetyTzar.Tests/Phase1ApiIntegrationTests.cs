@@ -619,9 +619,17 @@ date,description,amount,direction,source account,external reference,notes
 
 internal sealed class BudgetApiFactory : WebApplicationFactory<Program>
 {
+    private readonly bool _useProjectionBackedReports;
+
+    public BudgetApiFactory(bool useProjectionBackedReports = false)
+    {
+        _useProjectionBackedReports = useProjectionBackedReports;
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("Database:MigrateOnStartup", "false");
+        builder.UseSetting("Projections:UseProjectionBackedReports", _useProjectionBackedReports.ToString());
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<BudgetDbContext>();
