@@ -6,9 +6,9 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence;
 public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) : DbContext(options)
 {
     public DbSet<Budget> Budgets => Set<Budget>();
-    public DbSet<BudgetLine> BudgetLines => Set<BudgetLine>();
+    public DbSet<BudgetItem> BudgetItems => Set<BudgetItem>();
     public DbSet<FinancialTransaction> Transactions => Set<FinancialTransaction>();
-    public DbSet<TransactionAssignment> TransactionAssignments => Set<TransactionAssignment>();
+    public DbSet<TransactionAllocation> TransactionAllocations => Set<TransactionAllocation>();
     public DbSet<BudgetReallocation> BudgetReallocations => Set<BudgetReallocation>();
     public DbSet<BudgetAdjustment> BudgetAdjustments => Set<BudgetAdjustment>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
@@ -28,10 +28,11 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
             entity.HasIndex(x => x.Name);
         });
 
-        modelBuilder.Entity<BudgetLine>(entity =>
+        modelBuilder.Entity<BudgetItem>(entity =>
         {
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.ArchivedAt);
             entity.HasIndex(x => new { x.BudgetId, x.Name }).IsUnique();
         });
 
@@ -48,12 +49,12 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
             entity.HasIndex(x => x.ExternalReference);
         });
 
-        modelBuilder.Entity<TransactionAssignment>(entity =>
+        modelBuilder.Entity<TransactionAllocation>(entity =>
         {
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Amount).HasPrecision(18, 2);
             entity.HasIndex(x => x.TransactionId);
-            entity.HasIndex(x => x.BudgetLineId);
+            entity.HasIndex(x => x.BudgetItemId);
         });
 
         modelBuilder.Entity<BudgetReallocation>(entity =>
@@ -73,7 +74,7 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
             entity.Property(x => x.Type).HasConversion<string>().HasMaxLength(16);
             entity.Property(x => x.Reason).HasMaxLength(500).IsRequired();
             entity.Property(x => x.Notes).HasMaxLength(500);
-            entity.HasIndex(x => x.BudgetLineId);
+            entity.HasIndex(x => x.BudgetItemId);
             entity.HasIndex(x => new { x.BudgetId, x.Date });
             entity.HasIndex(x => x.ReallocationId);
         });

@@ -44,7 +44,7 @@ public static partial class Endpoints
             return result.ToHttpResult(budget => Results.Created($"/api/budgets/{budget.Id}", budget));
         });
 
-        MapBudgetLineEndpoints(budgets);
+        MapBudgetItemEndpoints(budgets);
         MapTransactionEndpoints(budgets);
         MapReallocationEndpoints(budgets);
         MapAdjustmentEndpoints(budgets);

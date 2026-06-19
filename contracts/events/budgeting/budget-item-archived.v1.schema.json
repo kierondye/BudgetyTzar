@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://budgetytzar.local/contracts/events/budgeting/budget-line-archived.v1.schema.json",
+  "$id": "https://budgetytzar.local/contracts/events/budgeting/budget-item-archived.v1.schema.json",
   "title": "Budget Item Archived",
   "type": "object",
-  "required": ["auditEventId", "auditEventType", "auditDescription", "auditDetails", "budgetId", "budgetItemId", "name"],
+  "required": ["auditEventId", "auditEventType", "auditDescription", "auditDetails", "budgetId", "budgetItemId", "name", "archivedAt"],
   "properties": {
     "auditEventId": { "type": "string", "format": "uuid" },
     "auditEventType": { "type": "string" },
@@ -11,6 +11,7 @@
     "auditDetails": { "type": ["string", "null"] },
     "budgetId": { "type": "string", "format": "uuid" },
     "budgetItemId": { "type": "string", "format": "uuid" },
-    "name": { "type": "string" }
+    "name": { "type": "string" },
+    "archivedAt": { "type": "string", "format": "date-time" }
   }
 }

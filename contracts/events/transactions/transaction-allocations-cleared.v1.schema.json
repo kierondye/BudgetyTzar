@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://budgetytzar.local/contracts/events/transactions/transaction-assigned.v1.schema.json",
-  "title": "Transaction Assigned",
+  "$id": "https://budgetytzar.local/contracts/events/transactions/transaction-allocations-cleared.v1.schema.json",
+  "title": "Transaction Allocations Cleared",
   "type": "object",
-  "required": ["auditEventId", "auditEventType", "auditDescription", "auditDetails", "transactionId", "budgetId", "transactionAmount", "assignments"],
+  "required": ["auditEventId", "auditEventType", "auditDescription", "auditDetails", "transactionId", "budgetId", "clearedAllocations"],
   "properties": {
     "auditEventId": { "type": "string", "format": "uuid" },
     "auditEventType": { "type": "string" },
@@ -11,7 +11,6 @@
     "auditDetails": { "type": ["string", "null"] },
     "transactionId": { "type": "string", "format": "uuid" },
     "budgetId": { "type": "string", "format": "uuid" },
-    "transactionAmount": { "type": "number" },
-    "assignments": { "type": "array" }
+    "clearedAllocations": { "type": "array" }
   }
 }

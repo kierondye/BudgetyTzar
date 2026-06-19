@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BudgetyTzar.Api.Application.Transactions;
 
-public sealed record TransactionDetail(FinancialTransaction Transaction, IReadOnlyList<TransactionAssignment> Assignments);
+public sealed record TransactionDetail(FinancialTransaction Transaction, IReadOnlyList<TransactionAllocation> Allocations);
 
 public sealed class CreateTransactionHandler(BudgetDbContext db, AuditEventWriter audit)
 {
@@ -60,15 +60,15 @@ public sealed class UpdateTransactionHandler(BudgetDbContext db, AuditEventWrite
             return CommandResult.NotFound();
         }
 
-        var assignedTotal = await db.TransactionAssignments
+        var allocatedTotal = await db.TransactionAllocations
             .AsNoTracking()
             .Where(x => x.TransactionId == transactionId)
             .SumAsync(x => x.Amount, ct);
-        if (amount < assignedTotal)
+        if (amount < allocatedTotal)
         {
             return CommandResult.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(amount)] = ["Transaction amount cannot be less than the current assigned total."]
+                [nameof(amount)] = ["Transaction amount cannot be less than the current allocated total."]
             });
         }
 
@@ -114,9 +114,9 @@ public sealed class IgnoreTransactionHandler(BudgetDbContext db, AuditEventWrite
     }
 }
 
-public sealed class ReplaceTransactionAssignmentsHandler(BudgetDbContext db, AuditEventWriter audit, BudgetLineEligibilityService eligibility)
+public sealed class ReplaceTransactionAllocationsHandler(BudgetDbContext db, AuditEventWriter audit, BudgetItemEligibilityService eligibility)
 {
-    public async Task<CommandResult> Handle(Guid budgetId, Guid transactionId, IReadOnlyList<TransactionAssignmentItem> assignments, CancellationToken ct)
+    public async Task<CommandResult> Handle(Guid budgetId, Guid transactionId, IReadOnlyList<TransactionAllocationItem> allocations, CancellationToken ct)
     {
         var transaction = await db.Transactions.FirstOrDefaultAsync(x => x.Id == transactionId && x.BudgetId == budgetId, ct);
         if (transaction is null)
@@ -124,50 +124,55 @@ public sealed class ReplaceTransactionAssignmentsHandler(BudgetDbContext db, Aud
             return CommandResult.NotFound();
         }
 
-        var requestedLineIds = assignments.Select(x => x.BudgetLineId).ToArray();
-        if (requestedLineIds.Distinct().Count() != requestedLineIds.Length)
+        var requestedItemIds = allocations.Select(x => x.BudgetItemId).ToArray();
+        if (requestedItemIds.Distinct().Count() != requestedItemIds.Length)
         {
             return CommandResult.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(assignments)] = ["A budget line can only be assigned once per transaction."]
+                [nameof(allocations)] = ["A budget item can only be allocated once per transaction."]
             });
         }
 
-        var budgetLines = await eligibility.GetEligibleBudgetLines(budgetId, requestedLineIds, ct);
-        if (budgetLines.Count != requestedLineIds.Length)
+        var budgetItems = await eligibility.GetBudgetItems(budgetId, requestedItemIds, ct);
+        if (budgetItems.Count != requestedItemIds.Length)
         {
             return CommandResult.NotFound();
         }
 
-        var totalAssigned = assignments.Sum(x => x.Amount);
-        if (totalAssigned > transaction.Amount)
+        if (budgetItems.Any(x => !x.CanAcceptActivityOn(transaction.TransactionDate)))
+        {
+            return CommandResult.ValidationProblem(BudgetItemValidationErrors.ArchivedBudgetItemErrors());
+        }
+
+        var totalAllocated = allocations.Sum(x => x.Amount);
+        if (totalAllocated > transaction.Amount)
         {
             return CommandResult.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(assignments)] = ["Total assigned amount cannot exceed the transaction amount."]
+                [nameof(allocations)] = ["Total allocated amount cannot exceed the transaction amount."]
             });
         }
 
-        var existing = await db.TransactionAssignments
+        var existing = await db.TransactionAllocations
             .Where(x => x.TransactionId == transactionId)
             .ToListAsync(ct);
-        db.TransactionAssignments.RemoveRange(existing);
-        db.TransactionAssignments.AddRange(transaction.ReplaceAssignments(assignments));
+        db.TransactionAllocations.RemoveRange(existing);
+        db.TransactionAllocations.AddRange(transaction.ReplaceAllocations(allocations));
         audit.Add(new DomainEvent(
-            assignments.Count > 1 ? "TransactionSplit" : "TransactionAssigned",
+            allocations.Count > 1 ? "TransactionAllocationsReplaced" : "TransactionAllocationRecorded",
             budgetId,
             nameof(FinancialTransaction),
             transactionId,
-            $"Replaced assignments for transaction {transaction.Description}.",
-            $"Previous={TransactionAssignmentFormatting.Format(existing)}; New={TransactionAssignmentFormatting.Format(assignments)}",
+            $"Replaced allocations for transaction {transaction.Description}.",
+            $"Previous={TransactionAllocationFormatting.Format(existing)}; New={TransactionAllocationFormatting.Format(allocations)}",
             Payload: new
             {
                 TransactionId = transaction.Id,
                 BudgetId = budgetId,
                 TransactionAmount = transaction.Amount,
-                Assignments = assignments.Select(x => new
+                Allocations = allocations.Select(x => new
                 {
-                    BudgetItemId = x.BudgetLineId,
+                    BudgetItemId = x.BudgetItemId,
                     x.Amount
                 }).ToList()
             }));
@@ -176,7 +181,7 @@ public sealed class ReplaceTransactionAssignmentsHandler(BudgetDbContext db, Aud
     }
 }
 
-public sealed class ClearTransactionAssignmentsHandler(BudgetDbContext db, AuditEventWriter audit)
+public sealed class ClearTransactionAllocationsHandler(BudgetDbContext db, AuditEventWriter audit)
 {
     public async Task<CommandResult> Handle(Guid budgetId, Guid transactionId, CancellationToken ct)
     {
@@ -186,24 +191,24 @@ public sealed class ClearTransactionAssignmentsHandler(BudgetDbContext db, Audit
             return CommandResult.NotFound();
         }
 
-        var assignments = await db.TransactionAssignments
+        var allocations = await db.TransactionAllocations
             .Where(x => x.TransactionId == transactionId)
             .ToListAsync(ct);
-        db.TransactionAssignments.RemoveRange(assignments);
+        db.TransactionAllocations.RemoveRange(allocations);
         audit.Add(new DomainEvent(
-            "TransactionAssignmentsCleared",
+            "TransactionAllocationsCleared",
             budgetId,
             nameof(FinancialTransaction),
             transactionId,
-            $"Cleared assignments for transaction {transaction.Description}.",
-            TransactionAssignmentFormatting.Format(assignments),
+            $"Cleared allocations for transaction {transaction.Description}.",
+            TransactionAllocationFormatting.Format(allocations),
             Payload: new
             {
                 TransactionId = transaction.Id,
                 BudgetId = budgetId,
-                ClearedAssignments = assignments.Select(x => new
+                ClearedAllocations = allocations.Select(x => new
                 {
-                    BudgetItemId = x.BudgetLineId,
+                    BudgetItemId = x.BudgetItemId,
                     x.Amount
                 }).ToList()
             }));

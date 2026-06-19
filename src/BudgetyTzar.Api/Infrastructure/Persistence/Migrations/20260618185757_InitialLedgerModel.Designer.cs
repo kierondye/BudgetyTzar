@@ -247,7 +247,7 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("BudgetId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("BudgetLineId")
+                    b.Property<Guid>("BudgetItemId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")
@@ -279,7 +279,7 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("BudgetLineId");
+                    b.HasIndex("BudgetItemId");
 
                     b.HasIndex("ReallocationId");
 
@@ -288,7 +288,7 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("BudgetAdjustments");
                 });
 
-            modelBuilder.Entity("BudgetyTzar.Api.BudgetLine", b =>
+            modelBuilder.Entity("BudgetyTzar.Api.BudgetItem", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -296,6 +296,9 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("BudgetId")
                         .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ArchivedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -313,7 +316,7 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                     b.HasIndex("BudgetId", "Name")
                         .IsUnique();
 
-                    b.ToTable("BudgetLines");
+                    b.ToTable("BudgetItems");
                 });
 
             modelBuilder.Entity("BudgetyTzar.Api.BudgetReallocation", b =>
@@ -335,7 +338,7 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                     b.Property<DateOnly>("Date")
                         .HasColumnType("date");
 
-                    b.Property<Guid>("FromBudgetLineId")
+                    b.Property<Guid>("FromBudgetItemId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("Notes")
@@ -347,7 +350,7 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
-                    b.Property<Guid>("ToBudgetLineId")
+                    b.Property<Guid>("ToBudgetItemId")
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
@@ -475,7 +478,7 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("OutboxMessages");
                 });
 
-            modelBuilder.Entity("BudgetyTzar.Api.TransactionAssignment", b =>
+            modelBuilder.Entity("BudgetyTzar.Api.TransactionAllocation", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -485,7 +488,7 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
-                    b.Property<Guid>("BudgetLineId")
+                    b.Property<Guid>("BudgetItemId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")
@@ -496,11 +499,11 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("BudgetLineId");
+                    b.HasIndex("BudgetItemId");
 
                     b.HasIndex("TransactionId");
 
-                    b.ToTable("TransactionAssignments");
+                    b.ToTable("TransactionAllocations");
                 });
 
 #pragma warning restore 612, 618

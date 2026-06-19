@@ -59,7 +59,7 @@ public static partial class Endpoints
                 .ToDictionaryAsync(
                     x => x.Key,
                     x => (IReadOnlyList<BudgetReallocationAdjustmentItem>)x
-                        .Select(y => new BudgetReallocationAdjustmentItem(y.BudgetLineId, y.Amount, y.Type))
+                        .Select(y => new BudgetReallocationAdjustmentItem(y.BudgetItemId, y.Amount, y.Type))
                         .ToList(),
                     ct);
 

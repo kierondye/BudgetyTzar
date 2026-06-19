@@ -1,4 +1,7 @@
 using System.Net.Http.Json;
+using System.Data.Common;
+using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using BudgetyTzar.Api;
@@ -7,8 +10,16 @@ using BudgetyTzar.Api.Application.Transactions;
 using BudgetyTzar.Api.Features;
 using BudgetyTzar.Api.Infrastructure.Events;
 using BudgetyTzar.Api.Infrastructure.Persistence;
+using Confluent.Kafka;
+using DotNet.Testcontainers.Builders;
+using DotNet.Testcontainers.Containers;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Xunit;
 
 namespace BudgetyTzar.Tests;
@@ -51,20 +62,20 @@ public sealed class Phase2EventDrivenTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var salary = await CreateBudgetLine(client, budget.Id, "Salary");
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
+        var salary = await CreateBudgetItem(client, budget.Id, "Salary");
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
         await RecordAdjustment(client, budget.Id, salary.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 10));
         await RecordAdjustment(client, budget.Id, groceries.Id, 100m, BudgetAdjustmentType.Debit, new DateOnly(2026, 6, 10));
         var transaction = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 12), 35m, TransactionDirection.Debit);
-        await ReplaceAssignments(client, budget.Id, transaction.Id, [new TransactionAssignmentItem(groceries.Id, 35m)]);
+        await ReplaceAllocations(client, budget.Id, transaction.Id, [new TransactionAllocationItem(groceries.Id, 35m)]);
 
         using (var scope = app.Services.CreateScope())
         {
             var purgeDb = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
-            await purgeDb.TransactionAssignments.ExecuteDeleteAsync();
+            await purgeDb.TransactionAllocations.ExecuteDeleteAsync();
             await purgeDb.Transactions.ExecuteDeleteAsync();
             await purgeDb.BudgetAdjustments.ExecuteDeleteAsync();
-            await purgeDb.BudgetLines.ExecuteDeleteAsync();
+            await purgeDb.BudgetItems.ExecuteDeleteAsync();
             await purgeDb.AuditEvents.ExecuteDeleteAsync();
 
             var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
@@ -78,7 +89,7 @@ public sealed class Phase2EventDrivenTests
 
         Assert.Equal(65m, item.Balance);
         Assert.Equal(-35m, snapshot.TotalBalance);
-        Assert.True(await db.BudgetAuditTimelines.AnyAsync(x => x.BudgetId == budget.Id && x.EventType == "TransactionAssigned"));
+        Assert.True(await db.BudgetAuditTimelines.AnyAsync(x => x.BudgetId == budget.Id && x.EventType == "TransactionAllocationRecorded"));
 
         var apiSnapshot = await client.GetFromJsonAsync<BudgetSnapshot>(
             $"/api/budgets/{budget.Id}/snapshot?date=2026-06-30");
@@ -86,7 +97,7 @@ public sealed class Phase2EventDrivenTests
 
         var apiAuditEvents = await client.GetFromJsonAsync<IReadOnlyList<AuditEventDto>>(
             $"/api/budgets/{budget.Id}/audit-events");
-        Assert.Contains(apiAuditEvents!, x => x.EventType == "TransactionAssigned");
+        Assert.Contains(apiAuditEvents!, x => x.EventType == "TransactionAllocationRecorded");
     }
 
     [Fact]
@@ -110,7 +121,7 @@ public sealed class Phase2EventDrivenTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var salary = await CreateBudgetLine(client, budget.Id, "Salary");
+        var salary = await CreateBudgetItem(client, budget.Id, "Salary");
         await RecordAdjustment(client, budget.Id, salary.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 10));
 
         using var scope = app.Services.CreateScope();
@@ -136,14 +147,14 @@ public sealed class Phase2EventDrivenTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var salary = await CreateBudgetLine(client, budget.Id, "Salary");
+        var salary = await CreateBudgetItem(client, budget.Id, "Salary");
         await RecordAdjustment(client, budget.Id, salary.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 10));
 
         using (var scope = app.Services.CreateScope())
         {
             var purgeDb = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
             await purgeDb.BudgetAdjustments.ExecuteDeleteAsync();
-            await purgeDb.BudgetLines.ExecuteDeleteAsync();
+            await purgeDb.BudgetItems.ExecuteDeleteAsync();
             await purgeDb.AuditEvents.ExecuteDeleteAsync();
         }
 
@@ -151,6 +162,103 @@ public sealed class Phase2EventDrivenTests
             $"/api/budgets/{budget.Id}/snapshot?date=2026-06-10");
 
         Assert.Equal(-100m, snapshot!.BudgetItems.Single(x => x.BudgetItemId == salary.Id).Balance);
+    }
+
+    [Fact]
+    public async Task ProjectionBackedSnapshotReturnsZeroSnapshotForExistingEmptyBudget()
+    {
+        await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+
+        var snapshot = await client.GetFromJsonAsync<BudgetSnapshot>(
+            $"/api/budgets/{budget.Id}/snapshot?date=2026-06-30");
+
+        Assert.Equal(budget.Id, snapshot!.BudgetId);
+        Assert.Equal(0m, snapshot.TotalBalance);
+        Assert.Equal(0m, snapshot.UnbudgetedBalance);
+        Assert.Empty(snapshot.BudgetItems);
+    }
+
+    [Fact]
+    public async Task ProjectionBackedSnapshotReturnsZeroBalancesForBudgetItemsWithoutActivity()
+    {
+        await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
+
+        var snapshot = await client.GetFromJsonAsync<BudgetSnapshot>(
+            $"/api/budgets/{budget.Id}/snapshot?date=2026-06-30");
+
+        var item = Assert.Single(snapshot!.BudgetItems);
+        Assert.Equal(groceries.Id, item.BudgetItemId);
+        Assert.Equal(0m, item.Balance);
+    }
+
+    [Fact]
+    public async Task ReportingProjectionConsumerProjectsEventsConsumedFromKafka()
+    {
+        var kafkaPort = GetFreeTcpPort();
+        var bootstrapServers = $"127.0.0.1:{kafkaPort}";
+        await using var kafka = new ContainerBuilder("docker.redpanda.com/redpandadata/redpanda:v24.3.7")
+            .WithPortBinding(kafkaPort, 19092)
+            .WithCommand(
+                "redpanda",
+                "start",
+                "--mode", "dev-container",
+                "--smp", "1",
+                "--memory", "512M",
+                "--overprovisioned",
+                "--node-id", "0",
+                "--check=false",
+                "--kafka-addr", "internal://0.0.0.0:9092,external://0.0.0.0:19092",
+                "--advertise-kafka-addr", $"internal://127.0.0.1:9092,external://127.0.0.1:{kafkaPort}")
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(19092))
+            .Build();
+        await kafka.StartAsync();
+
+        await using var app = new KafkaBudgetApiFactory(bootstrapServers);
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var salary = await CreateBudgetItem(client, budget.Id, "Salary");
+        await RecordAdjustment(client, budget.Id, salary.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 10));
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+            var messages = (await db.OutboxMessages.AsNoTracking().ToListAsync())
+                .OrderBy(x => x.CreatedAt)
+                .ToList();
+            using var producer = new ProducerBuilder<string, string>(new ProducerConfig
+            {
+                BootstrapServers = bootstrapServers
+            }).Build();
+
+            foreach (var message in messages)
+            {
+                await producer.ProduceAsync(
+                    message.Topic,
+                    new Message<string, string>
+                    {
+                        Key = message.AggregateId.ToString(),
+                        Value = message.EnvelopeJson
+                    });
+            }
+
+            producer.Flush(TimeSpan.FromSeconds(10));
+        }
+
+        await WaitUntil(async () =>
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+            return await db.BudgetSnapshotItemProjections.AnyAsync(x => x.BudgetId == budget.Id && x.BudgetItemId == salary.Id && x.Balance == -100m)
+                && await db.BudgetAuditTimelines.AnyAsync(x => x.BudgetId == budget.Id && x.EventType == "BudgetAdjustmentRecorded");
+        });
     }
 
     [Fact]
@@ -218,20 +326,20 @@ public sealed class Phase2EventDrivenTests
         await app.ResetDatabaseAsync();
 
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
-        var savings = await CreateBudgetLine(client, budget.Id, "Savings");
-        var archived = await CreateBudgetLine(client, budget.Id, "Old category");
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
+        var savings = await CreateBudgetItem(client, budget.Id, "Savings");
+        var archived = await CreateBudgetItem(client, budget.Id, "Old category");
         await RecordReallocation(client, budget.Id, groceries.Id, savings.Id, 10m);
         await RecordAdjustment(client, budget.Id, groceries.Id, 5m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 12));
-        await ArchiveBudgetLine(client, budget.Id, archived.Id);
+        await ArchiveBudgetItem(client, budget.Id, archived.Id);
 
         var transaction = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 12), 35m, TransactionDirection.Debit);
-        await ReplaceAssignments(client, budget.Id, transaction.Id, [new TransactionAssignmentItem(groceries.Id, 10m)]);
-        await ReplaceAssignments(client, budget.Id, transaction.Id, [
-            new TransactionAssignmentItem(groceries.Id, 10m),
-            new TransactionAssignmentItem(savings.Id, 15m)
+        await ReplaceAllocations(client, budget.Id, transaction.Id, [new TransactionAllocationItem(groceries.Id, 10m)]);
+        await ReplaceAllocations(client, budget.Id, transaction.Id, [
+            new TransactionAllocationItem(groceries.Id, 10m),
+            new TransactionAllocationItem(savings.Id, 15m)
         ]);
-        await ClearAssignments(client, budget.Id, transaction.Id);
+        await ClearAllocations(client, budget.Id, transaction.Id);
         await UpdateTransaction(client, budget.Id, transaction.Id);
         await IgnoreTransaction(client, budget.Id, transaction.Id);
 
@@ -246,14 +354,14 @@ public sealed class Phase2EventDrivenTests
         var expectedEventTypes = new[]
         {
             "budgetytzar.budgeting.budget-created.v1",
-            "budgetytzar.budgeting.budget-line-created.v1",
+            "budgetytzar.budgeting.budget-item-created.v1",
             "budgetytzar.budgeting.budget-reallocation-recorded.v1",
             "budgetytzar.budgeting.budget-adjustment-recorded.v1",
-            "budgetytzar.budgeting.budget-line-archived.v1",
+            "budgetytzar.budgeting.budget-item-archived.v1",
             "budgetytzar.transactions.transaction-manually-created.v1",
-            "budgetytzar.transactions.transaction-assigned.v1",
-            "budgetytzar.transactions.transaction-split.v1",
-            "budgetytzar.transactions.transaction-assignments-cleared.v1",
+            "budgetytzar.transactions.transaction-allocation-recorded.v1",
+            "budgetytzar.transactions.transaction-allocations-replaced.v1",
+            "budgetytzar.transactions.transaction-allocations-cleared.v1",
             "budgetytzar.transactions.transaction-edited.v1",
             "budgetytzar.transactions.transaction-ignored.v1"
         };
@@ -361,6 +469,29 @@ public sealed class Phase2EventDrivenTests
         return directory?.FullName ?? throw new InvalidOperationException("Could not find repo root.");
     }
 
+    private static async Task WaitUntil(Func<Task<bool>> condition)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(20);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (await condition())
+            {
+                return;
+            }
+
+            await Task.Delay(250);
+        }
+
+        Assert.Fail("Condition was not met before the timeout.");
+    }
+
+    private static int GetFreeTcpPort()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        return ((IPEndPoint)listener.LocalEndpoint).Port;
+    }
+
     private static async Task<Budget> CreateBudget(HttpClient client)
     {
         var response = await client.PostAsJsonAsync("/api/budgets", new CreateBudgetRequest("Personal", "GBP"));
@@ -368,7 +499,7 @@ public sealed class Phase2EventDrivenTests
         return (await response.Content.ReadFromJsonAsync<Budget>())!;
     }
 
-    private static async Task<BudgetItemDto> CreateBudgetLine(HttpClient client, Guid budgetId, string name)
+    private static async Task<BudgetItemDto> CreateBudgetItem(HttpClient client, Guid budgetId, string name)
     {
         var response = await client.PostAsJsonAsync(
             $"/api/budgets/{budgetId}/budget-items",
@@ -386,15 +517,15 @@ public sealed class Phase2EventDrivenTests
         return (await response.Content.ReadFromJsonAsync<FinancialTransaction>())!;
     }
 
-    private static async Task ReplaceAssignments(HttpClient client, Guid budgetId, Guid transactionId, IReadOnlyList<TransactionAssignmentItem> assignments)
+    private static async Task ReplaceAllocations(HttpClient client, Guid budgetId, Guid transactionId, IReadOnlyList<TransactionAllocationItem> allocations)
     {
         var response = await client.PutAsJsonAsync(
             $"/api/budgets/{budgetId}/transactions/{transactionId}/allocations",
-            new ReplaceTransactionAllocationsRequest(assignments));
+            new ReplaceTransactionAllocationsRequest(allocations));
         response.EnsureSuccessStatusCode();
     }
 
-    private static async Task ClearAssignments(HttpClient client, Guid budgetId, Guid transactionId)
+    private static async Task ClearAllocations(HttpClient client, Guid budgetId, Guid transactionId)
     {
         var response = await client.DeleteAsync($"/api/budgets/{budgetId}/transactions/{transactionId}/allocations");
         response.EnsureSuccessStatusCode();
@@ -414,15 +545,15 @@ public sealed class Phase2EventDrivenTests
         response.EnsureSuccessStatusCode();
     }
 
-    private static async Task RecordAdjustment(HttpClient client, Guid budgetId, Guid budgetLineId, decimal amount, BudgetAdjustmentType type, DateOnly date)
+    private static async Task RecordAdjustment(HttpClient client, Guid budgetId, Guid budgetItemId, decimal amount, BudgetAdjustmentType type, DateOnly date)
     {
         var response = await client.PostAsJsonAsync(
-            $"/api/budgets/{budgetId}/budget-items/{budgetLineId}/adjustments",
+            $"/api/budgets/{budgetId}/budget-items/{budgetItemId}/adjustments",
             new CreateBudgetItemAdjustmentRequest(amount, type, date, "Projection test adjustment"));
         response.EnsureSuccessStatusCode();
     }
 
-    private static async Task RecordReallocation(HttpClient client, Guid budgetId, Guid fromBudgetLineId, Guid toBudgetLineId, decimal amount)
+    private static async Task RecordReallocation(HttpClient client, Guid budgetId, Guid fromBudgetItemId, Guid toBudgetItemId, decimal amount)
     {
         var response = await client.PostAsJsonAsync(
             $"/api/budgets/{budgetId}/reallocations",
@@ -430,16 +561,54 @@ public sealed class Phase2EventDrivenTests
                 new DateOnly(2026, 6, 12),
                 "Schema validation reallocation",
                 [
-                    new BudgetReallocationAdjustmentItem(fromBudgetLineId, amount, BudgetAdjustmentType.Credit),
-                    new BudgetReallocationAdjustmentItem(toBudgetLineId, amount, BudgetAdjustmentType.Debit)
+                    new BudgetReallocationAdjustmentItem(fromBudgetItemId, amount, BudgetAdjustmentType.Credit),
+                    new BudgetReallocationAdjustmentItem(toBudgetItemId, amount, BudgetAdjustmentType.Debit)
                 ]));
         response.EnsureSuccessStatusCode();
     }
 
-    private static async Task ArchiveBudgetLine(HttpClient client, Guid budgetId, Guid budgetLineId)
+    private static async Task ArchiveBudgetItem(HttpClient client, Guid budgetId, Guid budgetItemId)
     {
-        var response = await client.PostAsync($"/api/budgets/{budgetId}/budget-items/{budgetLineId}/archive", null);
+        var response = await client.PostAsync($"/api/budgets/{budgetId}/budget-items/{budgetItemId}/archive", null);
         response.EnsureSuccessStatusCode();
     }
 
+}
+
+internal sealed class KafkaBudgetApiFactory(string bootstrapServers) : WebApplicationFactory<Program>
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseSetting("Database:MigrateOnStartup", "false");
+        builder.UseSetting("Kafka:BootstrapServers", bootstrapServers);
+        builder.UseSetting("Outbox:PublisherEnabled", "false");
+        builder.UseSetting("Projections:ConsumerEnabled", "true");
+        builder.UseSetting("Projections:UseProjectionBackedReports", "true");
+        builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<BudgetDbContext>();
+            services.RemoveAll<DbContextOptions>();
+            services.RemoveAll<DbContextOptions<BudgetDbContext>>();
+            services.RemoveAll<IDbContextOptionsConfiguration<BudgetDbContext>>();
+            services.RemoveAll<DbConnection>();
+
+            services.AddSingleton<DbConnection>(_ =>
+            {
+                var connection = new SqliteConnection("DataSource=:memory:");
+                connection.Open();
+                return connection;
+            });
+
+            services.AddDbContext<BudgetDbContext>((provider, options) =>
+                options.UseSqlite(provider.GetRequiredService<DbConnection>()));
+        });
+    }
+
+    public async Task ResetDatabaseAsync()
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        await db.Database.EnsureDeletedAsync();
+        await db.Database.EnsureCreatedAsync();
+    }
 }

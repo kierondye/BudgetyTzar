@@ -36,14 +36,14 @@ public static partial class Endpoints
             BudgetDbContext db,
             CancellationToken ct) =>
         {
-            if (!await db.BudgetLines.AnyAsync(x => x.BudgetId == budgetId && x.Id == budgetItemId, ct))
+            if (!await db.BudgetItems.AnyAsync(x => x.BudgetId == budgetId && x.Id == budgetItemId, ct))
             {
                 return Results.NotFound();
             }
 
             var adjustments = await db.BudgetAdjustments
                 .AsNoTracking()
-                .Where(x => x.BudgetLineId == budgetItemId && (x.BudgetId == budgetId || x.BudgetId == Guid.Empty))
+                .Where(x => x.BudgetItemId == budgetItemId && (x.BudgetId == budgetId || x.BudgetId == Guid.Empty))
                 .ToListAsync(ct);
             var dtos = adjustments
                 .OrderByDescending(x => x.Date)
@@ -51,7 +51,7 @@ public static partial class Endpoints
                 .Select(x => new BudgetAdjustmentDto(
                     x.Id,
                     x.BudgetId == Guid.Empty ? budgetId : x.BudgetId,
-                    x.BudgetLineId,
+                    x.BudgetItemId,
                     x.ReallocationId,
                     x.Date,
                     x.Amount,
@@ -88,7 +88,7 @@ public static partial class Endpoints
                 new BudgetAdjustmentDto(
                     adjustment.Id,
                     budgetId,
-                    adjustment.BudgetLineId,
+                    adjustment.BudgetItemId,
                     adjustment.ReallocationId,
                     adjustment.Date,
                     adjustment.Amount,

@@ -13,7 +13,7 @@ public sealed class BudgetAdjustment
 {
     public Guid Id { get; init; } = Guid.NewGuid();
     public Guid BudgetId { get; set; }
-    public Guid BudgetLineId { get; set; }
+    public Guid BudgetItemId { get; set; }
     public Guid? ReallocationId { get; set; }
     public DateOnly Date { get; set; }
     public decimal Amount { get; set; }
@@ -25,7 +25,7 @@ public sealed class BudgetAdjustment
 
     public static BudgetAdjustment Create(
         Guid budgetId,
-        Guid budgetLineId,
+        Guid budgetItemId,
         decimal amount,
         BudgetAdjustmentType type,
         DateOnly date,
@@ -34,7 +34,7 @@ public sealed class BudgetAdjustment
         new()
         {
             BudgetId = budgetId,
-            BudgetLineId = budgetLineId,
+            BudgetItemId = budgetItemId,
             ReallocationId = reallocationId,
             Date = date,
             Amount = MoneyAmount.Positive(amount).Value,
@@ -44,18 +44,18 @@ public sealed class BudgetAdjustment
             LegacySignedAmount = type == BudgetAdjustmentType.Credit ? amount : -amount
         };
 
-    public DomainEvent RecordedEvent(Guid budgetId, string budgetLineName) =>
+    public DomainEvent RecordedEvent(Guid budgetId, string budgetItemName) =>
         new(
             "BudgetAdjustmentRecorded",
             budgetId,
             nameof(BudgetAdjustment),
             Id,
-            $"Recorded {Type} adjustment {Amount} for budget line {budgetLineName}: {Reason}",
+            $"Recorded {Type} adjustment {Amount} for budget item {budgetItemName}: {Reason}",
             Payload: new
             {
                 BudgetAdjustmentId = Id,
                 BudgetId = budgetId,
-                BudgetItemId = BudgetLineId,
+                BudgetItemId = BudgetItemId,
                 Amount,
                 Direction = Type,
                 Date,

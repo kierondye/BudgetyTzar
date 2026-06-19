@@ -33,17 +33,17 @@ builder.Services.AddScoped<AuditEventWriter>();
 builder.Services.AddScoped<ReportingProjectionService>();
 builder.Services.AddHostedService<OutboxPublisherService>();
 builder.Services.AddHostedService<ReportingProjectionConsumerService>();
-builder.Services.AddScoped<BudgetLineEligibilityService>();
+builder.Services.AddScoped<BudgetItemEligibilityService>();
 builder.Services.AddScoped<CreateBudgetHandler>();
-builder.Services.AddScoped<CreateBudgetLineHandler>();
-builder.Services.AddScoped<ArchiveBudgetLineHandler>();
+builder.Services.AddScoped<CreateBudgetItemHandler>();
+builder.Services.AddScoped<ArchiveBudgetItemHandler>();
 builder.Services.AddScoped<RecordReallocationHandler>();
 builder.Services.AddScoped<RecordAdjustmentHandler>();
 builder.Services.AddScoped<CreateTransactionHandler>();
 builder.Services.AddScoped<UpdateTransactionHandler>();
 builder.Services.AddScoped<IgnoreTransactionHandler>();
-builder.Services.AddScoped<ReplaceTransactionAssignmentsHandler>();
-builder.Services.AddScoped<ClearTransactionAssignmentsHandler>();
+builder.Services.AddScoped<ReplaceTransactionAllocationsHandler>();
+builder.Services.AddScoped<ClearTransactionAllocationsHandler>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {

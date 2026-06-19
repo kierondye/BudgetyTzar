@@ -21,7 +21,7 @@ public sealed record UpdateTransactionRequest(
     string? SourceAccount,
     string? ExternalReference,
     string? Notes);
-public sealed record ReplaceTransactionAllocationsRequest(IReadOnlyList<TransactionAssignmentItem> Allocations);
+public sealed record ReplaceTransactionAllocationsRequest(IReadOnlyList<TransactionAllocationItem> Allocations);
 public sealed class CreateTransactionValidator : AbstractValidator<CreateTransactionRequest>
 {
     public CreateTransactionValidator()
@@ -55,7 +55,7 @@ public sealed class ReplaceTransactionAllocationsValidator : AbstractValidator<R
         RuleFor(x => x.Allocations).NotNull();
         RuleForEach(x => x.Allocations).ChildRules(item =>
         {
-            item.RuleFor(x => x.BudgetLineId).NotEmpty();
+            item.RuleFor(x => x.BudgetItemId).NotEmpty();
             item.RuleFor(x => x.Amount).PositiveAmount();
         });
     }
@@ -69,7 +69,7 @@ public static partial class Endpoints
             Guid budgetId,
             DateOnly? from,
             DateOnly? to,
-            TransactionAssignmentStatus? assignmentStatus,
+            string? allocationStatus,
             BudgetDbContext db,
             CancellationToken ct) =>
         {
@@ -89,14 +89,28 @@ public static partial class Endpoints
                 query = query.Where(x => x.TransactionDate <= to.Value);
             }
 
+            TransactionAllocationStatus? parsedAllocationStatus = null;
+            if (!string.IsNullOrWhiteSpace(allocationStatus))
+            {
+                if (!Enum.TryParse<TransactionAllocationStatus>(allocationStatus, ignoreCase: true, out var parsed))
+                {
+                    return Results.ValidationProblem(new Dictionary<string, string[]>
+                    {
+                        [nameof(allocationStatus)] = ["Allocation status must be unallocated, partiallyAllocated, or fullyAllocated."]
+                    });
+                }
+
+                parsedAllocationStatus = parsed;
+            }
+
             var transactions = await query.OrderByDescending(x => x.TransactionDate).ToListAsync(ct);
-            if (!assignmentStatus.HasValue)
+            if (!parsedAllocationStatus.HasValue)
             {
                 return Results.Ok(transactions);
             }
 
             var transactionIds = transactions.Select(x => x.Id).ToArray();
-            var assignmentTotals = await db.TransactionAssignments
+            var allocationTotals = await db.TransactionAllocations
                 .AsNoTracking()
                 .Where(x => transactionIds.Contains(x.TransactionId))
                 .GroupBy(x => x.TransactionId)
@@ -104,7 +118,7 @@ public static partial class Endpoints
                 .ToDictionaryAsync(x => x.TransactionId, x => x.Amount, ct);
 
             var filtered = transactions
-                .Where(x => GetAssignmentStatus(x, assignmentTotals.GetValueOrDefault(x.Id)) == assignmentStatus.Value)
+                .Where(x => GetAllocationStatus(x, allocationTotals.GetValueOrDefault(x.Id)) == parsedAllocationStatus.Value)
                 .ToList();
             return Results.Ok(filtered);
         });
@@ -123,12 +137,12 @@ public static partial class Endpoints
                 return Results.NotFound();
             }
 
-            var assignments = await db.TransactionAssignments
+            var allocations = await db.TransactionAllocations
                 .AsNoTracking()
                 .Where(x => x.TransactionId == transactionId)
                 .OrderBy(x => x.Id)
                 .ToListAsync(ct);
-            return Results.Ok(new TransactionDetail(transaction, assignments));
+            return Results.Ok(new TransactionDetail(transaction, allocations));
         });
 
         budgets.MapPost("/{budgetId:guid}/transactions", async (
@@ -197,14 +211,14 @@ public static partial class Endpoints
             Guid budgetId,
             Guid transactionId,
             BudgetDbContext db,
-            CancellationToken ct) => await GetTransactionAssignments(budgetId, transactionId, db, ct));
+            CancellationToken ct) => await GetTransactionAllocations(budgetId, transactionId, db, ct));
 
         budgets.MapPut("/{budgetId:guid}/transactions/{transactionId:guid}/allocations", async (
             Guid budgetId,
             Guid transactionId,
             ReplaceTransactionAllocationsRequest request,
             IValidator<ReplaceTransactionAllocationsRequest> validator,
-            ReplaceTransactionAssignmentsHandler handler,
+            ReplaceTransactionAllocationsHandler handler,
             CancellationToken ct) =>
         {
             if (await validator.Validate(request, ct) is { } validationProblem)
@@ -219,7 +233,7 @@ public static partial class Endpoints
         budgets.MapDelete("/{budgetId:guid}/transactions/{transactionId:guid}/allocations", async (
             Guid budgetId,
             Guid transactionId,
-            ClearTransactionAssignmentsHandler handler,
+            ClearTransactionAllocationsHandler handler,
             CancellationToken ct) =>
         {
             var result = await handler.Handle(budgetId, transactionId, ct);
@@ -227,7 +241,7 @@ public static partial class Endpoints
         });
     }
 
-    private static async Task<IResult> GetTransactionAssignments(
+    private static async Task<IResult> GetTransactionAllocations(
         Guid budgetId,
         Guid transactionId,
         BudgetDbContext db,
@@ -238,11 +252,11 @@ public static partial class Endpoints
             return Results.NotFound();
         }
 
-        var assignments = await db.TransactionAssignments
+        var allocations = await db.TransactionAllocations
             .AsNoTracking()
             .Where(x => x.TransactionId == transactionId)
             .OrderBy(x => x.Id)
             .ToListAsync(ct);
-        return Results.Ok(assignments);
+        return Results.Ok(allocations);
     }
 }

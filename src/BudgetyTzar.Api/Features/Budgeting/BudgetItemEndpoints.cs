@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace BudgetyTzar.Api.Features;
 
 public sealed record CreateBudgetItemRequest(string Name);
-public sealed record BudgetItemDto(Guid Id, Guid BudgetId, string Name, bool IsArchived, DateTimeOffset CreatedAt);
+public sealed record BudgetItemDto(Guid Id, Guid BudgetId, string Name, bool IsArchived, DateTimeOffset? ArchivedAt, DateTimeOffset CreatedAt);
 public sealed class CreateBudgetItemValidator : AbstractValidator<CreateBudgetItemRequest>
 {
     public CreateBudgetItemValidator()
@@ -17,7 +17,7 @@ public sealed class CreateBudgetItemValidator : AbstractValidator<CreateBudgetIt
 
 public static partial class Endpoints
 {
-    private static void MapBudgetLineEndpoints(RouteGroupBuilder budgets)
+    private static void MapBudgetItemEndpoints(RouteGroupBuilder budgets)
     {
         budgets.MapGet("/{budgetId:guid}/budget-items", async (Guid budgetId, BudgetDbContext db, CancellationToken ct) =>
         {
@@ -26,11 +26,11 @@ public static partial class Endpoints
                 return Results.NotFound();
             }
 
-            var items = await db.BudgetLines
+            var items = await db.BudgetItems
                 .AsNoTracking()
                 .Where(x => x.BudgetId == budgetId)
                 .OrderBy(x => x.Name)
-                .Select(x => new BudgetItemDto(x.Id, x.BudgetId, x.Name, x.IsArchived, x.CreatedAt))
+                .Select(x => new BudgetItemDto(x.Id, x.BudgetId, x.Name, x.IsArchived, x.ArchivedAt, x.CreatedAt))
                 .ToListAsync(ct);
             return Results.Ok(items);
         });
@@ -39,7 +39,7 @@ public static partial class Endpoints
             Guid budgetId,
             CreateBudgetItemRequest request,
             IValidator<CreateBudgetItemRequest> validator,
-            CreateBudgetLineHandler handler,
+            CreateBudgetItemHandler handler,
             CancellationToken ct) =>
         {
             if (await validator.Validate(request, ct) is { } validationProblem)
@@ -48,15 +48,15 @@ public static partial class Endpoints
             }
 
             var result = await handler.Handle(budgetId, request.Name, ct);
-            return result.ToHttpResult(line => Results.Created(
-                $"/api/budgets/{budgetId}/budget-items/{line.Id}",
-                new BudgetItemDto(line.Id, line.BudgetId, line.Name, line.IsArchived, line.CreatedAt)));
+            return result.ToHttpResult(item => Results.Created(
+                $"/api/budgets/{budgetId}/budget-items/{item.Id}",
+                new BudgetItemDto(item.Id, item.BudgetId, item.Name, item.IsArchived, item.ArchivedAt, item.CreatedAt)));
         });
 
         budgets.MapPost("/{budgetId:guid}/budget-items/{budgetItemId:guid}/archive", async (
             Guid budgetId,
             Guid budgetItemId,
-            ArchiveBudgetLineHandler handler,
+            ArchiveBudgetItemHandler handler,
             CancellationToken ct) =>
         {
             var result = await handler.Handle(budgetId, budgetItemId, ct);

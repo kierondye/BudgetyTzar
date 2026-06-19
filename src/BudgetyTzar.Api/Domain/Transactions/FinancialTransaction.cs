@@ -10,11 +10,11 @@ public enum TransactionDirection
 }
 
 [JsonConverter(typeof(CamelCaseStringEnumConverter))]
-public enum TransactionAssignmentStatus
+public enum TransactionAllocationStatus
 {
-    Unassigned,
-    PartiallyAssigned,
-    FullyAssigned
+    Unallocated,
+    PartiallyAllocated,
+    FullyAllocated
 }
 
 public sealed class FinancialTransaction
@@ -72,28 +72,28 @@ public sealed class FinancialTransaction
 
     public void Ignore() => IsIgnored = true;
 
-    public IReadOnlyList<TransactionAssignment> ReplaceAssignments(IReadOnlyCollection<TransactionAssignmentItem> assignments)
+    public IReadOnlyList<TransactionAllocation> ReplaceAllocations(IReadOnlyCollection<TransactionAllocationItem> allocations)
     {
-        var totalAssigned = assignments.Sum(x => x.Amount);
-        if (totalAssigned > Amount)
+        var totalAllocated = allocations.Sum(x => x.Amount);
+        if (totalAllocated > Amount)
         {
-            throw new InvalidOperationException("Total assigned amount cannot exceed the transaction amount.");
+            throw new InvalidOperationException("Total allocated amount cannot exceed the transaction amount.");
         }
 
-        return assignments
-            .Select(x => TransactionAssignment.Create(Id, x.BudgetLineId, x.Amount))
+        return allocations
+            .Select(x => TransactionAllocation.Create(Id, x.BudgetItemId, x.Amount))
             .ToList();
     }
 
-    public TransactionAssignmentStatus GetAssignmentStatus(decimal assignedAmount)
+    public TransactionAllocationStatus GetAllocationStatus(decimal allocatedAmount)
     {
-        if (assignedAmount == 0)
+        if (allocatedAmount == 0)
         {
-            return TransactionAssignmentStatus.Unassigned;
+            return TransactionAllocationStatus.Unallocated;
         }
 
-        return assignedAmount < Amount
-            ? TransactionAssignmentStatus.PartiallyAssigned
-            : TransactionAssignmentStatus.FullyAssigned;
+        return allocatedAmount < Amount
+            ? TransactionAllocationStatus.PartiallyAllocated
+            : TransactionAllocationStatus.FullyAllocated;
     }
 }

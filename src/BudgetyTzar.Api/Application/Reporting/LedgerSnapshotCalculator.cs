@@ -44,7 +44,7 @@ public static class LedgerSnapshotCalculator
             return null;
         }
 
-        var lines = await db.BudgetLines
+        var lines = await db.BudgetItems
             .AsNoTracking()
             .Where(x => x.BudgetId == budgetId)
             .OrderBy(x => x.Name)
@@ -53,7 +53,7 @@ public static class LedgerSnapshotCalculator
 
         var adjustments = await db.BudgetAdjustments
             .AsNoTracking()
-            .Where(x => lineIds.Contains(x.BudgetLineId)
+            .Where(x => lineIds.Contains(x.BudgetItemId)
                 && (x.BudgetId == budgetId || x.BudgetId == Guid.Empty)
                 && x.Date <= date)
             .ToListAsync(ct);
@@ -63,30 +63,30 @@ public static class LedgerSnapshotCalculator
             .Where(x => x.BudgetId == budgetId && x.TransactionDate <= date && !x.IsIgnored)
             .ToListAsync(ct);
         var transactionIds = transactions.Select(x => x.Id).ToArray();
-        var assignments = await db.TransactionAssignments
+        var allocations = await db.TransactionAllocations
             .AsNoTracking()
             .Where(x => transactionIds.Contains(x.TransactionId))
             .ToListAsync(ct);
         var transactionsById = transactions.ToDictionary(x => x.Id);
-        var assignmentTotals = assignments
+        var allocationTotals = allocations
             .GroupBy(x => x.TransactionId)
             .ToDictionary(x => x.Key, x => x.Sum(y => y.Amount));
 
         var calculatedItems = lines
             .Select(line =>
             {
-                var lineAdjustments = adjustments.Where(x => x.BudgetLineId == line.Id).ToList();
-                var lineAssignments = assignments.Where(x => x.BudgetLineId == line.Id).ToList();
+                var lineAdjustments = adjustments.Where(x => x.BudgetItemId == line.Id).ToList();
+                var lineAllocations = allocations.Where(x => x.BudgetItemId == line.Id).ToList();
                 var plannedCredit = lineAdjustments
                     .Where(x => x.Type == BudgetAdjustmentType.Credit)
                     .Sum(x => x.Amount);
                 var plannedDebit = lineAdjustments
                     .Where(x => x.Type == BudgetAdjustmentType.Debit)
                     .Sum(x => x.Amount);
-                var actualCredit = lineAssignments
+                var actualCredit = lineAllocations
                     .Where(x => transactionsById[x.TransactionId].Direction == TransactionDirection.Credit)
                     .Sum(x => x.Amount);
-                var actualDebit = lineAssignments
+                var actualDebit = lineAllocations
                     .Where(x => transactionsById[x.TransactionId].Direction == TransactionDirection.Debit)
                     .Sum(x => x.Amount);
                 var balance = actualCredit - plannedCredit + plannedDebit - actualDebit;
@@ -118,12 +118,12 @@ public static class LedgerSnapshotCalculator
             var budgetedBalanceAtLatestTransaction = calculatedItems.Sum(item =>
             {
                 var plannedCreditAtLatestTransaction = adjustments
-                    .Where(x => x.BudgetLineId == item.BudgetItemId
+                    .Where(x => x.BudgetItemId == item.BudgetItemId
                         && x.Date <= latestTransactionDate
                         && x.Type == BudgetAdjustmentType.Credit)
                     .Sum(x => x.Amount);
                 var plannedDebitAtLatestTransaction = adjustments
-                    .Where(x => x.BudgetLineId == item.BudgetItemId
+                    .Where(x => x.BudgetItemId == item.BudgetItemId
                         && x.Date <= latestTransactionDate
                         && x.Type == BudgetAdjustmentType.Debit)
                     .Sum(x => x.Amount);
@@ -162,7 +162,7 @@ public static class LedgerSnapshotCalculator
             .FirstOrDefaultAsync(ct);
         if (projection is null)
         {
-            return null;
+            return await Calculate(db, budgetId, date, ct);
         }
 
         var items = await db.BudgetSnapshotItemProjections

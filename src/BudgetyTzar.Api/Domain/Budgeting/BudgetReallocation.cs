@@ -4,8 +4,8 @@ public sealed class BudgetReallocation
 {
     public Guid Id { get; init; } = Guid.NewGuid();
     public Guid BudgetId { get; set; }
-    public Guid FromBudgetLineId { get; set; }
-    public Guid ToBudgetLineId { get; set; }
+    public Guid FromBudgetItemId { get; set; }
+    public Guid ToBudgetItemId { get; set; }
     public DateOnly Date { get; set; }
     public decimal Amount { get; set; }
     public required string Reason { get; set; }

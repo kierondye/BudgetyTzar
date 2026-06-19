@@ -29,16 +29,16 @@ public static class EventTypes
     private static readonly IReadOnlyDictionary<string, string> CanonicalNames = new Dictionary<string, string>
     {
         ["BudgetCreated"] = "budgetytzar.budgeting.budget-created.v1",
-        ["BudgetLineCreated"] = "budgetytzar.budgeting.budget-line-created.v1",
-        ["BudgetLineArchived"] = "budgetytzar.budgeting.budget-line-archived.v1",
+        ["BudgetItemCreated"] = "budgetytzar.budgeting.budget-item-created.v1",
+        ["BudgetItemArchived"] = "budgetytzar.budgeting.budget-item-archived.v1",
         ["BudgetReallocationRecorded"] = "budgetytzar.budgeting.budget-reallocation-recorded.v1",
         ["BudgetAdjustmentRecorded"] = "budgetytzar.budgeting.budget-adjustment-recorded.v1",
         ["TransactionManuallyCreated"] = "budgetytzar.transactions.transaction-manually-created.v1",
         ["TransactionEdited"] = "budgetytzar.transactions.transaction-edited.v1",
         ["TransactionIgnored"] = "budgetytzar.transactions.transaction-ignored.v1",
-        ["TransactionAssigned"] = "budgetytzar.transactions.transaction-assigned.v1",
-        ["TransactionSplit"] = "budgetytzar.transactions.transaction-split.v1",
-        ["TransactionAssignmentsCleared"] = "budgetytzar.transactions.transaction-assignments-cleared.v1"
+        ["TransactionAllocationRecorded"] = "budgetytzar.transactions.transaction-allocation-recorded.v1",
+        ["TransactionAllocationsReplaced"] = "budgetytzar.transactions.transaction-allocations-replaced.v1",
+        ["TransactionAllocationsCleared"] = "budgetytzar.transactions.transaction-allocations-cleared.v1"
     };
 
     public static string ToCanonical(string eventType) =>

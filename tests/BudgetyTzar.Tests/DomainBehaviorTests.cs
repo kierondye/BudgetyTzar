@@ -6,7 +6,7 @@ namespace BudgetyTzar.Tests;
 public sealed class DomainBehaviorTests
 {
     [Fact]
-    public void TransactionRejectsAssignmentsAboveTransactionAmount()
+    public void TransactionRejectsAllocationsAboveTransactionAmount()
     {
         var transaction = FinancialTransaction.Create(
             Guid.NewGuid(),
@@ -19,16 +19,16 @@ public sealed class DomainBehaviorTests
             null);
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            transaction.ReplaceAssignments([
-                new TransactionAssignmentItem(Guid.NewGuid(), 20m),
-                new TransactionAssignmentItem(Guid.NewGuid(), 5.01m)
+            transaction.ReplaceAllocations([
+                new TransactionAllocationItem(Guid.NewGuid(), 20m),
+                new TransactionAllocationItem(Guid.NewGuid(), 5.01m)
             ]));
 
-        Assert.Equal("Total assigned amount cannot exceed the transaction amount.", exception.Message);
+        Assert.Equal("Total allocated amount cannot exceed the transaction amount.", exception.Message);
     }
 
     [Fact]
-    public void TransactionCanCreateSplitAssignmentsWithinAmount()
+    public void TransactionCanCreateSplitAllocationsWithinAmount()
     {
         var transaction = FinancialTransaction.Create(
             Guid.NewGuid(),
@@ -42,29 +42,31 @@ public sealed class DomainBehaviorTests
         var groceries = Guid.NewGuid();
         var household = Guid.NewGuid();
 
-        var assignments = transaction.ReplaceAssignments([
-            new TransactionAssignmentItem(groceries, 20m),
-            new TransactionAssignmentItem(household, 10m)
+        var allocations = transaction.ReplaceAllocations([
+            new TransactionAllocationItem(groceries, 20m),
+            new TransactionAllocationItem(household, 10m)
         ]);
 
-        Assert.Equal(2, assignments.Count);
-        Assert.Equal(30m, assignments.Sum(x => x.Amount));
-        Assert.Contains(assignments, x => x.BudgetLineId == groceries);
-        Assert.Contains(assignments, x => x.BudgetLineId == household);
+        Assert.Equal(2, allocations.Count);
+        Assert.Equal(30m, allocations.Sum(x => x.Amount));
+        Assert.Contains(allocations, x => x.BudgetItemId == groceries);
+        Assert.Contains(allocations, x => x.BudgetItemId == household);
     }
 
     [Fact]
-    public void BudgetLineArchiveChangesStateAndProducesDomainEvent()
+    public void BudgetItemArchiveChangesStateAndProducesDomainEvent()
     {
         var budgetId = Guid.NewGuid();
-        var line = BudgetLine.Create(budgetId, "Old category");
+        var item = BudgetItem.Create(budgetId, "Old category");
+        var archivedAt = DateTimeOffset.UtcNow;
 
-        var domainEvent = line.Archive();
+        var domainEvent = item.Archive(archivedAt);
 
-        Assert.True(line.IsArchived);
-        Assert.Equal("BudgetLineArchived", domainEvent.EventType);
+        Assert.True(item.IsArchived);
+        Assert.Equal(archivedAt, item.ArchivedAt);
+        Assert.Equal("BudgetItemArchived", domainEvent.EventType);
         Assert.Equal(budgetId, domainEvent.BudgetId);
-        Assert.Equal(line.Id, domainEvent.EntityId);
+        Assert.Equal(item.Id, domainEvent.EntityId);
     }
 
     [Fact]

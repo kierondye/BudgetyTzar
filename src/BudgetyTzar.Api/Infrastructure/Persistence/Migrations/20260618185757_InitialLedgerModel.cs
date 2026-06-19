@@ -88,7 +88,7 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     BudgetId = table.Column<Guid>(type: "uuid", nullable: false),
-                    BudgetLineId = table.Column<Guid>(type: "uuid", nullable: false),
+                    BudgetItemId = table.Column<Guid>(type: "uuid", nullable: false),
                     ReallocationId = table.Column<Guid>(type: "uuid", nullable: true),
                     Date = table.Column<DateOnly>(type: "date", nullable: false),
                     Amount = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
@@ -104,18 +104,19 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "BudgetLines",
+                name: "BudgetItems",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     BudgetId = table.Column<Guid>(type: "uuid", nullable: false),
                     Name = table.Column<string>(type: "character varying(120)", maxLength: 120, nullable: false),
                     IsArchived = table.Column<bool>(type: "boolean", nullable: false),
+                    ArchivedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_BudgetLines", x => x.Id);
+                    table.PrimaryKey("PK_BudgetItems", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -124,8 +125,8 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     BudgetId = table.Column<Guid>(type: "uuid", nullable: false),
-                    FromBudgetLineId = table.Column<Guid>(type: "uuid", nullable: false),
-                    ToBudgetLineId = table.Column<Guid>(type: "uuid", nullable: false),
+                    FromBudgetItemId = table.Column<Guid>(type: "uuid", nullable: false),
+                    ToBudgetItemId = table.Column<Guid>(type: "uuid", nullable: false),
                     Date = table.Column<DateOnly>(type: "date", nullable: false),
                     Amount = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
                     Reason = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
@@ -190,18 +191,18 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "TransactionAssignments",
+                name: "TransactionAllocations",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     TransactionId = table.Column<Guid>(type: "uuid", nullable: false),
-                    BudgetLineId = table.Column<Guid>(type: "uuid", nullable: false),
+                    BudgetItemId = table.Column<Guid>(type: "uuid", nullable: false),
                     Amount = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
                     CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_TransactionAssignments", x => x.Id);
+                    table.PrimaryKey("PK_TransactionAllocations", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -262,9 +263,9 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                 columns: new[] { "BudgetId", "Date" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_BudgetAdjustments_BudgetLineId",
+                name: "IX_BudgetAdjustments_BudgetItemId",
                 table: "BudgetAdjustments",
-                column: "BudgetLineId");
+                column: "BudgetItemId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_BudgetAdjustments_ReallocationId",
@@ -272,8 +273,8 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                 column: "ReallocationId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_BudgetLines_BudgetId_Name",
-                table: "BudgetLines",
+                name: "IX_BudgetItems_BudgetId_Name",
+                table: "BudgetItems",
                 columns: new[] { "BudgetId", "Name" },
                 unique: true);
 
@@ -313,13 +314,13 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                 columns: new[] { "BudgetId", "ProcessedAt" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_TransactionAssignments_BudgetLineId",
-                table: "TransactionAssignments",
-                column: "BudgetLineId");
+                name: "IX_TransactionAllocations_BudgetItemId",
+                table: "TransactionAllocations",
+                column: "BudgetItemId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_TransactionAssignments_TransactionId",
-                table: "TransactionAssignments",
+                name: "IX_TransactionAllocations_TransactionId",
+                table: "TransactionAllocations",
                 column: "TransactionId");
 
             migrationBuilder.CreateIndex(
@@ -353,7 +354,7 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                 name: "BudgetAdjustments");
 
             migrationBuilder.DropTable(
-                name: "BudgetLines");
+                name: "BudgetItems");
 
             migrationBuilder.DropTable(
                 name: "BudgetReallocations");
@@ -368,7 +369,7 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                 name: "processed_projection_event");
 
             migrationBuilder.DropTable(
-                name: "TransactionAssignments");
+                name: "TransactionAllocations");
 
             migrationBuilder.DropTable(
                 name: "Transactions");

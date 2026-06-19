@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://budgetytzar.local/contracts/events/budgeting/budget-line-created.v1.schema.json",
+  "$id": "https://budgetytzar.local/contracts/events/budgeting/budget-item-created.v1.schema.json",
   "title": "Budget Item Created",
   "type": "object",
   "required": ["auditEventId", "auditEventType", "auditDescription", "auditDetails", "budgetId", "budgetItemId", "name"],

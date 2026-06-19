@@ -40,7 +40,7 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
         var budgetId = TryGetGuid(envelope.Payload, "budgetId");
         if (budgetId.HasValue)
         {
-            await RebuildBudget(budgetId.Value, ct);
+            await RebuildBudget(budgetId.Value, envelope, ct);
         }
 
         db.ProcessedProjectionEvents.Add(new ProcessedProjectionEvent
@@ -61,6 +61,29 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
         await db.SaveChangesAsync(ct);
 
         var envelopes = await LoadOutboxEnvelopes(budgetId, ct);
+        var state = Replay(envelopes);
+        PersistState(state);
+
+        var projectedAt = DateTimeOffset.UtcNow;
+        await db.OutboxMessages
+            .Where(x => x.BudgetId == budgetId && x.ProjectedAt == null)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.ProjectedAt, projectedAt), ct);
+        await db.SaveChangesAsync(ct);
+    }
+
+    private async Task RebuildBudget(Guid budgetId, EventEnvelope additionalEnvelope, CancellationToken ct)
+    {
+        db.BudgetSnapshotItemProjections.RemoveRange(db.BudgetSnapshotItemProjections.Where(x => x.BudgetId == budgetId));
+        db.BudgetSnapshotProjections.RemoveRange(db.BudgetSnapshotProjections.Where(x => x.BudgetId == budgetId));
+        db.BudgetAuditTimelines.RemoveRange(db.BudgetAuditTimelines.Where(x => x.BudgetId == budgetId));
+        await db.SaveChangesAsync(ct);
+
+        var envelopes = (await LoadOutboxEnvelopes(budgetId, ct))
+            .Append(additionalEnvelope)
+            .GroupBy(x => x.EventId)
+            .Select(x => x.First())
+            .OrderBy(x => x.OccurredAt)
+            .ToList();
         var state = Replay(envelopes);
         PersistState(state);
 
@@ -109,18 +132,19 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
             }
 
             var budget = state.GetBudget(budgetId.Value);
+            budget.SnapshotDates.Add(DateOnly.FromDateTime(envelope.OccurredAt.UtcDateTime));
             ProjectAuditTimeline(envelope, budget);
 
             switch (envelope.EventType)
             {
-                case "budgetytzar.budgeting.budget-line-created.v1":
+                case "budgetytzar.budgeting.budget-item-created.v1":
                     budget.BudgetItems[GetGuid(envelope.Payload, "budgetItemId")] = new ProjectedBudgetItem(
                         GetGuid(envelope.Payload, "budgetItemId"),
                         GetString(envelope.Payload, "name"),
                         false);
                     break;
 
-                case "budgetytzar.budgeting.budget-line-archived.v1":
+                case "budgetytzar.budgeting.budget-item-archived.v1":
                     var archivedId = GetGuid(envelope.Payload, "budgetItemId");
                     var archivedName = GetString(envelope.Payload, "name");
                     budget.BudgetItems[archivedId] = budget.BudgetItems.TryGetValue(archivedId, out var existing)
@@ -161,19 +185,19 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
                         GetBool(envelope.Payload, "isIgnored"));
                     break;
 
-                case "budgetytzar.transactions.transaction-assigned.v1":
-                case "budgetytzar.transactions.transaction-split.v1":
-                    budget.AssignmentsByTransaction[GetGuid(envelope.Payload, "transactionId")] =
-                        GetArray(envelope.Payload, "assignments")
+                case "budgetytzar.transactions.transaction-allocation-recorded.v1":
+                case "budgetytzar.transactions.transaction-allocations-replaced.v1":
+                    budget.AllocationsByTransaction[GetGuid(envelope.Payload, "transactionId")] =
+                        GetArray(envelope.Payload, "allocations")
                             .Select(x => x!.AsObject())
-                            .Select(x => new ProjectedAssignment(
+                            .Select(x => new ProjectedAllocation(
                                 GetGuid(x, "budgetItemId"),
                                 GetDecimal(x, "amount")))
                             .ToList();
                     break;
 
-                case "budgetytzar.transactions.transaction-assignments-cleared.v1":
-                    budget.AssignmentsByTransaction.Remove(GetGuid(envelope.Payload, "transactionId"));
+                case "budgetytzar.transactions.transaction-allocations-cleared.v1":
+                    budget.AllocationsByTransaction.Remove(GetGuid(envelope.Payload, "transactionId"));
                     break;
             }
         }
@@ -231,6 +255,7 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
         var dates = budget.Adjustments
             .Select(x => x.Date)
             .Concat(budget.Transactions.Values.Select(x => x.Date))
+            .Concat(budget.SnapshotDates)
             .Distinct()
             .Order()
             .ToList();
@@ -249,9 +274,9 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
             .Where(x => x.Date <= date && !x.IsIgnored)
             .ToList();
         var transactionsById = transactions.ToDictionary(x => x.Id);
-        var assignments = budget.AssignmentsByTransaction
+        var allocations = budget.AllocationsByTransaction
             .Where(x => transactionsById.ContainsKey(x.Key))
-            .SelectMany(x => x.Value.Select(assignment => new ProjectedTransactionAssignment(x.Key, assignment.BudgetItemId, assignment.Amount)))
+            .SelectMany(x => x.Value.Select(allocation => new ProjectedTransactionAllocation(x.Key, allocation.BudgetItemId, allocation.Amount)))
             .ToList();
 
         var calculatedItems = budget.BudgetItems.Values
@@ -259,17 +284,17 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
             .Select(item =>
             {
                 var itemAdjustments = adjustments.Where(x => x.BudgetItemId == item.Id).ToList();
-                var itemAssignments = assignments.Where(x => x.BudgetItemId == item.Id).ToList();
+                var itemAllocations = allocations.Where(x => x.BudgetItemId == item.Id).ToList();
                 var plannedCredit = itemAdjustments
                     .Where(x => x.Direction == BudgetAdjustmentType.Credit)
                     .Sum(x => x.Amount);
                 var plannedDebit = itemAdjustments
                     .Where(x => x.Direction == BudgetAdjustmentType.Debit)
                     .Sum(x => x.Amount);
-                var actualCredit = itemAssignments
+                var actualCredit = itemAllocations
                     .Where(x => transactionsById[x.TransactionId].Direction == TransactionDirection.Credit)
                     .Sum(x => x.Amount);
-                var actualDebit = itemAssignments
+                var actualDebit = itemAllocations
                     .Where(x => transactionsById[x.TransactionId].Direction == TransactionDirection.Debit)
                     .Sum(x => x.Amount);
                 var balance = actualCredit - plannedCredit + plannedDebit - actualDebit;
@@ -378,18 +403,19 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
     private sealed class ProjectedBudget(Guid budgetId)
     {
         public Guid BudgetId { get; } = budgetId;
+        public HashSet<DateOnly> SnapshotDates { get; } = [];
         public Dictionary<Guid, ProjectedBudgetItem> BudgetItems { get; } = [];
         public List<ProjectedAdjustment> Adjustments { get; } = [];
         public Dictionary<Guid, ProjectedTransaction> Transactions { get; } = [];
-        public Dictionary<Guid, List<ProjectedAssignment>> AssignmentsByTransaction { get; } = [];
+        public Dictionary<Guid, List<ProjectedAllocation>> AllocationsByTransaction { get; } = [];
         public Dictionary<Guid, BudgetAuditTimelineProjection> AuditTimeline { get; } = [];
     }
 
     private sealed record ProjectedBudgetItem(Guid Id, string Name, bool IsArchived);
     private sealed record ProjectedAdjustment(Guid BudgetItemId, decimal Amount, BudgetAdjustmentType Direction, DateOnly Date);
     private sealed record ProjectedTransaction(Guid Id, DateOnly Date, decimal Amount, TransactionDirection Direction, bool IsIgnored);
-    private sealed record ProjectedAssignment(Guid BudgetItemId, decimal Amount);
-    private sealed record ProjectedTransactionAssignment(Guid TransactionId, Guid BudgetItemId, decimal Amount);
+    private sealed record ProjectedAllocation(Guid BudgetItemId, decimal Amount);
+    private sealed record ProjectedTransactionAllocation(Guid TransactionId, Guid BudgetItemId, decimal Amount);
     private sealed record ProjectedSnapshotItem(
         Guid BudgetItemId,
         string Name,

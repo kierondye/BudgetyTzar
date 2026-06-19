@@ -38,15 +38,26 @@ public sealed class Phase1SpecGapBehaviorTests
         Assert.DoesNotContain("/api/budgets/{budgetId}/reports/activity", paths);
         Assert.DoesNotContain("/api/budgets/{budgetId}/reports/activity.csv", paths);
         Assert.DoesNotContain("/api/budgets/{budgetId}/reports/audit-timeline", paths);
-        Assert.DoesNotContain("/api/budgets/{budgetId}/reports/budget-item-trends", paths);
+        Assert.DoesNotContain("/api/budgets/{budgetId}/reports/budget-line-trends", paths);
         Assert.DoesNotContain("/api/budgets/{budgetId}/reports/reconciliation", paths);
         Assert.DoesNotContain("/api/budgets/{budgetId}/reports/period-summary", paths);
         Assert.DoesNotContain("/api/budgets/{budgetId}/reports/period-summary.csv", paths);
-        Assert.DoesNotContain("/api/budgets/{budgetId}/reports/budget-line-trends", paths);
+        Assert.DoesNotContain("/api/budgets/{budgetId}/reports/budget-item-trends", paths);
         Assert.DoesNotContain("/api/budgets/{budgetId}/reports/credit-variance", paths);
         Assert.DoesNotContain("/api/budgets/{budgetId}/reports/reconciliation/date-range", paths);
         Assert.DoesNotContain("/api/budgets/{budgetId}/reports/audit-timeline/date-range", paths);
         Assert.Equal(orderedPaths.Order(StringComparer.Ordinal).ToList(), orderedPaths);
+
+        var transactionList = swagger.RootElement
+            .GetProperty("paths")
+            .GetProperty("/api/budgets/{budgetId}/transactions")
+            .GetProperty("get")
+            .GetProperty("parameters")
+            .EnumerateArray()
+            .Select(x => x.GetProperty("name").GetString())
+            .ToList();
+        Assert.Contains("allocationStatus", transactionList);
+        Assert.DoesNotContain("assignmentStatus", transactionList);
     }
 
     [Fact]
@@ -70,12 +81,12 @@ public sealed class Phase1SpecGapBehaviorTests
             await client.GetAsync($"/api/budgets/{budgetId}/transactions/{transactionId}/assignments"),
             await client.GetAsync($"/api/budgets/{budgetId}/reports/activity?from=2026-06-01&to=2026-06-30"),
             await client.GetAsync($"/api/budgets/{budgetId}/reports/activity.csv?from=2026-06-01&to=2026-06-30"),
-            await client.GetAsync($"/api/budgets/{budgetId}/reports/budget-item-trends?budgetItemId={Guid.NewGuid()}&from=2026-06-01&to=2026-06-30"),
+            await client.GetAsync($"/api/budgets/{budgetId}/reports/budget-line-trends?budgetLineId={Guid.NewGuid()}&from=2026-06-01&to=2026-06-30"),
             await client.GetAsync($"/api/budgets/{budgetId}/reports/reconciliation?from=2026-06-01&to=2026-06-30"),
             await client.GetAsync($"/api/budgets/{budgetId}/reports/audit-timeline?from=2026-06-01&to=2026-06-30"),
             await client.GetAsync($"/api/budgets/{budgetId}/reports/period-summary?periodId={periodId}"),
             await client.GetAsync($"/api/budgets/{budgetId}/reports/period-summary.csv?periodId={periodId}"),
-            await client.GetAsync($"/api/budgets/{budgetId}/reports/budget-line-trends?budgetLineId={Guid.NewGuid()}&from=2026-06-01&to=2026-06-30"),
+            await client.GetAsync($"/api/budgets/{budgetId}/reports/budget-item-trends?budgetItemId={Guid.NewGuid()}&from=2026-06-01&to=2026-06-30"),
             await client.GetAsync($"/api/budgets/{budgetId}/reports/credit-variance?from=2026-06-01&to=2026-06-30"),
             await client.GetAsync($"/api/budgets/{budgetId}/reports/reconciliation/date-range?from=2026-06-01&to=2026-06-30"),
             await client.GetAsync($"/api/budgets/{budgetId}/reports/audit-timeline/date-range?from=2026-06-01&to=2026-06-30")
@@ -165,7 +176,7 @@ public sealed class Phase1SpecGapBehaviorTests
             ]);
 
         var pay = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 19), 3_000m, TransactionDirection.Credit);
-        await ReplaceAssignments(client, budget.Id, pay.Id, [new TransactionAssignmentItem(salary.Id, 3_000m)]);
+        await ReplaceAllocations(client, budget.Id, pay.Id, [new TransactionAllocationItem(salary.Id, 3_000m)]);
 
         var afterSalarySnapshot = await GetSnapshot(client, budget.Id, new DateOnly(2026, 6, 19));
         AssertSnapshot(
@@ -180,9 +191,9 @@ public sealed class Phase1SpecGapBehaviorTests
             ]);
 
         var supermarket = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 20), 200m, TransactionDirection.Debit);
-        await ReplaceAssignments(client, budget.Id, supermarket.Id, [
-            new TransactionAssignmentItem(groceries.Id, 150m),
-            new TransactionAssignmentItem(incidentals.Id, 40m)
+        await ReplaceAllocations(client, budget.Id, supermarket.Id, [
+            new TransactionAllocationItem(groceries.Id, 150m),
+            new TransactionAllocationItem(incidentals.Id, 40m)
         ]);
 
         var afterSpendSnapshot = await GetSnapshot(client, budget.Id, new DateOnly(2026, 6, 21));
@@ -256,6 +267,90 @@ public sealed class Phase1SpecGapBehaviorTests
     }
 
     [Fact]
+    public async Task ArchivedBudgetItemsOnlyAllowRetrospectiveCorrectionsOnOrBeforeArchiveDate()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var retired = await CreateBudgetItem(client, budget.Id, "Retired");
+        var archiveDate = DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime);
+
+        var archive = await client.PostAsync($"/api/budgets/{budget.Id}/budget-items/{retired.Id}/archive", null);
+        archive.EnsureSuccessStatusCode();
+
+        var retrospective = await client.PostAsJsonAsync(
+            $"/api/budgets/{budget.Id}/budget-items/{retired.Id}/adjustments",
+            new CreateBudgetItemAdjustmentRequest(10m, BudgetAdjustmentType.Credit, archiveDate, "Retrospective correction"));
+        var future = await client.PostAsJsonAsync(
+            $"/api/budgets/{budget.Id}/budget-items/{retired.Id}/adjustments",
+            new CreateBudgetItemAdjustmentRequest(10m, BudgetAdjustmentType.Credit, archiveDate.AddDays(1), "Future archived activity"));
+
+        Assert.Equal(HttpStatusCode.Created, retrospective.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, future.StatusCode);
+    }
+
+    [Fact]
+    public async Task ArchivedBudgetItemsRejectFutureTransactionAllocations()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var retired = await CreateBudgetItem(client, budget.Id, "Retired");
+        var futureDate = DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime).AddDays(1);
+        await client.PostAsync($"/api/budgets/{budget.Id}/budget-items/{retired.Id}/archive", null);
+        var transaction = await CreateTransaction(client, budget.Id, futureDate, 12m, TransactionDirection.Debit);
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
+            new ReplaceTransactionAllocationsRequest([new TransactionAllocationItem(retired.Id, 12m)]));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task NetPlannedSpendingValidationIsScopedToTheRelevantDate()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var salary = await CreateBudgetItem(client, budget.Id, "Salary");
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
+
+        await RecordBudgetItemAdjustment(client, budget.Id, salary.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 7, 1), "Future income");
+        var earlyDebit = await client.PostAsJsonAsync(
+            $"/api/budgets/{budget.Id}/budget-items/{groceries.Id}/adjustments",
+            new CreateBudgetItemAdjustmentRequest(100m, BudgetAdjustmentType.Debit, new DateOnly(2026, 6, 1), "Too early"));
+        var laterDebit = await client.PostAsJsonAsync(
+            $"/api/budgets/{budget.Id}/budget-items/{groceries.Id}/adjustments",
+            new CreateBudgetItemAdjustmentRequest(100m, BudgetAdjustmentType.Debit, new DateOnly(2026, 7, 2), "After income"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, earlyDebit.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, laterDebit.StatusCode);
+    }
+
+    [Fact]
+    public async Task AllocationStatusQueryFiltersTransactionList()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
+        var unallocated = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 20), 10m, TransactionDirection.Debit);
+        var allocated = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 21), 10m, TransactionDirection.Debit);
+        await ReplaceAllocations(client, budget.Id, allocated.Id, [new TransactionAllocationItem(groceries.Id, 10m)]);
+
+        var transactions = await client.GetFromJsonAsync<IReadOnlyList<FinancialTransaction>>(
+            $"/api/budgets/{budget.Id}/transactions?allocationStatus=unallocated");
+
+        var transaction = Assert.Single(transactions!);
+        Assert.Equal(unallocated.Id, transaction.Id);
+    }
+
+    [Fact]
     public async Task AuditEventsEndpointReturnsDurableLocalAuditTimeline()
     {
         await using var app = new BudgetApiFactory();
@@ -270,7 +365,7 @@ public sealed class Phase1SpecGapBehaviorTests
 
         Assert.NotNull(events);
         Assert.Contains(events!, x => x.EventType == "BudgetCreated" && x.EntityId == budget.Id);
-        Assert.Contains(events!, x => x.EventType == "BudgetLineCreated" && x.EntityId == groceries.Id);
+        Assert.Contains(events!, x => x.EventType == "BudgetItemCreated" && x.EntityId == groceries.Id);
         Assert.Contains(events!, x => x.EventType == "BudgetAdjustmentRecorded");
     }
 
@@ -346,15 +441,15 @@ public sealed class Phase1SpecGapBehaviorTests
         }
     }
 
-    private static async Task ReplaceAssignments(
+    private static async Task ReplaceAllocations(
         HttpClient client,
         Guid budgetId,
         Guid transactionId,
-        IReadOnlyList<TransactionAssignmentItem> assignments)
+        IReadOnlyList<TransactionAllocationItem> allocations)
     {
         var response = await client.PutAsJsonAsync(
             $"/api/budgets/{budgetId}/transactions/{transactionId}/allocations",
-            new ReplaceTransactionAllocationsRequest(assignments));
+            new ReplaceTransactionAllocationsRequest(allocations));
         response.EnsureSuccessStatusCode();
     }
 

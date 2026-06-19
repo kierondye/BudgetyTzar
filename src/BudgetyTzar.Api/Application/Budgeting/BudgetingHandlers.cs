@@ -17,53 +17,53 @@ public sealed class CreateBudgetHandler(BudgetDbContext db, AuditEventWriter aud
     }
 }
 
-public sealed class CreateBudgetLineHandler(BudgetDbContext db, AuditEventWriter audit)
+public sealed class CreateBudgetItemHandler(BudgetDbContext db, AuditEventWriter audit)
 {
-    public async Task<CommandResult<BudgetLine>> Handle(Guid budgetId, string name, CancellationToken ct)
+    public async Task<CommandResult<BudgetItem>> Handle(Guid budgetId, string name, CancellationToken ct)
     {
         if (!await db.Budgets.AnyAsync(x => x.Id == budgetId, ct))
         {
-            return CommandResult<BudgetLine>.NotFound();
+            return CommandResult<BudgetItem>.NotFound();
         }
 
         var trimmedName = name.Trim();
-        if (await db.BudgetLines.AnyAsync(x => x.BudgetId == budgetId && x.Name == trimmedName, ct))
+        if (await db.BudgetItems.AnyAsync(x => x.BudgetId == budgetId && x.Name == trimmedName, ct))
         {
-            return CommandResult<BudgetLine>.ValidationProblem(new Dictionary<string, string[]>
+            return CommandResult<BudgetItem>.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(name)] = ["A budget line with this name already exists in this budget."]
+                [nameof(name)] = ["A budget item with this name already exists in this budget."]
             });
         }
 
-        var line = BudgetLine.Create(budgetId, trimmedName);
-        db.BudgetLines.Add(line);
-        audit.Add(line.CreatedEvent());
+        var item = BudgetItem.Create(budgetId, trimmedName);
+        db.BudgetItems.Add(item);
+        audit.Add(item.CreatedEvent());
         await db.SaveChangesAsync(ct);
-        return CommandResult<BudgetLine>.Created(line);
+        return CommandResult<BudgetItem>.Created(item);
     }
 }
 
-public sealed class ArchiveBudgetLineHandler(BudgetDbContext db, AuditEventWriter audit)
+public sealed class ArchiveBudgetItemHandler(BudgetDbContext db, AuditEventWriter audit)
 {
-    public async Task<CommandResult> Handle(Guid budgetId, Guid lineId, CancellationToken ct)
+    public async Task<CommandResult> Handle(Guid budgetId, Guid itemId, CancellationToken ct)
     {
-        var line = await db.BudgetLines.FirstOrDefaultAsync(x => x.Id == lineId && x.BudgetId == budgetId, ct);
-        if (line is null)
+        var item = await db.BudgetItems.FirstOrDefaultAsync(x => x.Id == itemId && x.BudgetId == budgetId, ct);
+        if (item is null)
         {
             return CommandResult.NotFound();
         }
 
-        audit.Add(line.Archive());
+        audit.Add(item.Archive(DateTimeOffset.UtcNow));
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent();
     }
 }
 
-public sealed class RecordAdjustmentHandler(BudgetDbContext db, AuditEventWriter audit, BudgetLineEligibilityService eligibility)
+public sealed class RecordAdjustmentHandler(BudgetDbContext db, AuditEventWriter audit, BudgetItemEligibilityService eligibility)
 {
     public async Task<CommandResult<BudgetAdjustment>> HandleCanonical(
         Guid budgetId,
-        Guid budgetLineId,
+        Guid budgetItemId,
         decimal amount,
         BudgetAdjustmentType type,
         DateOnly date,
@@ -75,13 +75,18 @@ public sealed class RecordAdjustmentHandler(BudgetDbContext db, AuditEventWriter
             return CommandResult<BudgetAdjustment>.NotFound();
         }
 
-        var line = await eligibility.GetEligibleBudgetLine(budgetId, budgetLineId, ct);
-        if (line is null)
+        var item = await eligibility.GetBudgetItem(budgetId, budgetItemId, ct);
+        if (item is null)
         {
             return CommandResult<BudgetAdjustment>.NotFound();
         }
 
-        var adjustment = BudgetAdjustment.Create(budgetId, budgetLineId, amount, type, date, notes);
+        if (!item.CanAcceptActivityOn(date))
+        {
+            return CommandResult<BudgetAdjustment>.ValidationProblem(BudgetItemValidationErrors.ArchivedBudgetItemErrors());
+        }
+
+        var adjustment = BudgetAdjustment.Create(budgetId, budgetItemId, amount, type, date, notes);
         if (!await NetPlannedSpendingIsValid(budgetId, adjustment, ct))
         {
             return CommandResult<BudgetAdjustment>.ValidationProblem(new Dictionary<string, string[]>
@@ -91,7 +96,7 @@ public sealed class RecordAdjustmentHandler(BudgetDbContext db, AuditEventWriter
         }
 
         db.BudgetAdjustments.Add(adjustment);
-        audit.Add(adjustment.RecordedEvent(budgetId, line.Name));
+        audit.Add(adjustment.RecordedEvent(budgetId, item.Name));
         await db.SaveChangesAsync(ct);
         return CommandResult<BudgetAdjustment>.Created(adjustment);
     }
@@ -100,7 +105,7 @@ public sealed class RecordAdjustmentHandler(BudgetDbContext db, AuditEventWriter
     {
         var existing = await db.BudgetAdjustments
             .AsNoTracking()
-            .Where(x => x.BudgetId == budgetId)
+            .Where(x => x.BudgetId == budgetId && x.Date <= pending.Date)
             .ToListAsync(ct);
         var net = existing.Sum(SignedPlannedAmount) + SignedPlannedAmount(pending);
         return net >= 0;
@@ -110,7 +115,7 @@ public sealed class RecordAdjustmentHandler(BudgetDbContext db, AuditEventWriter
         adjustment.Type == BudgetAdjustmentType.Credit ? adjustment.Amount : -adjustment.Amount;
 }
 
-public sealed class RecordReallocationHandler(BudgetDbContext db, AuditEventWriter audit, BudgetLineEligibilityService eligibility)
+public sealed class RecordReallocationHandler(BudgetDbContext db, AuditEventWriter audit, BudgetItemEligibilityService eligibility)
 {
     public async Task<CommandResult<BudgetReallocation>> HandleCanonical(
         Guid budgetId,
@@ -142,11 +147,16 @@ public sealed class RecordReallocationHandler(BudgetDbContext db, AuditEventWrit
             });
         }
 
-        var lineIds = adjustments.Select(x => x.BudgetItemId).Distinct().ToArray();
-        var lines = await eligibility.GetEligibleBudgetLines(budgetId, lineIds, ct);
-        if (lines.Count != lineIds.Length)
+        var itemIds = adjustments.Select(x => x.BudgetItemId).Distinct().ToArray();
+        var items = await eligibility.GetBudgetItems(budgetId, itemIds, ct);
+        if (items.Count != itemIds.Length)
         {
             return CommandResult<BudgetReallocation>.NotFound();
+        }
+
+        if (items.Any(x => !x.CanAcceptActivityOn(date)))
+        {
+            return CommandResult<BudgetReallocation>.ValidationProblem(BudgetItemValidationErrors.ArchivedBudgetItemErrors());
         }
 
         var reallocation = BudgetReallocation.Create(budgetId, date, notes);
@@ -176,4 +186,12 @@ public sealed class RecordReallocationHandler(BudgetDbContext db, AuditEventWrit
         await db.SaveChangesAsync(ct);
         return CommandResult<BudgetReallocation>.Created(reallocation);
     }
+}
+
+internal static class BudgetItemValidationErrors
+{
+    public static Dictionary<string, string[]> ArchivedBudgetItemErrors() => new()
+    {
+        ["budgetItemId"] = ["Archived budget items can only be used for retrospective corrections dated on or before the archive date."]
+    };
 }

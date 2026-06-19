@@ -27,16 +27,16 @@ public sealed class PostgresPhase1ApiIntegrationTests
         await app.ResetDatabaseAsync();
         var client = app.CreateClient();
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
         var transaction = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 15), 1234.56m);
 
-        var assignmentResponse = await client.PutAsJsonAsync(
+        var allocationResponse = await client.PutAsJsonAsync(
             $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
-            new ReplaceTransactionAllocationsRequest([new TransactionAssignmentItem(groceries.Id, 78.90m)]));
-        assignmentResponse.EnsureSuccessStatusCode();
+            new ReplaceTransactionAllocationsRequest([new TransactionAllocationItem(groceries.Id, 78.90m)]));
+        allocationResponse.EnsureSuccessStatusCode();
 
         Assert.Equal(1234.56m, (await app.GetTransactionAsync(transaction.Id))!.Amount);
-        Assert.Equal(78.90m, (await app.GetAssignmentAsync(transaction.Id, groceries.Id))!.Amount);
+        Assert.Equal(78.90m, (await app.GetAllocationAsync(transaction.Id, groceries.Id))!.Amount);
     }
 
     [Fact]
@@ -57,13 +57,13 @@ public sealed class PostgresPhase1ApiIntegrationTests
     }
 
     [Fact]
-    public async Task UniqueBudgetLineNameConstraintBehavesAgainstPostgreSql()
+    public async Task UniqueBudgetItemNameConstraintBehavesAgainstPostgreSql()
     {
         await using var app = await PostgresBudgetApiFactory.StartAsync();
         await app.ResetDatabaseAsync();
         var client = app.CreateClient();
         var budget = await CreateBudget(client);
-        await CreateBudgetLine(client, budget.Id, "Groceries");
+        await CreateBudgetItem(client, budget.Id, "Groceries");
 
         var duplicateLine = await client.PostAsJsonAsync(
             $"/api/budgets/{budget.Id}/budget-items",
@@ -79,7 +79,7 @@ public sealed class PostgresPhase1ApiIntegrationTests
         return (await response.Content.ReadFromJsonAsync<Budget>())!;
     }
 
-    private static async Task<BudgetItemDto> CreateBudgetLine(
+    private static async Task<BudgetItemDto> CreateBudgetItem(
         HttpClient client,
         Guid budgetId,
         string name)

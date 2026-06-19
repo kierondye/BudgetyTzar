@@ -1,14 +1,15 @@
 namespace BudgetyTzar.Api;
 
-public sealed class BudgetLine
+public sealed class BudgetItem
 {
     public Guid Id { get; init; } = Guid.NewGuid();
     public Guid BudgetId { get; set; }
     public required string Name { get; set; }
     public bool IsArchived { get; set; }
+    public DateTimeOffset? ArchivedAt { get; set; }
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
 
-    public static BudgetLine Create(Guid budgetId, string name) =>
+    public static BudgetItem Create(Guid budgetId, string name) =>
         new()
         {
             BudgetId = budgetId,
@@ -17,11 +18,11 @@ public sealed class BudgetLine
 
     public DomainEvent CreatedEvent() =>
         new(
-            "BudgetLineCreated",
+            "BudgetItemCreated",
             BudgetId,
-            nameof(BudgetLine),
+            nameof(BudgetItem),
             Id,
-            $"Created budget line {Name}.",
+            $"Created budget item {Name}.",
             Payload: new
             {
                 BudgetId,
@@ -29,20 +30,32 @@ public sealed class BudgetLine
                 Name
             });
 
-    public DomainEvent Archive()
+    public DomainEvent Archive(DateTimeOffset archivedAt)
     {
         IsArchived = true;
+        ArchivedAt = archivedAt;
         return new DomainEvent(
-            "BudgetLineArchived",
+            "BudgetItemArchived",
             BudgetId,
-            nameof(BudgetLine),
+            nameof(BudgetItem),
             Id,
-            $"Archived budget line {Name}.",
+            $"Archived budget item {Name}.",
             Payload: new
             {
                 BudgetId,
                 BudgetItemId = Id,
-                Name
+                Name,
+                ArchivedAt
             });
+    }
+
+    public bool CanAcceptActivityOn(DateOnly activityDate)
+    {
+        if (!IsArchived || ArchivedAt is null)
+        {
+            return true;
+        }
+
+        return activityDate <= DateOnly.FromDateTime(ArchivedAt.Value.UtcDateTime);
     }
 }

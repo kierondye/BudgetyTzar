@@ -60,13 +60,13 @@ internal sealed class PostgresBudgetApiFactory : WebApplicationFactory<Program>
             .FirstOrDefaultAsync(x => x.Id == transactionId);
     }
 
-    public async Task<TransactionAssignment?> GetAssignmentAsync(Guid transactionId, Guid budgetLineId)
+    public async Task<TransactionAllocation?> GetAllocationAsync(Guid transactionId, Guid budgetItemId)
     {
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
-        return await db.TransactionAssignments
+        return await db.TransactionAllocations
             .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.TransactionId == transactionId && x.BudgetLineId == budgetLineId);
+            .FirstOrDefaultAsync(x => x.TransactionId == transactionId && x.BudgetItemId == budgetItemId);
     }
 
     public override async ValueTask DisposeAsync()

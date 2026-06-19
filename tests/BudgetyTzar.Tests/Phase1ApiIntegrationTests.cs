@@ -19,24 +19,24 @@ namespace BudgetyTzar.Tests;
 public sealed class Phase1ApiIntegrationTests
 {
     [Fact]
-    public async Task OppositeDirectionTransactionAssignmentIsAccepted()
+    public async Task OppositeDirectionTransactionAllocationIsAccepted()
     {
         await using var app = new BudgetApiFactory();
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
         var refund = await CreateTransaction(client, budget.Id, 25m, TransactionDirection.Credit);
 
         var response = await client.PutAsJsonAsync(
             $"/api/budgets/{budget.Id}/transactions/{refund.Id}/allocations",
-            new ReplaceTransactionAllocationsRequest([new TransactionAssignmentItem(groceries.Id, 25m)]));
+            new ReplaceTransactionAllocationsRequest([new TransactionAllocationItem(groceries.Id, 25m)]));
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
     [Fact]
-    public async Task EmptyTransactionAssignmentReplacementIsAccepted()
+    public async Task EmptyTransactionAllocationReplacementIsAccepted()
     {
         await using var app = new BudgetApiFactory();
         var client = app.CreateClient();
@@ -49,22 +49,22 @@ public sealed class Phase1ApiIntegrationTests
             new ReplaceTransactionAllocationsRequest([]));
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        Assert.Equal(0, await app.CountAssignmentsAsync(transaction.Id));
+        Assert.Equal(0, await app.CountAllocationsAsync(transaction.Id));
     }
 
     [Fact]
-    public async Task TransactionAssignmentsCannotExceedTransactionAmount()
+    public async Task TransactionAllocationsCannotExceedTransactionAmount()
     {
         await using var app = new BudgetApiFactory();
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
         var transaction = await CreateTransaction(client, budget.Id, 20m, TransactionDirection.Debit);
 
         var response = await client.PutAsJsonAsync(
             $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
-            new ReplaceTransactionAllocationsRequest([new TransactionAssignmentItem(groceries.Id, 20.01m)]));
+            new ReplaceTransactionAllocationsRequest([new TransactionAllocationItem(groceries.Id, 20.01m)]));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -76,20 +76,20 @@ public sealed class Phase1ApiIntegrationTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
         var transaction = await CreateTransaction(client, budget.Id, 20m, TransactionDirection.Debit);
         var assignResponse = await client.PutAsJsonAsync(
             $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
-            new ReplaceTransactionAllocationsRequest([new TransactionAssignmentItem(groceries.Id, 20m)]));
+            new ReplaceTransactionAllocationsRequest([new TransactionAllocationItem(groceries.Id, 20m)]));
         assignResponse.EnsureSuccessStatusCode();
 
         var clearResponse = await client.DeleteAsync($"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations");
-        var allocations = await client.GetFromJsonAsync<IReadOnlyList<TransactionAssignment>>(
+        var allocations = await client.GetFromJsonAsync<IReadOnlyList<TransactionAllocation>>(
             $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations");
 
         Assert.Equal(HttpStatusCode.NoContent, clearResponse.StatusCode);
         Assert.Empty(allocations!);
-        Assert.Equal(0, await app.CountAssignmentsAsync(transaction.Id));
+        Assert.Equal(0, await app.CountAllocationsAsync(transaction.Id));
     }
 
     [Fact]
@@ -99,23 +99,23 @@ public sealed class Phase1ApiIntegrationTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
-        var household = await CreateBudgetLine(client, budget.Id, "Household");
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
+        var household = await CreateBudgetItem(client, budget.Id, "Household");
         var transaction = await CreateTransaction(client, budget.Id, 50m, TransactionDirection.Debit);
 
         var response = await client.PutAsJsonAsync(
             $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
             new ReplaceTransactionAllocationsRequest([
-                new TransactionAssignmentItem(groceries.Id, 30m),
-                new TransactionAssignmentItem(household.Id, 15m)
+                new TransactionAllocationItem(groceries.Id, 30m),
+                new TransactionAllocationItem(household.Id, 15m)
             ]));
-        var allocations = await client.GetFromJsonAsync<IReadOnlyList<TransactionAssignment>>(
+        var allocations = await client.GetFromJsonAsync<IReadOnlyList<TransactionAllocation>>(
             $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.Equal(2, allocations!.Count);
-        Assert.Contains(allocations, x => x.BudgetLineId == groceries.Id && x.Amount == 30m);
-        Assert.Contains(allocations, x => x.BudgetLineId == household.Id && x.Amount == 15m);
+        Assert.Contains(allocations, x => x.BudgetItemId == groceries.Id && x.Amount == 30m);
+        Assert.Contains(allocations, x => x.BudgetItemId == household.Id && x.Amount == 15m);
     }
 
     [Fact]
@@ -125,51 +125,51 @@ public sealed class Phase1ApiIntegrationTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
         var transaction = await CreateTransaction(client, budget.Id, 20m, TransactionDirection.Debit);
 
         var response = await client.PutAsJsonAsync(
             $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
-            new ReplaceTransactionAllocationsRequest([new TransactionAssignmentItem(groceries.Id, 20.01m)]));
+            new ReplaceTransactionAllocationsRequest([new TransactionAllocationItem(groceries.Id, 20.01m)]));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(0, await app.CountAssignmentsAsync(transaction.Id));
+        Assert.Equal(0, await app.CountAllocationsAsync(transaction.Id));
     }
 
     [Fact]
-    public async Task TransactionAllocationAliasCanGetExistingAssignments()
+    public async Task TransactionAllocationAliasCanGetExistingAllocations()
     {
         await using var app = new BudgetApiFactory();
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
         var transaction = await CreateTransaction(client, budget.Id, 20m, TransactionDirection.Debit);
         var assignResponse = await client.PutAsJsonAsync(
             $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
-            new ReplaceTransactionAllocationsRequest([new TransactionAssignmentItem(groceries.Id, 12m)]));
+            new ReplaceTransactionAllocationsRequest([new TransactionAllocationItem(groceries.Id, 12m)]));
         assignResponse.EnsureSuccessStatusCode();
 
-        var allocations = await client.GetFromJsonAsync<IReadOnlyList<TransactionAssignment>>(
+        var allocations = await client.GetFromJsonAsync<IReadOnlyList<TransactionAllocation>>(
             $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations");
 
         var allocation = Assert.Single(allocations!);
-        Assert.Equal(groceries.Id, allocation.BudgetLineId);
+        Assert.Equal(groceries.Id, allocation.BudgetItemId);
         Assert.Equal(12m, allocation.Amount);
     }
 
     [Fact]
-    public async Task TransactionEditWritesAuditAndPreservesAssignments()
+    public async Task TransactionEditWritesAuditAndPreservesAllocations()
     {
         await using var app = new BudgetApiFactory();
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
         var transaction = await CreateTransaction(client, budget.Id, 25m, TransactionDirection.Debit);
         var assignResponse = await client.PutAsJsonAsync(
             $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
-            new ReplaceTransactionAllocationsRequest([new TransactionAssignmentItem(groceries.Id, 20m)]));
+            new ReplaceTransactionAllocationsRequest([new TransactionAllocationItem(groceries.Id, 20m)]));
         assignResponse.EnsureSuccessStatusCode();
 
         var response = await client.PutAsJsonAsync(
@@ -188,7 +188,7 @@ public sealed class Phase1ApiIntegrationTests
         Assert.Equal(transaction.Id, edited!.Id);
         Assert.Equal("Edited groceries", edited.Description);
         Assert.Equal(30m, edited.Amount);
-        Assert.Equal(1, await app.CountAssignmentsAsync(transaction.Id));
+        Assert.Equal(1, await app.CountAllocationsAsync(transaction.Id));
 
         var audit = await app.GetAuditEventsAsync(budget.Id);
         var editAudit = audit.Single(x => x.EventType == "TransactionEdited");
@@ -198,17 +198,17 @@ public sealed class Phase1ApiIntegrationTests
     }
 
     [Fact]
-    public async Task TransactionAmountCannotBeEditedBelowCurrentAssignmentTotal()
+    public async Task TransactionAmountCannotBeEditedBelowCurrentAllocationTotal()
     {
         await using var app = new BudgetApiFactory();
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetLine(client, budget.Id, "Groceries");
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
         var transaction = await CreateTransaction(client, budget.Id, 25m, TransactionDirection.Debit);
         var assignResponse = await client.PutAsJsonAsync(
             $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
-            new ReplaceTransactionAllocationsRequest([new TransactionAssignmentItem(groceries.Id, 20m)]));
+            new ReplaceTransactionAllocationsRequest([new TransactionAllocationItem(groceries.Id, 20m)]));
         assignResponse.EnsureSuccessStatusCode();
 
         var response = await client.PutAsJsonAsync(
@@ -223,7 +223,7 @@ public sealed class Phase1ApiIntegrationTests
                 transaction.Notes));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(1, await app.CountAssignmentsAsync(transaction.Id));
+        Assert.Equal(1, await app.CountAllocationsAsync(transaction.Id));
         var persisted = await app.GetTransactionAsync(transaction.Id);
         Assert.Equal(25m, persisted!.Amount);
     }
@@ -235,7 +235,7 @@ public sealed class Phase1ApiIntegrationTests
         return (await response.Content.ReadFromJsonAsync<Budget>())!;
     }
 
-    private static async Task<BudgetItemDto> CreateBudgetLine(
+    private static async Task<BudgetItemDto> CreateBudgetItem(
         HttpClient client,
         Guid budgetId,
         string name)
@@ -247,7 +247,7 @@ public sealed class Phase1ApiIntegrationTests
         return (await response.Content.ReadFromJsonAsync<BudgetItemDto>())!;
     }
 
-    private static async Task ArchiveBudgetLine(HttpClient client, Guid budgetId, Guid lineId)
+    private static async Task ArchiveBudgetItem(HttpClient client, Guid budgetId, Guid lineId)
     {
         var response = await client.PostAsync($"/api/budgets/{budgetId}/budget-items/{lineId}/archive", null);
         response.EnsureSuccessStatusCode();
@@ -331,11 +331,11 @@ internal sealed class BudgetApiFactory : WebApplicationFactory<Program>
         await db.Database.EnsureCreatedAsync();
     }
 
-    public async Task<int> CountAssignmentsAsync(Guid transactionId)
+    public async Task<int> CountAllocationsAsync(Guid transactionId)
     {
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
-        return await db.TransactionAssignments.CountAsync(x => x.TransactionId == transactionId);
+        return await db.TransactionAllocations.CountAsync(x => x.TransactionId == transactionId);
     }
 
     public async Task<int> CountTransactionsAsync(Guid budgetId)
