@@ -228,46 +228,6 @@ public sealed class Phase1ApiIntegrationTests
         Assert.Equal(25m, persisted!.Amount);
     }
 
-    [Fact]
-    public async Task TransactionImportPreviewCommitAndRecommitAreIdempotent()
-    {
-        await using var app = new BudgetApiFactory();
-        var client = app.CreateClient();
-        await app.ResetDatabaseAsync();
-        var budget = await CreateBudget(client);
-        await client.PostAsJsonAsync(
-            $"/api/budgets/{budget.Id}/transactions",
-            new CreateTransactionRequest(
-                new DateOnly(2026, 6, 9),
-                "Existing shop",
-                12.34m,
-                TransactionDirection.Debit,
-                "Current account",
-                "EXT-1",
-                null));
-        var csv = """
-date,description,amount,direction,source account,external reference,notes
-2026-06-09,Existing shop,12.34,Debit,Current account,EXT-1,
-2026-06-10,Salary,2500.00,Credit,Current account,EXT-2,June pay
-""";
-
-        var previewResponse = await client.PostAsJsonAsync(
-            $"/api/budgets/{budget.Id}/transaction-imports/preview",
-            new PreviewTransactionImportRequest("transactions.csv", csv));
-        previewResponse.EnsureSuccessStatusCode();
-        var preview = (await previewResponse.Content.ReadFromJsonAsync<TransactionImportDetail>())!;
-
-        Assert.Equal(2, preview.Rows.Count);
-        Assert.Contains(preview.Rows, x => x.IsDuplicateCandidate);
-
-        var commitResponse = await client.PostAsync($"/api/budgets/{budget.Id}/transaction-imports/{preview.Batch.Id}/commit", null);
-        var recommitResponse = await client.PostAsync($"/api/budgets/{budget.Id}/transaction-imports/{preview.Batch.Id}/commit", null);
-
-        Assert.Equal(HttpStatusCode.OK, commitResponse.StatusCode);
-        Assert.Equal(HttpStatusCode.OK, recommitResponse.StatusCode);
-        Assert.Equal(3, await app.CountTransactionsAsync(budget.Id));
-    }
-
     private static async Task<Budget> CreateBudget(HttpClient client, string name = "Personal")
     {
         var response = await client.PostAsJsonAsync("/api/budgets", new CreateBudgetRequest(name, "GBP"));

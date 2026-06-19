@@ -205,55 +205,11 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "TransactionImportBatches",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    BudgetId = table.Column<Guid>(type: "uuid", nullable: false),
-                    FileName = table.Column<string>(type: "character varying(240)", maxLength: 240, nullable: false),
-                    Status = table.Column<string>(type: "character varying(24)", maxLength: 24, nullable: false),
-                    RowCount = table.Column<int>(type: "integer", nullable: false),
-                    DuplicateCandidateCount = table.Column<int>(type: "integer", nullable: false),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    CommittedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_TransactionImportBatches", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "TransactionImportRows",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    ImportBatchId = table.Column<Guid>(type: "uuid", nullable: false),
-                    RowNumber = table.Column<int>(type: "integer", nullable: false),
-                    TransactionDate = table.Column<DateOnly>(type: "date", nullable: false),
-                    Description = table.Column<string>(type: "character varying(240)", maxLength: 240, nullable: false),
-                    Amount = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
-                    Direction = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
-                    SourceAccount = table.Column<string>(type: "character varying(120)", maxLength: 120, nullable: true),
-                    ExternalReference = table.Column<string>(type: "character varying(160)", maxLength: 160, nullable: true),
-                    Notes = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    IsDuplicateCandidate = table.Column<bool>(type: "boolean", nullable: false),
-                    DuplicateReason = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    IsCommitted = table.Column<bool>(type: "boolean", nullable: false),
-                    TransactionId = table.Column<Guid>(type: "uuid", nullable: true),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_TransactionImportRows", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "Transactions",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     BudgetId = table.Column<Guid>(type: "uuid", nullable: false),
-                    ImportBatchId = table.Column<Guid>(type: "uuid", nullable: true),
                     TransactionDate = table.Column<DateOnly>(type: "date", nullable: false),
                     Description = table.Column<string>(type: "character varying(240)", maxLength: 240, nullable: false),
                     Amount = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
@@ -367,21 +323,6 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                 column: "TransactionId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_TransactionImportBatches_BudgetId_CreatedAt",
-                table: "TransactionImportBatches",
-                columns: new[] { "BudgetId", "CreatedAt" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_TransactionImportRows_ImportBatchId",
-                table: "TransactionImportRows",
-                column: "ImportBatchId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_TransactionImportRows_TransactionId",
-                table: "TransactionImportRows",
-                column: "TransactionId");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_Transactions_BudgetId_TransactionDate",
                 table: "Transactions",
                 columns: new[] { "BudgetId", "TransactionDate" });
@@ -391,10 +332,6 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                 table: "Transactions",
                 column: "ExternalReference");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Transactions_ImportBatchId",
-                table: "Transactions",
-                column: "ImportBatchId");
         }
 
         /// <inheritdoc />
@@ -432,12 +369,6 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
 
             migrationBuilder.DropTable(
                 name: "TransactionAssignments");
-
-            migrationBuilder.DropTable(
-                name: "TransactionImportBatches");
-
-            migrationBuilder.DropTable(
-                name: "TransactionImportRows");
 
             migrationBuilder.DropTable(
                 name: "Transactions");

@@ -17,9 +17,6 @@ The current implementation is being migrated from an older period-based model to
 - `POST /api/budgets/{budgetId}/reallocations`
 - `GET /api/budgets/{budgetId}/reallocations`
 - `GET /api/budgets/{budgetId}/snapshot?date={date}`
-- `POST /api/budgets/{budgetId}/transaction-imports/preview`
-- `POST /api/budgets/{budgetId}/transaction-imports/{importBatchId}/commit`
-- `GET /api/budgets/{budgetId}/transaction-imports/{importBatchId}`
 - `POST /api/budgets/{budgetId}/transactions`
 - `GET /api/budgets/{budgetId}/transactions?from={date}&to={date}&allocationStatus={status}`
 - `GET /api/budgets/{budgetId}/transactions/{transactionId}`

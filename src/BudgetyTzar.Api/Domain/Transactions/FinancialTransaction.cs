@@ -21,7 +21,6 @@ public sealed class FinancialTransaction
 {
     public Guid Id { get; init; } = Guid.NewGuid();
     public Guid BudgetId { get; set; }
-    public Guid? ImportBatchId { get; set; }
     public DateOnly TransactionDate { get; set; }
     public required string Description { get; set; }
     public decimal Amount { get; set; }
@@ -40,12 +39,10 @@ public sealed class FinancialTransaction
         TransactionDirection direction,
         string? sourceAccount,
         string? externalReference,
-        string? notes,
-        Guid? importBatchId = null) =>
+        string? notes) =>
         new()
         {
             BudgetId = budgetId,
-            ImportBatchId = importBatchId,
             TransactionDate = transactionDate,
             Description = description.Trim(),
             Amount = MoneyAmount.Positive(amount).Value,

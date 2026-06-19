@@ -135,7 +135,7 @@ This records that budget was moved from Eating out to Groceries. It does not alt
 
 ### 5.5 Transaction
 
-A transaction is an imported or manually entered financial movement.
+A transaction is a manually entered financial movement in the current implementation. Future transaction ingestion may add CSV import, bank feeds, and other bulk sources.
 
 A transaction has:
 
@@ -145,8 +145,6 @@ A transaction has:
 - Description or notes.
 - Source account, if available.
 - External reference, if available.
-- Import batch, if imported.
-
 Amounts are positive. The type determines whether the transaction is a debit or a credit.
 
 Transactions belong to a budget. Transactions may be unallocated, partially allocated, fully allocated, or ignored.
@@ -225,14 +223,11 @@ Acceptance criteria:
 - Reallocation adjustments must sum to zero: reallocation credits must equal reallocation debits.
 - Reallocations must not change actual transaction totals.
 
-### 6.3 Transaction Entry and Import
+### 6.3 Transaction Entry and Allocation
 
 The user can:
 
 - Manually add transactions.
-- Import transactions from a CSV file.
-- View imported transactions before committing them.
-- Detect likely duplicate transactions.
 - Allocate transactions to budget items.
 - Split a single transaction across multiple budget items.
 - Leave transactions unallocated or partially allocated until they are classified.
@@ -240,7 +235,6 @@ The user can:
 
 Acceptance criteria:
 
-- Imported transaction details remain visible after allocation.
 - Transaction amounts must be positive.
 - Transaction type must be debit or credit.
 - Transaction allocations can be empty, single-item, or split across multiple budget items.
@@ -366,10 +360,7 @@ Budgeting events:
 
 Transaction events:
 
-- `TransactionImportBatchCreated`
-- `TransactionImported`
 - `TransactionManuallyCreated`
-- `TransactionDuplicateDetected`
 - `TransactionAllocationRecorded`
 - `TransactionAllocationsReplaced`
 - `TransactionIgnored`
@@ -388,7 +379,7 @@ All events should share a common envelope:
 ```json
 {
   "eventId": "uuid",
-  "eventType": "budgetytzar.transactions.transaction-imported.v1",
+  "eventType": "budgetytzar.transactions.transaction-manually-created.v1",
   "occurredAt": "2026-06-15T10:30:00Z",
   "correlationId": "uuid",
   "causationId": "uuid",
@@ -502,20 +493,17 @@ Consumes:
 Responsibilities:
 
 - Manual transaction entry.
-- CSV import.
-- Duplicate detection.
 - Transaction allocation.
 - Transaction splitting.
 
 Owns:
 
 - Transactions.
-- Import batches.
 - Transaction allocations.
 
 Publishes:
 
-- Transaction imported events.
+- Transaction manually created events.
 - Transaction allocation events.
 - Transaction ignored events.
 - Transaction edited events.
@@ -555,7 +543,7 @@ Responsibilities:
 - Authentication flow.
 - Budget snapshot views.
 - Budget item management.
-- Transaction import and allocation workflow.
+- Transaction entry and allocation workflow.
 - Reporting views.
 
 Suggested implementation:
@@ -570,7 +558,7 @@ Recommended storage:
 - PostgreSQL for service-owned operational data.
 - Kafka for event streaming.
 - Optional Redis for caching or background workflow state.
-- Object storage for imported CSV files, if preserving originals.
+- Object storage for imported CSV files, if a future import workflow preserves originals.
 
 Each service should own its database schema. Cross-service access should happen through APIs or events, not direct table reads.
 
@@ -610,9 +598,6 @@ GET /api/budgets/{budgetId}/snapshot?date={date}
 ### 12.2 Example Transaction API
 
 ```http
-POST /api/budgets/{budgetId}/transaction-imports/preview
-POST /api/budgets/{budgetId}/transaction-imports/{importBatchId}/commit
-GET /api/budgets/{budgetId}/transaction-imports/{importBatchId}
 POST /api/budgets/{budgetId}/transactions
 GET /api/budgets/{budgetId}/transactions?from={date}&to={date}&allocationStatus={status}
 GET /api/budgets/{budgetId}/transactions/{transactionId}
@@ -658,7 +643,7 @@ GET /api/budgets/{budgetId}/snapshot?date={date}
 - Budget item management.
 - Budget adjustment entry.
 - Budget reallocation entry.
-- Transaction import.
+- Transaction entry.
 - Transaction allocation inbox.
 - Budget item detail.
 - Audit timeline.
@@ -680,7 +665,6 @@ The snapshot should show:
 The inbox should show:
 
 - Unallocated and partially allocated transactions.
-- Possible duplicates.
 - Suggested budget items, if implemented.
 - Split allocation action.
 - Ignore action.
@@ -858,11 +842,9 @@ Deliver:
 - Budget adjustments with debit/credit type, date, and notes.
 - Budget reallocations as grouped zero-sum adjustments.
 - Manual transactions.
-- CSV import preview and commit.
-- Duplicate detection for imported transactions.
 - Transaction allocations.
 - Partial transaction allocation and unallocated value.
-- Durable local audit records for imports, allocations, splits, ignores, reallocations, adjustments, and budget item archival.
+- Durable local audit records for transaction creation, allocations, splits, ignores, reallocations, adjustments, and budget item archival.
 - Snapshot by date.
 - Audit timeline.
 - PostgreSQL persistence.
@@ -1008,8 +990,6 @@ Phase 1 integration tests should cover:
 
 - PostgreSQL persistence.
 - PostgreSQL-backed API integration tests for provider-specific schema, precision, query, and index behaviour.
-- CSV import.
-- Duplicate detection.
 - Transaction allocation.
 - Snapshot queries.
 - Outbox publishing in Phase 2.
@@ -1140,16 +1120,16 @@ The smallest useful version should include:
 - Record debit and credit budget adjustments.
 - Record budget reallocations as grouped zero-sum adjustments.
 - Manually add transactions.
-- Preview and commit CSV imports.
-- Detect likely duplicate imported transactions.
 - Allocate transactions to budget items.
 - Leave transactions unallocated or partially allocated until classification.
 - View snapshot by date.
 - View transaction-level detail.
-- View durable local audit history for imports, allocations, splits, ignores, reallocations, adjustments, and archival.
+- View durable local audit history for transaction creation, allocations, splits, ignores, reallocations, adjustments, and archival.
 
 ## 26. Future Enhancements
 
+- CSV transaction import with preview, commit, column mapping, and selectable rows.
+- Duplicate detection for manual entry, bulk import, and external transaction feeds.
 - Scheduled and recurring adjustments.
 - Scheduled and recurring reallocations.
 - Bank feed integration through Open Banking.

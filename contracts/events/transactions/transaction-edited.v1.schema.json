@@ -8,7 +8,6 @@
     "auditEventId": { "type": "string", "format": "uuid" },
     "transactionId": { "type": "string", "format": "uuid" },
     "budgetId": { "type": "string", "format": "uuid" },
-    "importBatchId": { "type": ["string", "null"], "format": "uuid" },
     "transactionDate": { "type": "string" },
     "description": { "type": "string" },
     "amount": { "type": "number" },

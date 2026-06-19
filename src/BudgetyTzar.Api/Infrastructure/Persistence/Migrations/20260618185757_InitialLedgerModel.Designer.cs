@@ -387,9 +387,6 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                         .HasMaxLength(160)
                         .HasColumnType("character varying(160)");
 
-                    b.Property<Guid?>("ImportBatchId")
-                        .HasColumnType("uuid");
-
                     b.Property<bool>("IsIgnored")
                         .HasColumnType("boolean");
 
@@ -407,8 +404,6 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ExternalReference");
-
-                    b.HasIndex("ImportBatchId");
 
                     b.HasIndex("BudgetId", "TransactionDate");
 
@@ -508,109 +503,6 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("TransactionAssignments");
                 });
 
-            modelBuilder.Entity("BudgetyTzar.Api.TransactionImportBatch", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("BudgetId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset?>("CommittedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("DuplicateCandidateCount")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasMaxLength(240)
-                        .HasColumnType("character varying(240)");
-
-                    b.Property<int>("RowCount")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(24)
-                        .HasColumnType("character varying(24)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BudgetId", "CreatedAt");
-
-                    b.ToTable("TransactionImportBatches");
-                });
-
-            modelBuilder.Entity("BudgetyTzar.Api.TransactionImportRow", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("Amount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasMaxLength(240)
-                        .HasColumnType("character varying(240)");
-
-                    b.Property<string>("Direction")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<string>("DuplicateReason")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("ExternalReference")
-                        .HasMaxLength(160)
-                        .HasColumnType("character varying(160)");
-
-                    b.Property<Guid>("ImportBatchId")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsCommitted")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsDuplicateCandidate")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<int>("RowNumber")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("SourceAccount")
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
-
-                    b.Property<DateOnly>("TransactionDate")
-                        .HasColumnType("date");
-
-                    b.Property<Guid?>("TransactionId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ImportBatchId");
-
-                    b.HasIndex("TransactionId");
-
-                    b.ToTable("TransactionImportRows");
-                });
 #pragma warning restore 612, 618
         }
     }

@@ -107,7 +107,7 @@ public sealed class Phase2EventDrivenTests
         var root = FindRepoRoot();
         var envelopeSchema = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "contracts/events/event-envelope.schema.json")));
         var reallocationSchema = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "contracts/events/budgeting/budget-reallocation-recorded.v1.schema.json")));
-        var importedSchema = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "contracts/events/transactions/transaction-imported.v1.schema.json")));
+        var manuallyCreatedSchema = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "contracts/events/transactions/transaction-manually-created.v1.schema.json")));
         var envelope = JsonDocument.Parse("""
             {
               "eventId": "11111111-1111-1111-1111-111111111111",
@@ -131,18 +131,17 @@ public sealed class Phase2EventDrivenTests
               "adjustments": []
             }
             """);
-        var importedPayload = JsonDocument.Parse("""
+        var manuallyCreatedPayload = JsonDocument.Parse("""
             {
               "auditEventId": "44444444-4444-4444-4444-444444444444",
               "transactionId": "77777777-7777-7777-7777-777777777777",
               "budgetId": "55555555-5555-5555-5555-555555555555",
-              "importBatchId": "88888888-8888-8888-8888-888888888888",
               "transactionDate": "2026-06-14",
-              "description": "Imported transaction.",
+              "description": "Manual transaction.",
               "amount": 12.50,
               "direction": "debit",
               "sourceAccount": "Current",
-              "externalReference": "import-001",
+              "externalReference": "manual-001",
               "notes": null,
               "isIgnored": false
             }
@@ -150,7 +149,7 @@ public sealed class Phase2EventDrivenTests
 
         AssertRequiredProperties(envelopeSchema, envelope);
         AssertRequiredProperties(reallocationSchema, payload);
-        AssertRequiredProperties(importedSchema, importedPayload);
+        AssertRequiredProperties(manuallyCreatedSchema, manuallyCreatedPayload);
     }
 
     [Fact]
@@ -178,9 +177,6 @@ public sealed class Phase2EventDrivenTests
         await UpdateTransaction(client, budget.Id, transaction.Id);
         await IgnoreTransaction(client, budget.Id, transaction.Id);
 
-        var import = await PreviewImport(client, budget.Id);
-        await CommitImport(client, budget.Id, import.Batch.Id);
-
         using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
         var outbox = (await db.OutboxMessages.AsNoTracking().ToListAsync())
@@ -201,10 +197,7 @@ public sealed class Phase2EventDrivenTests
             "budgetytzar.transactions.transaction-split.v1",
             "budgetytzar.transactions.transaction-assignments-cleared.v1",
             "budgetytzar.transactions.transaction-edited.v1",
-            "budgetytzar.transactions.transaction-ignored.v1",
-            "budgetytzar.transactions.transaction-import-batch-previewed.v1",
-            "budgetytzar.transactions.transaction-imported.v1",
-            "budgetytzar.transactions.transaction-import-batch-committed.v1"
+            "budgetytzar.transactions.transaction-ignored.v1"
         };
 
         foreach (var eventType in expectedEventTypes)
@@ -391,22 +384,4 @@ public sealed class Phase2EventDrivenTests
         response.EnsureSuccessStatusCode();
     }
 
-    private static async Task<TransactionImportDetail> PreviewImport(HttpClient client, Guid budgetId)
-    {
-        var csv = """
-            date,description,amount,direction,source account,external reference,notes
-            2026-06-14,Imported lunch,12.50,Debit,Current,import-001,
-            """;
-        var response = await client.PostAsJsonAsync(
-            $"/api/budgets/{budgetId}/transaction-imports/preview",
-            new PreviewTransactionImportRequest("schema-import.csv", csv));
-        response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<TransactionImportDetail>())!;
-    }
-
-    private static async Task CommitImport(HttpClient client, Guid budgetId, Guid batchId)
-    {
-        var response = await client.PostAsync($"/api/budgets/{budgetId}/transaction-imports/{batchId}/commit", null);
-        response.EnsureSuccessStatusCode();
-    }
 }

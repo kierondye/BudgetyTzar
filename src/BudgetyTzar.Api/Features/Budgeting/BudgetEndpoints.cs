@@ -46,7 +46,6 @@ public static partial class Endpoints
 
         MapBudgetLineEndpoints(budgets);
         MapTransactionEndpoints(budgets);
-        MapTransactionImportEndpoints(budgets);
         MapReallocationEndpoints(budgets);
         MapAdjustmentEndpoints(budgets);
         MapReportEndpoints(budgets);

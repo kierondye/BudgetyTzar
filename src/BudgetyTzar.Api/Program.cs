@@ -39,8 +39,6 @@ builder.Services.AddScoped<CreateBudgetLineHandler>();
 builder.Services.AddScoped<ArchiveBudgetLineHandler>();
 builder.Services.AddScoped<RecordReallocationHandler>();
 builder.Services.AddScoped<RecordAdjustmentHandler>();
-builder.Services.AddScoped<PreviewTransactionImportHandler>();
-builder.Services.AddScoped<CommitTransactionImportHandler>();
 builder.Services.AddScoped<CreateTransactionHandler>();
 builder.Services.AddScoped<UpdateTransactionHandler>();
 builder.Services.AddScoped<IgnoreTransactionHandler>();

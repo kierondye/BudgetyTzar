@@ -12,8 +12,6 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
     public DbSet<BudgetReallocation> BudgetReallocations => Set<BudgetReallocation>();
     public DbSet<BudgetAdjustment> BudgetAdjustments => Set<BudgetAdjustment>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
-    public DbSet<TransactionImportBatch> TransactionImportBatches => Set<TransactionImportBatch>();
-    public DbSet<TransactionImportRow> TransactionImportRows => Set<TransactionImportRow>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<BudgetSnapshotProjection> BudgetSnapshotProjections => Set<BudgetSnapshotProjection>();
     public DbSet<BudgetSnapshotItemProjection> BudgetSnapshotItemProjections => Set<BudgetSnapshotItemProjection>();
@@ -47,7 +45,6 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
             entity.Property(x => x.ExternalReference).HasMaxLength(160);
             entity.Property(x => x.Notes).HasMaxLength(500);
             entity.HasIndex(x => new { x.BudgetId, x.TransactionDate });
-            entity.HasIndex(x => x.ImportBatchId);
             entity.HasIndex(x => x.ExternalReference);
         });
 
@@ -91,28 +88,6 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
             entity.HasIndex(x => new { x.BudgetId, x.OccurredAt });
             entity.HasIndex(x => new { x.BudgetId, x.AppliesToAllPeriods, x.OccurredAt });
             entity.HasIndex(x => new { x.EntityType, x.EntityId });
-        });
-
-        modelBuilder.Entity<TransactionImportBatch>(entity =>
-        {
-            entity.HasKey(x => x.Id);
-            entity.Property(x => x.FileName).HasMaxLength(240).IsRequired();
-            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
-            entity.HasIndex(x => new { x.BudgetId, x.CreatedAt });
-        });
-
-        modelBuilder.Entity<TransactionImportRow>(entity =>
-        {
-            entity.HasKey(x => x.Id);
-            entity.Property(x => x.Description).HasMaxLength(240).IsRequired();
-            entity.Property(x => x.Amount).HasPrecision(18, 2);
-            entity.Property(x => x.Direction).HasConversion<string>().HasMaxLength(16);
-            entity.Property(x => x.SourceAccount).HasMaxLength(120);
-            entity.Property(x => x.ExternalReference).HasMaxLength(160);
-            entity.Property(x => x.Notes).HasMaxLength(500);
-            entity.Property(x => x.DuplicateReason).HasMaxLength(500);
-            entity.HasIndex(x => x.ImportBatchId);
-            entity.HasIndex(x => x.TransactionId);
         });
 
         modelBuilder.Entity<OutboxMessage>(entity =>
