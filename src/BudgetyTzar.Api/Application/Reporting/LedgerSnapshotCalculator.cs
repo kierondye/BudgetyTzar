@@ -162,7 +162,7 @@ public static class LedgerSnapshotCalculator
             .FirstOrDefaultAsync(ct);
         if (projection is null)
         {
-            return await Calculate(db, budgetId, date, ct);
+            return null;
         }
 
         var items = await db.BudgetSnapshotItemProjections

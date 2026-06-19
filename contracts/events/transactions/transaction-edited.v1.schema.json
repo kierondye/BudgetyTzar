@@ -3,9 +3,12 @@
   "$id": "https://budgetytzar.local/contracts/events/transactions/transaction-edited.v1.schema.json",
   "title": "Transaction Edited",
   "type": "object",
-  "required": ["auditEventId", "transactionId", "budgetId", "transactionDate", "description", "amount", "direction", "isIgnored"],
+  "required": ["auditEventId", "auditEventType", "auditDescription", "auditDetails", "transactionId", "budgetId", "transactionDate", "description", "amount", "direction", "isIgnored"],
   "properties": {
     "auditEventId": { "type": "string", "format": "uuid" },
+    "auditEventType": { "type": "string" },
+    "auditDescription": { "type": "string" },
+    "auditDetails": { "type": ["string", "null"] },
     "transactionId": { "type": "string", "format": "uuid" },
     "budgetId": { "type": "string", "format": "uuid" },
     "transactionDate": { "type": "string" },

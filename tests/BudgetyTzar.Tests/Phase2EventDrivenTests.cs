@@ -39,6 +39,9 @@ public sealed class Phase2EventDrivenTests
         Assert.Equal(budget.Name, envelope.Payload["name"]!.GetValue<string>());
         Assert.Equal(budget.Currency, envelope.Payload["currency"]!.GetValue<string>());
         Assert.Equal(audit.Id, envelope.Payload["auditEventId"]!.GetValue<Guid>());
+        Assert.Equal(audit.EventType, envelope.Payload["auditEventType"]!.GetValue<string>());
+        Assert.Equal(audit.Description, envelope.Payload["auditDescription"]!.GetValue<string>());
+        Assert.Null(envelope.Payload["auditDetails"]?.GetValue<string>());
     }
 
     [Fact]
@@ -57,6 +60,13 @@ public sealed class Phase2EventDrivenTests
 
         using (var scope = app.Services.CreateScope())
         {
+            var purgeDb = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+            await purgeDb.TransactionAssignments.ExecuteDeleteAsync();
+            await purgeDb.Transactions.ExecuteDeleteAsync();
+            await purgeDb.BudgetAdjustments.ExecuteDeleteAsync();
+            await purgeDb.BudgetLines.ExecuteDeleteAsync();
+            await purgeDb.AuditEvents.ExecuteDeleteAsync();
+
             var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
             await projector.RebuildFromOutbox(CancellationToken.None);
         }
@@ -73,6 +83,24 @@ public sealed class Phase2EventDrivenTests
         var apiSnapshot = await client.GetFromJsonAsync<BudgetSnapshot>(
             $"/api/budgets/{budget.Id}/snapshot?date=2026-06-30");
         Assert.Equal(65m, apiSnapshot!.BudgetItems.Single(x => x.BudgetItemId == groceries.Id).Balance);
+
+        var apiAuditEvents = await client.GetFromJsonAsync<IReadOnlyList<AuditEventDto>>(
+            $"/api/budgets/{budget.Id}/audit-events");
+        Assert.Contains(apiAuditEvents!, x => x.EventType == "TransactionAssigned");
+    }
+
+    [Fact]
+    public async Task AuditTimelineEndpointFallsBackToDurableAuditRecordsWhenProjectionReportsAreDisabled()
+    {
+        await using var app = new BudgetApiFactory(useProjectionBackedReports: false);
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+
+        var apiAuditEvents = await client.GetFromJsonAsync<IReadOnlyList<AuditEventDto>>(
+            $"/api/budgets/{budget.Id}/audit-events");
+
+        Assert.Contains(apiAuditEvents!, x => x.EventType == "BudgetCreated");
     }
 
     [Fact]
@@ -102,6 +130,30 @@ public sealed class Phase2EventDrivenTests
     }
 
     [Fact]
+    public async Task ProjectionBackedSnapshotEndpointCatchesUpFromOutboxWithoutOperationalLedgerTables()
+    {
+        await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var salary = await CreateBudgetLine(client, budget.Id, "Salary");
+        await RecordAdjustment(client, budget.Id, salary.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 10));
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var purgeDb = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+            await purgeDb.BudgetAdjustments.ExecuteDeleteAsync();
+            await purgeDb.BudgetLines.ExecuteDeleteAsync();
+            await purgeDb.AuditEvents.ExecuteDeleteAsync();
+        }
+
+        var snapshot = await client.GetFromJsonAsync<BudgetSnapshot>(
+            $"/api/budgets/{budget.Id}/snapshot?date=2026-06-10");
+
+        Assert.Equal(-100m, snapshot!.BudgetItems.Single(x => x.BudgetItemId == salary.Id).Balance);
+    }
+
+    [Fact]
     public void EventSchemaSamplesContainRequiredDomainContractFields()
     {
         var root = FindRepoRoot();
@@ -124,6 +176,9 @@ public sealed class Phase2EventDrivenTests
         var payload = JsonDocument.Parse("""
             {
               "auditEventId": "44444444-4444-4444-4444-444444444444",
+              "auditEventType": "BudgetReallocationRecorded",
+              "auditDescription": "Recorded budget reallocation.",
+              "auditDetails": null,
               "budgetReallocationId": "33333333-3333-3333-3333-333333333333",
               "budgetId": "55555555-5555-5555-5555-555555555555",
               "date": "2026-06-12",
@@ -134,6 +189,9 @@ public sealed class Phase2EventDrivenTests
         var manuallyCreatedPayload = JsonDocument.Parse("""
             {
               "auditEventId": "44444444-4444-4444-4444-444444444444",
+              "auditEventType": "TransactionManuallyCreated",
+              "auditDescription": "Created transaction Manual transaction for 12.50 Debit.",
+              "auditDetails": null,
               "transactionId": "77777777-7777-7777-7777-777777777777",
               "budgetId": "55555555-5555-5555-5555-555555555555",
               "transactionDate": "2026-06-14",

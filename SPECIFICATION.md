@@ -871,11 +871,10 @@ Deliver:
 - Git release tag convention.
 - Runtime version endpoint.
 - OpenAPI version metadata.
-- GitHub Release notes workflow.
 - Build validation that rejects invalid SemVer values.
 - Conventional Commits documentation and local commit-message validation.
 
-Phase 2.5 must be complete before Phase 3 so Docker image tags, Kubernetes manifests, deployment documentation, and future cloud release artefacts can use stable version identity.
+Phase 2.5 must be complete before Phase 3 so Docker image tags, Kubernetes manifests, deployment documentation, and future cloud release artefacts can use stable version identity without requiring GitHub Releases.
 
 ### 18.4 Phase 3: Containerisation and Kubernetes
 
@@ -889,7 +888,15 @@ Introduce:
 - Readiness probes.
 - Liveness probes.
 
-### 18.5 Phase 4: Cloud Deployment
+### 18.5 Phase 3.5: Release Automation
+
+Introduce release automation after containerisation establishes the releasable artefacts.
+
+Deliver:
+
+- GitHub Release notes workflow.
+
+### 18.6 Phase 4: Cloud Deployment
 
 Deploy to one cloud provider.
 
@@ -907,7 +914,7 @@ Include:
 - Infrastructure as Code.
 - CI/CD pipeline.
 
-### 18.6 Phase 5: Go Implementation
+### 18.7 Phase 5: Go Implementation
 
 Build Go services that implement the same contracts as the .NET services.
 

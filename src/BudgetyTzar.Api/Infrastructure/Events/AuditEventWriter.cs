@@ -54,6 +54,9 @@ public sealed class AuditEventWriter(BudgetDbContext db, IOptions<EventTopicOpti
             ? JsonSerializer.SerializeToNode(CanonicalEventPayload.From(domainEvent, auditEventId), EventSerialization.Options)!.AsObject()
             : JsonSerializer.SerializeToNode(domainEvent.Payload, EventSerialization.Options)!.AsObject();
         payload["auditEventId"] = auditEventId;
+        payload["auditEventType"] = domainEvent.EventType;
+        payload["auditDescription"] = domainEvent.Description;
+        payload["auditDetails"] = domainEvent.Details;
         payload["budgetId"] = domainEvent.BudgetId;
         return payload;
     }

@@ -15,21 +15,64 @@ public static partial class Endpoints
             DateOnly date,
             BudgetDbContext db,
             IOptions<ProjectionOptions> projections,
+            ReportingProjectionService projector,
             CancellationToken ct) =>
-            await LedgerSnapshotCalculator.GetProjectedOrCalculate(db, budgetId, date, projections.Value.UseProjectionBackedReports, ct) is { } snapshot
+        {
+            if (projections.Value.UseProjectionBackedReports)
+            {
+                await projector.RebuildBudget(budgetId, ct);
+            }
+
+            return await LedgerSnapshotCalculator.GetProjectedOrCalculate(db, budgetId, date, projections.Value.UseProjectionBackedReports, ct) is { } snapshot
                 ? Results.Ok(snapshot)
-                : Results.NotFound());
+                : Results.NotFound();
+        });
 
         budgets.MapGet("/{budgetId:guid}/audit-events", async (
             Guid budgetId,
             DateTimeOffset? from,
             DateTimeOffset? to,
             BudgetDbContext db,
+            IOptions<ProjectionOptions> projections,
+            ReportingProjectionService projector,
             CancellationToken ct) =>
         {
             if (!await BudgetExists(db, budgetId, ct))
             {
                 return Results.NotFound();
+            }
+
+            if (projections.Value.UseProjectionBackedReports)
+            {
+                await projector.RebuildBudget(budgetId, ct);
+
+                var projectedQuery = db.BudgetAuditTimelines
+                    .AsNoTracking()
+                    .Where(x => x.BudgetId == budgetId);
+                if (from.HasValue)
+                {
+                    projectedQuery = projectedQuery.Where(x => x.OccurredAt >= from.Value);
+                }
+
+                if (to.HasValue)
+                {
+                    projectedQuery = projectedQuery.Where(x => x.OccurredAt <= to.Value);
+                }
+
+                var projectedEvents = await projectedQuery.ToListAsync(ct);
+                return Results.Ok(projectedEvents
+                    .OrderByDescending(x => x.OccurredAt)
+                    .ThenByDescending(x => x.AuditEventId)
+                    .Select(x => new AuditEventDto(
+                        x.AuditEventId,
+                        x.BudgetId,
+                        x.OccurredAt,
+                        x.EventType,
+                        x.EntityType,
+                        x.EntityId,
+                        x.Description,
+                        x.Details))
+                    .ToList());
             }
 
             var query = db.AuditEvents
