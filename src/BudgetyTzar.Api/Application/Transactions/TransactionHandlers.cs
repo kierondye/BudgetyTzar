@@ -159,11 +159,11 @@ public sealed class ReplaceTransactionAllocationsHandler(BudgetDbContext db, Aud
         db.TransactionAllocations.RemoveRange(existing);
         db.TransactionAllocations.AddRange(transaction.ReplaceAllocations(allocations));
         audit.Add(new DomainEvent(
-            allocations.Count > 1 ? "TransactionAllocationsReplaced" : "TransactionAllocationRecorded",
+            "TransactionAllocationsReplaced",
             budgetId,
             nameof(FinancialTransaction),
             transactionId,
-            $"Replaced allocations for transaction {transaction.Description}.",
+            $"Allocated transaction {transaction.Description}.",
             $"Previous={TransactionAllocationFormatting.Format(existing)}; New={TransactionAllocationFormatting.Format(allocations)}",
             Payload: new
             {

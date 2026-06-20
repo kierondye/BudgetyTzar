@@ -3,6 +3,7 @@
   "$id": "https://budgetytzar.local/contracts/events/transactions/transaction-allocations-cleared.v1.schema.json",
   "title": "Transaction Allocations Cleared",
   "type": "object",
+  "additionalProperties": false,
   "required": ["auditEventId", "auditEventType", "auditDescription", "auditDetails", "transactionId", "budgetId", "clearedAllocations"],
   "properties": {
     "auditEventId": { "type": "string", "format": "uuid" },
@@ -11,6 +12,17 @@
     "auditDetails": { "type": ["string", "null"] },
     "transactionId": { "type": "string", "format": "uuid" },
     "budgetId": { "type": "string", "format": "uuid" },
-    "clearedAllocations": { "type": "array" }
+    "clearedAllocations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["budgetItemId", "amount"],
+        "properties": {
+          "budgetItemId": { "type": "string", "format": "uuid" },
+          "amount": { "type": "number" }
+        }
+      }
+    }
   }
 }

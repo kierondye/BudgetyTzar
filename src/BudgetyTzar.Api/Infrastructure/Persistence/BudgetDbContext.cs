@@ -112,6 +112,8 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
             entity.HasKey(x => x.Id);
             entity.Property(x => x.UnbudgetedBalance).HasPrecision(18, 2);
             entity.Property(x => x.TotalBalance).HasPrecision(18, 2);
+            entity.Property(x => x.TotalTransactionBalance).HasPrecision(18, 2);
+            entity.Property(x => x.TotalBudgetedBalance).HasPrecision(18, 2);
             entity.HasIndex(x => new { x.BudgetId, x.Date }).IsUnique();
         });
 
@@ -121,6 +123,10 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
             entity.HasKey(x => new { x.SnapshotId, x.BudgetItemId });
             entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
             entity.Property(x => x.Balance).HasPrecision(18, 2);
+            entity.Property(x => x.PlannedCredit).HasPrecision(18, 2);
+            entity.Property(x => x.PlannedDebit).HasPrecision(18, 2);
+            entity.Property(x => x.ActualCredit).HasPrecision(18, 2);
+            entity.Property(x => x.ActualDebit).HasPrecision(18, 2);
             entity.HasIndex(x => new { x.BudgetId, x.Date });
         });
 

@@ -7,6 +7,8 @@ public sealed class BudgetSnapshotProjection
     public DateOnly Date { get; set; }
     public decimal UnbudgetedBalance { get; set; }
     public decimal TotalBalance { get; set; }
+    public decimal TotalTransactionBalance { get; set; }
+    public decimal TotalBudgetedBalance { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -18,6 +20,10 @@ public sealed class BudgetSnapshotItemProjection
     public DateOnly Date { get; set; }
     public required string Name { get; set; }
     public decimal Balance { get; set; }
+    public decimal PlannedCredit { get; set; }
+    public decimal PlannedDebit { get; set; }
+    public decimal ActualCredit { get; set; }
+    public decimal ActualDebit { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 

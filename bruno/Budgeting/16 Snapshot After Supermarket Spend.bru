@@ -10,26 +10,48 @@ get {
   auth: none
 }
 
+script:pre-request {
+  await new Promise((resolve) => setTimeout(resolve, 6500));
+}
+
 tests {
-  function assertLeanSnapshot() {
-    expect(Object.keys(res.body).sort()).to.eql(["budgetId", "budgetItems", "date", "totalBalance", "unbudgetedBalance"].sort());
+  function assertSnapshotShape() {
+    expect(Object.keys(res.body).sort()).to.eql([
+      "budgetId",
+      "budgetItems",
+      "date",
+      "totalBalance",
+      "totalBudgetedBalance",
+      "totalTransactionBalance",
+      "unbudgetedBalance"
+    ].sort());
     res.body.budgetItems.forEach((item) => {
-      expect(Object.keys(item).sort()).to.eql(["balance", "budgetItemId", "name"].sort());
+      expect(Object.keys(item).sort()).to.eql([
+        "actualCredit",
+        "actualDebit",
+        "balance",
+        "budgetItemId",
+        "name",
+        "plannedCredit",
+        "plannedDebit"
+      ].sort());
     });
   }
 
-  function itemBalance(id) {
-    return res.body.budgetItems.find((item) => item.budgetItemId === id).balance;
+  function item(id) {
+    return res.body.budgetItems.find((item) => item.budgetItemId === id);
   }
 
   test("supermarket spend updates snapshot", function() {
     expect(res.status).to.equal(200);
-    assertLeanSnapshot();
-    expect(itemBalance(bru.getVar("salaryItemId"))).to.equal(500);
-    expect(itemBalance(bru.getVar("groceriesItemId"))).to.equal(350);
-    expect(itemBalance(bru.getVar("mortgageItemId"))).to.equal(800);
-    expect(itemBalance(bru.getVar("incidentalsItemId"))).to.equal(960);
+    assertSnapshotShape();
+    expect(item(bru.getVar("salaryItemId"))).to.include({ balance: 500, plannedCredit: 2500, plannedDebit: 0, actualCredit: 3000, actualDebit: 0 });
+    expect(item(bru.getVar("groceriesItemId"))).to.include({ balance: 350, plannedCredit: 0, plannedDebit: 500, actualCredit: 0, actualDebit: 150 });
+    expect(item(bru.getVar("mortgageItemId"))).to.include({ balance: 800, plannedCredit: 0, plannedDebit: 800, actualCredit: 0, actualDebit: 0 });
+    expect(item(bru.getVar("incidentalsItemId"))).to.include({ balance: 960, plannedCredit: 0, plannedDebit: 1000, actualCredit: 0, actualDebit: 40 });
     expect(res.body.unbudgetedBalance).to.equal(190);
     expect(res.body.totalBalance).to.equal(2800);
+    expect(res.body.totalTransactionBalance).to.equal(2800);
+    expect(res.body.totalBudgetedBalance).to.equal(2610);
   });
 }

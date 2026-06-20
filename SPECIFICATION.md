@@ -237,7 +237,7 @@ Acceptance criteria:
 
 - Transaction amounts must be positive.
 - Transaction type must be debit or credit.
-- Transaction allocations can be empty, single-item, or split across multiple budget items.
+- Transaction allocations can be empty or can allocate a transaction to one or more budget items.
 - The sum of transaction allocations must not exceed the transaction amount.
 - Debit and credit transactions can be allocated to any budget item.
 
@@ -263,7 +263,7 @@ Acceptance criteria:
 The user can:
 
 - View the history of changes affecting a budget.
-- See when transactions were imported, allocated, split, edited, or ignored.
+- See when transactions were imported, allocated, edited, or ignored.
 - See when budget was adjusted or reallocated.
 - See why adjustments and reallocations were made.
 
@@ -346,7 +346,7 @@ Examples:
 - `budgetytzar.budgeting.budget-adjustment-recorded.v1`
 - `budgetytzar.budgeting.budget-reallocation-recorded.v1`
 - `budgetytzar.transactions.transaction-created.v1`
-- `budgetytzar.transactions.transaction-allocation-recorded.v1`
+- `budgetytzar.transactions.transaction-allocations-replaced.v1`
 
 ### 8.2 Core Events
 
@@ -361,8 +361,8 @@ Budgeting events:
 Transaction events:
 
 - `TransactionManuallyCreated`
-- `TransactionAllocationRecorded`
 - `TransactionAllocationsReplaced`
+- `TransactionAllocationsCleared`
 - `TransactionIgnored`
 - `TransactionEdited`
 
@@ -429,16 +429,19 @@ All events should share a common envelope:
 }
 ```
 
-#### TransactionAllocationRecorded
+#### TransactionAllocationsReplaced
 
 ```json
 {
-  "transactionAllocationId": "uuid",
   "transactionId": "uuid",
   "budgetId": "uuid",
-  "budgetItemId": "uuid",
-  "amount": "150.00",
-  "notes": "Partially allocate to groceries."
+  "transactionAmount": 150.00,
+  "allocations": [
+    {
+      "budgetItemId": "uuid",
+      "amount": 150.00
+    }
+  ]
 }
 ```
 
@@ -494,7 +497,7 @@ Responsibilities:
 
 - Manual transaction entry.
 - Transaction allocation.
-- Transaction splitting.
+- Transaction allocation replacement.
 
 Owns:
 
@@ -844,7 +847,7 @@ Deliver:
 - Manual transactions.
 - Transaction allocations.
 - Partial transaction allocation and unallocated value.
-- Durable local audit records for transaction creation, allocations, splits, ignores, reallocations, adjustments, and budget item archival.
+- Durable local audit records for transaction creation, allocations, ignores, reallocations, adjustments, and budget item archival.
 - Snapshot by date.
 - Audit timeline.
 - PostgreSQL persistence.
@@ -1131,7 +1134,7 @@ The smallest useful version should include:
 - Leave transactions unallocated or partially allocated until classification.
 - View snapshot by date.
 - View transaction-level detail.
-- View durable local audit history for transaction creation, allocations, splits, ignores, reallocations, adjustments, and archival.
+- View durable local audit history for transaction creation, allocations, ignores, reallocations, adjustments, and archival.
 
 ## 26. Future Enhancements
 

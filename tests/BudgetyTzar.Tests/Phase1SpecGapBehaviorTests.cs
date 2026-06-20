@@ -168,11 +168,13 @@ public sealed class Phase1SpecGapBehaviorTests
             initialSnapshot,
             -200m,
             0m,
+            0m,
+            -200m,
             [
-                (salary.Id, -2_500m),
-                (groceries.Id, 500m),
-                (mortgage.Id, 800m),
-                (incidentals.Id, 1_000m)
+                (salary.Id, -2_500m, 2_500m, 0m, 0m, 0m),
+                (groceries.Id, 500m, 0m, 500m, 0m, 0m),
+                (mortgage.Id, 800m, 0m, 800m, 0m, 0m),
+                (incidentals.Id, 1_000m, 0m, 1_000m, 0m, 0m)
             ]);
 
         var pay = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 19), 3_000m, TransactionDirection.Credit);
@@ -183,11 +185,13 @@ public sealed class Phase1SpecGapBehaviorTests
             afterSalarySnapshot,
             3_000m,
             200m,
+            3_000m,
+            2_800m,
             [
-                (salary.Id, 500m),
-                (groceries.Id, 500m),
-                (mortgage.Id, 800m),
-                (incidentals.Id, 1_000m)
+                (salary.Id, 500m, 2_500m, 0m, 3_000m, 0m),
+                (groceries.Id, 500m, 0m, 500m, 0m, 0m),
+                (mortgage.Id, 800m, 0m, 800m, 0m, 0m),
+                (incidentals.Id, 1_000m, 0m, 1_000m, 0m, 0m)
             ]);
 
         var supermarket = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 20), 200m, TransactionDirection.Debit);
@@ -201,11 +205,13 @@ public sealed class Phase1SpecGapBehaviorTests
             afterSpendSnapshot,
             2_800m,
             190m,
+            2_800m,
+            2_610m,
             [
-                (salary.Id, 500m),
-                (groceries.Id, 350m),
-                (mortgage.Id, 800m),
-                (incidentals.Id, 960m)
+                (salary.Id, 500m, 2_500m, 0m, 3_000m, 0m),
+                (groceries.Id, 350m, 0m, 500m, 0m, 150m),
+                (mortgage.Id, 800m, 0m, 800m, 0m, 0m),
+                (incidentals.Id, 960m, 0m, 1_000m, 0m, 40m)
             ]);
 
         await RecordBudgetItemAdjustment(client, budget.Id, salary.Id, 2_500m, BudgetAdjustmentType.Credit, new DateOnly(2026, 7, 18), "Second expected salary.");
@@ -215,11 +221,13 @@ public sealed class Phase1SpecGapBehaviorTests
             julySnapshot,
             300m,
             190m,
+            2_800m,
+            110m,
             [
-                (salary.Id, -2_000m),
-                (groceries.Id, 350m),
-                (mortgage.Id, 800m),
-                (incidentals.Id, 960m)
+                (salary.Id, -2_000m, 5_000m, 0m, 3_000m, 0m),
+                (groceries.Id, 350m, 0m, 500m, 0m, 150m),
+                (mortgage.Id, 800m, 0m, 800m, 0m, 0m),
+                (incidentals.Id, 960m, 0m, 1_000m, 0m, 40m)
             ]);
     }
 
@@ -431,13 +439,28 @@ public sealed class Phase1SpecGapBehaviorTests
         BudgetSnapshot snapshot,
         decimal totalBalance,
         decimal unbudgetedBalance,
-        IReadOnlyList<(Guid BudgetItemId, decimal Balance)> expectedBalances)
+        decimal totalTransactionBalance,
+        decimal totalBudgetedBalance,
+        IReadOnlyList<(
+            Guid BudgetItemId,
+            decimal Balance,
+            decimal PlannedCredit,
+            decimal PlannedDebit,
+            decimal ActualCredit,
+            decimal ActualDebit)> expectedBalances)
     {
         Assert.Equal(totalBalance, snapshot.TotalBalance);
         Assert.Equal(unbudgetedBalance, snapshot.UnbudgetedBalance);
+        Assert.Equal(totalTransactionBalance, snapshot.TotalTransactionBalance);
+        Assert.Equal(totalBudgetedBalance, snapshot.TotalBudgetedBalance);
         foreach (var expected in expectedBalances)
         {
-            Assert.Equal(expected.Balance, snapshot.BudgetItems.Single(x => x.BudgetItemId == expected.BudgetItemId).Balance);
+            var item = snapshot.BudgetItems.Single(x => x.BudgetItemId == expected.BudgetItemId);
+            Assert.Equal(expected.Balance, item.Balance);
+            Assert.Equal(expected.PlannedCredit, item.PlannedCredit);
+            Assert.Equal(expected.PlannedDebit, item.PlannedDebit);
+            Assert.Equal(expected.ActualCredit, item.ActualCredit);
+            Assert.Equal(expected.ActualDebit, item.ActualDebit);
         }
     }
 

@@ -36,7 +36,6 @@ public static class EventTypes
         ["TransactionManuallyCreated"] = "budgetytzar.transactions.transaction-manually-created.v1",
         ["TransactionEdited"] = "budgetytzar.transactions.transaction-edited.v1",
         ["TransactionIgnored"] = "budgetytzar.transactions.transaction-ignored.v1",
-        ["TransactionAllocationRecorded"] = "budgetytzar.transactions.transaction-allocation-recorded.v1",
         ["TransactionAllocationsReplaced"] = "budgetytzar.transactions.transaction-allocations-replaced.v1",
         ["TransactionAllocationsCleared"] = "budgetytzar.transactions.transaction-allocations-cleared.v1"
     };

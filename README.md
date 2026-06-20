@@ -126,4 +126,4 @@ Phase 1 is intentionally a local modular MVP. It keeps the language, domain mode
 
 Budgets are the root resource. Budget items are named buckets, not fixed debit or credit lines. Dated budget adjustments and transaction allocations can be debits or credits against any budget item, and item balances are cumulative planned-vs-actual positions. A budget has one currency, and all child amounts use that currency.
 
-The Phase 1 audit timeline is backed by durable local audit records for imports, allocation changes, splits, ignores, reallocations, adjustments, and budget item archival. Kafka-published audit events, outbox records, and projection-backed reporting are Phase 2 concerns and are enabled in local config by default.
+The Phase 1 audit timeline is backed by durable local audit records for imports, allocation changes, ignores, reallocations, adjustments, and budget item archival. Kafka-published audit events, outbox records, and projection-backed reporting are Phase 2 concerns and are enabled in local config by default.

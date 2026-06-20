@@ -15,14 +15,8 @@ public static partial class Endpoints
             DateOnly date,
             BudgetDbContext db,
             IOptions<ProjectionOptions> projections,
-            ReportingProjectionService projector,
             CancellationToken ct) =>
         {
-            if (projections.Value.UseProjectionBackedReports)
-            {
-                await projector.RebuildBudget(budgetId, ct);
-            }
-
             return await LedgerSnapshotCalculator.GetProjectedOrCalculate(db, budgetId, date, projections.Value.UseProjectionBackedReports, ct) is { } snapshot
                 ? Results.Ok(snapshot)
                 : Results.NotFound();
@@ -34,7 +28,6 @@ public static partial class Endpoints
             DateTimeOffset? to,
             BudgetDbContext db,
             IOptions<ProjectionOptions> projections,
-            ReportingProjectionService projector,
             CancellationToken ct) =>
         {
             if (!await BudgetExists(db, budgetId, ct))
@@ -44,8 +37,6 @@ public static partial class Endpoints
 
             if (projections.Value.UseProjectionBackedReports)
             {
-                await projector.RebuildBudget(budgetId, ct);
-
                 var projectedQuery = db.BudgetAuditTimelines
                     .AsNoTracking()
                     .Where(x => x.BudgetId == budgetId);

@@ -89,7 +89,7 @@ public sealed class Phase2EventDrivenTests
 
         Assert.Equal(65m, item.Balance);
         Assert.Equal(-35m, snapshot.TotalBalance);
-        Assert.True(await db.BudgetAuditTimelines.AnyAsync(x => x.BudgetId == budget.Id && x.EventType == "TransactionAllocationRecorded"));
+        Assert.True(await db.BudgetAuditTimelines.AnyAsync(x => x.BudgetId == budget.Id && x.EventType == "TransactionAllocationsReplaced"));
 
         var apiSnapshot = await client.GetFromJsonAsync<BudgetSnapshot>(
             $"/api/budgets/{budget.Id}/snapshot?date=2026-06-30");
@@ -97,7 +97,58 @@ public sealed class Phase2EventDrivenTests
 
         var apiAuditEvents = await client.GetFromJsonAsync<IReadOnlyList<AuditEventDto>>(
             $"/api/budgets/{budget.Id}/audit-events");
-        Assert.Contains(apiAuditEvents!, x => x.EventType == "TransactionAllocationRecorded");
+        Assert.Contains(apiAuditEvents!, x => x.EventType == "TransactionAllocationsReplaced");
+    }
+
+    [Fact]
+    public async Task AllocationReplacementWorkflowsEmitReplacedAndDeleteEmitsCleared()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+
+        var budget = await CreateBudget(client);
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
+        var savings = await CreateBudgetItem(client, budget.Id, "Savings");
+        var household = await CreateBudgetItem(client, budget.Id, "Household");
+        var single = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 12), 35m, TransactionDirection.Debit);
+        var multi = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 13), 40m, TransactionDirection.Debit);
+        var manyToOne = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 14), 50m, TransactionDirection.Debit);
+        var empty = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 15), 20m, TransactionDirection.Debit);
+
+        await ReplaceAllocations(client, budget.Id, single.Id, [new TransactionAllocationItem(groceries.Id, 35m)]);
+        await ReplaceAllocations(client, budget.Id, multi.Id, [
+            new TransactionAllocationItem(groceries.Id, 15m),
+            new TransactionAllocationItem(savings.Id, 25m)
+        ]);
+        await ReplaceAllocations(client, budget.Id, manyToOne.Id, [
+            new TransactionAllocationItem(groceries.Id, 20m),
+            new TransactionAllocationItem(savings.Id, 20m)
+        ]);
+        await ReplaceAllocations(client, budget.Id, manyToOne.Id, [new TransactionAllocationItem(household.Id, 50m)]);
+        await ReplaceAllocations(client, budget.Id, empty.Id, []);
+        await ClearAllocations(client, budget.Id, multi.Id);
+
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var outboxEventTypes = await db.OutboxMessages.AsNoTracking()
+            .Select(x => x.EventType)
+            .ToListAsync();
+        var auditEvents = await db.AuditEvents.AsNoTracking()
+            .Where(x => x.EntityId == single.Id || x.EntityId == multi.Id || x.EntityId == manyToOne.Id || x.EntityId == empty.Id)
+            .ToListAsync();
+
+        Assert.Equal(5, outboxEventTypes.Count(x => x == "budgetytzar.transactions.transaction-allocations-replaced.v1"));
+        Assert.Single(outboxEventTypes, x => x == "budgetytzar.transactions.transaction-allocations-cleared.v1");
+        Assert.DoesNotContain(outboxEventTypes, x => x == "budgetytzar.transactions.transaction-allocation-recorded.v1");
+        Assert.Equal(5, auditEvents.Count(x => x.EventType == "TransactionAllocationsReplaced"));
+        Assert.Single(auditEvents, x => x.EventType == "TransactionAllocationsCleared");
+        Assert.DoesNotContain(auditEvents, x => x.EventType == "TransactionAllocationRecorded");
+        Assert.All(auditEvents.Where(x => x.EventType == "TransactionAllocationsReplaced"), x =>
+        {
+            Assert.StartsWith("Allocated transaction ", x.Description);
+            Assert.DoesNotContain("split", x.Description, StringComparison.OrdinalIgnoreCase);
+        });
     }
 
     [Fact]
@@ -141,7 +192,31 @@ public sealed class Phase2EventDrivenTests
     }
 
     [Fact]
-    public async Task ProjectionBackedSnapshotEndpointCatchesUpFromOutboxWithoutOperationalLedgerTables()
+    public async Task ProjectionEnvelopeProcessingMarksOnlyTheConsumedOutboxMessageProjected()
+    {
+        await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var salary = await CreateBudgetItem(client, budget.Id, "Salary");
+        await RecordAdjustment(client, budget.Id, salary.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 10));
+
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var consumedMessage = await db.OutboxMessages
+            .AsNoTracking()
+            .SingleAsync(x => x.EventType == "budgetytzar.budgeting.budget-adjustment-recorded.v1");
+        var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
+
+        await projector.ProjectEnvelope(consumedMessage.EnvelopeJson, CancellationToken.None);
+
+        var outbox = await db.OutboxMessages.AsNoTracking().Where(x => x.BudgetId == budget.Id).ToListAsync();
+        Assert.NotNull(outbox.Single(x => x.Id == consumedMessage.Id).ProjectedAt);
+        Assert.All(outbox.Where(x => x.Id != consumedMessage.Id), x => Assert.Null(x.ProjectedAt));
+    }
+
+    [Fact]
+    public async Task ProjectionBackedSnapshotEndpointDoesNotRebuildFromOutboxAtReadTime()
     {
         await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
         var client = app.CreateClient();
@@ -158,27 +233,27 @@ public sealed class Phase2EventDrivenTests
             await purgeDb.AuditEvents.ExecuteDeleteAsync();
         }
 
-        var snapshot = await client.GetFromJsonAsync<BudgetSnapshot>(
-            $"/api/budgets/{budget.Id}/snapshot?date=2026-06-10");
+        var response = await client.GetAsync($"/api/budgets/{budget.Id}/snapshot?date=2026-06-10");
 
-        Assert.Equal(-100m, snapshot!.BudgetItems.Single(x => x.BudgetItemId == salary.Id).Balance);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+
+        using var verifyScope = app.Services.CreateScope();
+        var db = verifyScope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        Assert.False(await db.BudgetSnapshotProjections.AnyAsync(x => x.BudgetId == budget.Id));
+        Assert.False(await db.OutboxMessages.AnyAsync(x => x.BudgetId == budget.Id && x.ProjectedAt != null));
     }
 
     [Fact]
-    public async Task ProjectionBackedSnapshotReturnsZeroSnapshotForExistingEmptyBudget()
+    public async Task ProjectionBackedSnapshotReturnsNotFoundWhenProjectionRowsAreMissing()
     {
         await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
 
-        var snapshot = await client.GetFromJsonAsync<BudgetSnapshot>(
-            $"/api/budgets/{budget.Id}/snapshot?date=2026-06-30");
+        var response = await client.GetAsync($"/api/budgets/{budget.Id}/snapshot?date=2026-06-30");
 
-        Assert.Equal(budget.Id, snapshot!.BudgetId);
-        Assert.Equal(0m, snapshot.TotalBalance);
-        Assert.Equal(0m, snapshot.UnbudgetedBalance);
-        Assert.Empty(snapshot.BudgetItems);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -190,12 +265,37 @@ public sealed class Phase2EventDrivenTests
         var budget = await CreateBudget(client);
         var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
 
+        using (var scope = app.Services.CreateScope())
+        {
+            var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
+            await projector.RebuildFromOutbox(CancellationToken.None);
+        }
+
         var snapshot = await client.GetFromJsonAsync<BudgetSnapshot>(
             $"/api/budgets/{budget.Id}/snapshot?date=2026-06-30");
 
         var item = Assert.Single(snapshot!.BudgetItems);
         Assert.Equal(groceries.Id, item.BudgetItemId);
         Assert.Equal(0m, item.Balance);
+    }
+
+    [Fact]
+    public async Task ProjectionBackedAuditEndpointDoesNotRebuildFromOutboxAtReadTime()
+    {
+        await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+
+        var apiAuditEvents = await client.GetFromJsonAsync<IReadOnlyList<AuditEventDto>>(
+            $"/api/budgets/{budget.Id}/audit-events");
+
+        Assert.Empty(apiAuditEvents!);
+
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        Assert.False(await db.BudgetAuditTimelines.AnyAsync(x => x.BudgetId == budget.Id));
+        Assert.False(await db.OutboxMessages.AnyAsync(x => x.BudgetId == budget.Id && x.ProjectedAt != null));
     }
 
     [Fact]
@@ -359,7 +459,6 @@ public sealed class Phase2EventDrivenTests
             "budgetytzar.budgeting.budget-adjustment-recorded.v1",
             "budgetytzar.budgeting.budget-item-archived.v1",
             "budgetytzar.transactions.transaction-manually-created.v1",
-            "budgetytzar.transactions.transaction-allocation-recorded.v1",
             "budgetytzar.transactions.transaction-allocations-replaced.v1",
             "budgetytzar.transactions.transaction-allocations-cleared.v1",
             "budgetytzar.transactions.transaction-edited.v1",
@@ -427,6 +526,16 @@ public sealed class Phase2EventDrivenTests
             if (property.Value.TryGetProperty("pattern", out var pattern))
             {
                 Assert.Matches(new Regex(pattern.GetString()!), value.GetString()!);
+            }
+
+            if (property.Value.TryGetProperty("items", out var items) && value.ValueKind == JsonValueKind.Array)
+            {
+                var index = 0;
+                foreach (var item in value.EnumerateArray())
+                {
+                    AssertElementMatchesSchema(items, item, $"{context}.{property.Name}[{index}]");
+                    index++;
+                }
             }
         }
     }

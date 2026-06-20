@@ -8,12 +8,18 @@ public sealed record BudgetSnapshot(
     DateOnly Date,
     decimal UnbudgetedBalance,
     decimal TotalBalance,
+    decimal TotalTransactionBalance,
+    decimal TotalBudgetedBalance,
     IReadOnlyList<BudgetSnapshotItem> BudgetItems);
 
 public sealed record BudgetSnapshotItem(
     Guid BudgetItemId,
     string Name,
-    decimal Balance);
+    decimal Balance,
+    decimal PlannedCredit,
+    decimal PlannedDebit,
+    decimal ActualCredit,
+    decimal ActualDebit);
 
 public sealed record AuditEventDto(
     Guid Id,
@@ -138,8 +144,17 @@ public static class LedgerSnapshotCalculator
             date,
             unbudgetedBalance,
             totalBudgetedBalance + unbudgetedBalance,
+            totalTransactionBalance,
+            totalBudgetedBalance,
             calculatedItems
-                .Select(x => new BudgetSnapshotItem(x.BudgetItemId, x.Name, x.Balance))
+                .Select(x => new BudgetSnapshotItem(
+                    x.BudgetItemId,
+                    x.Name,
+                    x.Balance,
+                    x.PlannedCredit,
+                    x.PlannedDebit,
+                    x.ActualCredit,
+                    x.ActualDebit))
                 .ToList());
     }
 
@@ -162,14 +177,21 @@ public static class LedgerSnapshotCalculator
             .FirstOrDefaultAsync(ct);
         if (projection is null)
         {
-            return await Calculate(db, budgetId, date, ct);
+            return null;
         }
 
         var items = await db.BudgetSnapshotItemProjections
             .AsNoTracking()
             .Where(x => x.SnapshotId == projection.Id)
             .OrderBy(x => x.Name)
-            .Select(x => new BudgetSnapshotItem(x.BudgetItemId, x.Name, x.Balance))
+            .Select(x => new BudgetSnapshotItem(
+                x.BudgetItemId,
+                x.Name,
+                x.Balance,
+                x.PlannedCredit,
+                x.PlannedDebit,
+                x.ActualCredit,
+                x.ActualDebit))
             .ToListAsync(ct);
 
         return new BudgetSnapshot(
@@ -177,6 +199,8 @@ public static class LedgerSnapshotCalculator
             date,
             projection.UnbudgetedBalance,
             projection.TotalBalance,
+            projection.TotalTransactionBalance,
+            projection.TotalBudgetedBalance,
             items);
     }
 }

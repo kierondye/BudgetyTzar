@@ -43,6 +43,11 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
             await RebuildBudget(budgetId.Value, envelope, ct);
         }
 
+        var projectedAt = DateTimeOffset.UtcNow;
+        await db.OutboxMessages
+            .Where(x => x.Id == envelope.EventId && x.ProjectedAt == null)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.ProjectedAt, projectedAt), ct);
+
         db.ProcessedProjectionEvents.Add(new ProcessedProjectionEvent
         {
             EventId = envelope.EventId,
@@ -86,11 +91,6 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
             .ToList();
         var state = Replay(envelopes);
         PersistState(state);
-
-        var projectedAt = DateTimeOffset.UtcNow;
-        await db.OutboxMessages
-            .Where(x => x.BudgetId == budgetId && x.ProjectedAt == null)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.ProjectedAt, projectedAt), ct);
         await db.SaveChangesAsync(ct);
     }
 
@@ -185,7 +185,6 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
                         GetBool(envelope.Payload, "isIgnored"));
                     break;
 
-                case "budgetytzar.transactions.transaction-allocation-recorded.v1":
                 case "budgetytzar.transactions.transaction-allocations-replaced.v1":
                     budget.AllocationsByTransaction[GetGuid(envelope.Payload, "transactionId")] =
                         GetArray(envelope.Payload, "allocations")
@@ -234,7 +233,9 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
                     BudgetId = budget.BudgetId,
                     Date = snapshot.Date,
                     UnbudgetedBalance = snapshot.UnbudgetedBalance,
-                    TotalBalance = snapshot.TotalBalance
+                    TotalBalance = snapshot.TotalBalance,
+                    TotalTransactionBalance = snapshot.TotalTransactionBalance,
+                    TotalBudgetedBalance = snapshot.TotalBudgetedBalance
                 };
                 db.BudgetSnapshotProjections.Add(projection);
                 db.BudgetSnapshotItemProjections.AddRange(snapshot.BudgetItems.Select(item => new BudgetSnapshotItemProjection
@@ -244,7 +245,11 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
                     Date = snapshot.Date,
                     BudgetItemId = item.BudgetItemId,
                     Name = item.Name,
-                    Balance = item.Balance
+                    Balance = item.Balance,
+                    PlannedCredit = item.PlannedCredit,
+                    PlannedDebit = item.PlannedDebit,
+                    ActualCredit = item.ActualCredit,
+                    ActualDebit = item.ActualDebit
                 }));
             }
         }
@@ -346,8 +351,17 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
             date,
             unbudgetedBalance,
             totalBudgetedBalance + unbudgetedBalance,
+            totalTransactionBalance,
+            totalBudgetedBalance,
             calculatedItems
-                .Select(x => new BudgetSnapshotItem(x.BudgetItemId, x.Name, x.Balance))
+                .Select(x => new BudgetSnapshotItem(
+                    x.BudgetItemId,
+                    x.Name,
+                    x.Balance,
+                    x.PlannedCredit,
+                    x.PlannedDebit,
+                    x.ActualCredit,
+                    x.ActualDebit))
                 .ToList());
     }
 
