@@ -81,7 +81,7 @@ public sealed class FinancialTransaction
         }
 
         return allocations
-            .Select(x => TransactionAllocation.Create(Id, x.BudgetItemId, x.Amount))
+            .Select(x => TransactionAllocation.Create(Id, x.BudgetItemId, x.Amount, x.Notes))
             .ToList();
     }
 

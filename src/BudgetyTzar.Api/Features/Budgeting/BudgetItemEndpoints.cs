@@ -40,6 +40,7 @@ public static partial class Endpoints
             CreateBudgetItemRequest request,
             IValidator<CreateBudgetItemRequest> validator,
             CreateBudgetItemHandler handler,
+            HttpContext httpContext,
             CancellationToken ct) =>
         {
             if (await validator.Validate(request, ct) is { } validationProblem)
@@ -48,7 +49,7 @@ public static partial class Endpoints
             }
 
             var result = await handler.Handle(budgetId, request.Name, ct);
-            return result.ToHttpResult(item => Results.Created(
+            return result.ToHttpResult(httpContext, item => Results.Created(
                 $"/api/budgets/{budgetId}/budget-items/{item.Id}",
                 new BudgetItemDto(item.Id, item.BudgetId, item.Name, item.IsArchived, item.ArchivedAt, item.CreatedAt)));
         });
@@ -57,10 +58,11 @@ public static partial class Endpoints
             Guid budgetId,
             Guid budgetItemId,
             ArchiveBudgetItemHandler handler,
+            HttpContext httpContext,
             CancellationToken ct) =>
         {
             var result = await handler.Handle(budgetId, budgetItemId, ct);
-            return result.ToHttpResult();
+            return result.ToHttpResult(httpContext, budgetId);
         });
     }
 }

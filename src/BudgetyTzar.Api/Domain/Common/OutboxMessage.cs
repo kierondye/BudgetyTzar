@@ -3,6 +3,7 @@ namespace BudgetyTzar.Api;
 public enum OutboxMessageStatus
 {
     Pending,
+    Publishing,
     Published,
     Failed
 }
@@ -19,6 +20,8 @@ public sealed class OutboxMessage
     public OutboxMessageStatus Status { get; set; } = OutboxMessageStatus.Pending;
     public int RetryCount { get; set; }
     public string? LastError { get; set; }
+    public Guid? PublishingLockId { get; set; }
+    public DateTimeOffset? PublishingLockedAt { get; set; }
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? PublishedAt { get; set; }
     public DateTimeOffset? ProjectedAt { get; set; }
@@ -28,6 +31,8 @@ public sealed class OutboxMessage
         Status = OutboxMessageStatus.Published;
         PublishedAt = now;
         LastError = null;
+        PublishingLockId = null;
+        PublishingLockedAt = null;
     }
 
     public void MarkFailed(string error)
@@ -35,6 +40,8 @@ public sealed class OutboxMessage
         Status = OutboxMessageStatus.Failed;
         RetryCount++;
         LastError = error.Length > 1000 ? error[..1000] : error;
+        PublishingLockId = null;
+        PublishingLockedAt = null;
     }
 
     public void MarkProjected(DateTimeOffset now) => ProjectedAt = now;

@@ -6,11 +6,21 @@ public sealed class KafkaOptions
     public string ClientId { get; set; } = "budgetytzar-api-local";
 }
 
+public sealed class KafkaTopicOptions
+{
+    public bool AutoCreateTopics { get; set; } = true;
+    public int Partitions { get; set; } = 1;
+    public short ReplicationFactor { get; set; } = 1;
+    public int OperationTimeoutSeconds { get; set; } = 10;
+    public int RequestTimeoutSeconds { get; set; } = 10;
+}
+
 public sealed class OutboxOptions
 {
     public bool PublisherEnabled { get; set; }
     public int PollingIntervalSeconds { get; set; } = 5;
     public int BatchSize { get; set; } = 50;
+    public int PublishingLeaseSeconds { get; set; } = 60;
 }
 
 public sealed class ProjectionOptions

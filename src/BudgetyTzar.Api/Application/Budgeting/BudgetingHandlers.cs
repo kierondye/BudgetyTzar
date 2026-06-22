@@ -11,9 +11,9 @@ public sealed class CreateBudgetHandler(BudgetDbContext db, AuditEventWriter aud
     {
         var budget = Budget.Create(name, currency);
         db.Budgets.Add(budget);
-        audit.Add(budget.CreatedEvent());
+        var eventId = audit.Add(budget.CreatedEvent());
         await db.SaveChangesAsync(ct);
-        return CommandResult<Budget>.Created(budget);
+        return CommandResult<Budget>.Created(budget, eventId);
     }
 }
 
@@ -37,9 +37,9 @@ public sealed class CreateBudgetItemHandler(BudgetDbContext db, AuditEventWriter
 
         var item = BudgetItem.Create(budgetId, trimmedName);
         db.BudgetItems.Add(item);
-        audit.Add(item.CreatedEvent());
+        var eventId = audit.Add(item.CreatedEvent());
         await db.SaveChangesAsync(ct);
-        return CommandResult<BudgetItem>.Created(item);
+        return CommandResult<BudgetItem>.Created(item, eventId);
     }
 }
 
@@ -53,9 +53,9 @@ public sealed class ArchiveBudgetItemHandler(BudgetDbContext db, AuditEventWrite
             return CommandResult.NotFound();
         }
 
-        audit.Add(item.Archive(DateTimeOffset.UtcNow));
+        var eventId = audit.Add(item.Archive(DateTimeOffset.UtcNow));
         await db.SaveChangesAsync(ct);
-        return CommandResult.NoContent();
+        return CommandResult.NoContent(eventId);
     }
 }
 
@@ -96,9 +96,9 @@ public sealed class RecordAdjustmentHandler(BudgetDbContext db, AuditEventWriter
         }
 
         db.BudgetAdjustments.Add(adjustment);
-        audit.Add(adjustment.RecordedEvent(budgetId, item.Name));
+        var eventId = audit.Add(adjustment.RecordedEvent(budgetId, item.Name));
         await db.SaveChangesAsync(ct);
-        return CommandResult<BudgetAdjustment>.Created(adjustment);
+        return CommandResult<BudgetAdjustment>.Created(adjustment, eventId);
     }
 
     private async Task<bool> NetPlannedSpendingIsValid(Guid budgetId, BudgetAdjustment pending, CancellationToken ct)
@@ -164,7 +164,7 @@ public sealed class RecordReallocationHandler(BudgetDbContext db, AuditEventWrit
         db.BudgetReallocations.Add(reallocation);
         db.BudgetAdjustments.AddRange(adjustments.Select(x =>
             BudgetAdjustment.Create(budgetId, x.BudgetItemId, x.Amount, x.Direction, date, notes, reallocation.Id)));
-        audit.Add(new DomainEvent(
+        var eventId = audit.Add(new DomainEvent(
             "BudgetReallocationRecorded",
             budgetId,
             nameof(BudgetReallocation),
@@ -184,7 +184,7 @@ public sealed class RecordReallocationHandler(BudgetDbContext db, AuditEventWrit
                 }).ToList()
             }));
         await db.SaveChangesAsync(ct);
-        return CommandResult<BudgetReallocation>.Created(reallocation);
+        return CommandResult<BudgetReallocation>.Created(reallocation, eventId);
     }
 }
 

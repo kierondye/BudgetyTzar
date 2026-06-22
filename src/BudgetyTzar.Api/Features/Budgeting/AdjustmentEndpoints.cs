@@ -68,6 +68,7 @@ public static partial class Endpoints
             CreateBudgetItemAdjustmentRequest request,
             IValidator<CreateBudgetItemAdjustmentRequest> validator,
             RecordAdjustmentHandler handler,
+            HttpContext httpContext,
             CancellationToken ct) =>
         {
             if (await validator.Validate(request, ct) is { } validationProblem)
@@ -83,7 +84,7 @@ public static partial class Endpoints
                 request.Date,
                 request.Notes,
                 ct);
-            return result.ToHttpResult(adjustment => Results.Created(
+            return result.ToHttpResult(httpContext, adjustment => Results.Created(
                 $"/api/budgets/{budgetId}/budget-items/{budgetItemId}/adjustments/{adjustment.Id}",
                 new BudgetAdjustmentDto(
                     adjustment.Id,

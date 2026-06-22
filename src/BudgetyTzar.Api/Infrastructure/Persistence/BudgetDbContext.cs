@@ -53,6 +53,7 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
         {
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Amount).HasPrecision(18, 2);
+            entity.Property(x => x.Notes).HasMaxLength(500);
             entity.HasIndex(x => x.TransactionId);
             entity.HasIndex(x => x.BudgetItemId);
         });
@@ -100,7 +101,11 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
             entity.Property(x => x.EnvelopeJson).HasColumnType("jsonb").IsRequired();
             entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
             entity.Property(x => x.LastError).HasMaxLength(1000);
+            entity.Property(x => x.PublishingLockId);
+            entity.Property(x => x.PublishingLockedAt);
             entity.HasIndex(x => new { x.Status, x.CreatedAt });
+            entity.HasIndex(x => new { x.Status, x.PublishingLockedAt, x.CreatedAt });
+            entity.HasIndex(x => x.PublishingLockId);
             entity.HasIndex(x => x.ProjectedAt);
             entity.HasIndex(x => new { x.BudgetId, x.CreatedAt });
             entity.HasIndex(x => x.EventType);

@@ -21,6 +21,7 @@ builder.Services.Configure<JsonOptions>(options =>
     options.SerializerOptions.Converters.Add(new CamelCaseStringEnumConverter());
 });
 builder.Services.Configure<KafkaOptions>(builder.Configuration.GetSection("Kafka"));
+builder.Services.Configure<KafkaTopicOptions>(builder.Configuration.GetSection("Kafka:TopicManagement"));
 builder.Services.Configure<OutboxOptions>(builder.Configuration.GetSection("Outbox"));
 builder.Services.Configure<ProjectionOptions>(builder.Configuration.GetSection("Projections"));
 builder.Services.Configure<EventTopicOptions>(options =>
@@ -31,6 +32,8 @@ builder.Services.Configure<EventTopicOptions>(options =>
 });
 builder.Services.AddScoped<AuditEventWriter>();
 builder.Services.AddScoped<ReportingProjectionService>();
+builder.Services.AddSingleton<ProjectionNotificationService>();
+builder.Services.AddHostedService<KafkaTopicInitializerService>();
 builder.Services.AddHostedService<OutboxPublisherService>();
 builder.Services.AddHostedService<ReportingProjectionConsumerService>();
 builder.Services.AddScoped<BudgetItemEligibilityService>();
@@ -63,6 +66,14 @@ if (app.Configuration.GetValue("Database:MigrateOnStartup", false))
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+    await db.Database.ExecuteSqlRawAsync(
+        """
+        CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
+            "MigrationId" character varying(150) NOT NULL,
+            "ProductVersion" character varying(32) NOT NULL,
+            CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
+        );
+        """);
     await db.Database.MigrateAsync();
 }
 

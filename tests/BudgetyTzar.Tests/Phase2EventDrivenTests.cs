@@ -56,6 +56,23 @@ public sealed class Phase2EventDrivenTests
     }
 
     [Fact]
+    public async Task CommandResponsesExposeProjectionReadinessHeaders()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+
+        var response = await client.PostAsJsonAsync("/api/budgets", new CreateBudgetRequest("Personal", "GBP"));
+        response.EnsureSuccessStatusCode();
+        var budget = (await response.Content.ReadFromJsonAsync<Budget>())!;
+        var eventId = Assert.Single(response.Headers.GetValues(CommandResultHttpExtensions.EventIdHeaderName));
+        var statusUrl = Assert.Single(response.Headers.GetValues(CommandResultHttpExtensions.ProjectionStatusHeaderName));
+
+        Assert.True(Guid.TryParse(eventId, out _));
+        Assert.Equal($"/api/budgets/{budget.Id}/projections/status?eventId={eventId}", statusUrl);
+    }
+
+    [Fact]
     public async Task ProjectionRebuildFromOutboxSupportsProjectionBackedSnapshotsAndAuditTimeline()
     {
         await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
@@ -187,7 +204,7 @@ public sealed class Phase2EventDrivenTests
         await projector.ProjectEnvelope(envelopeJson, CancellationToken.None);
         await projector.ProjectEnvelope(envelopeJson, CancellationToken.None);
 
-        Assert.Equal(1, await db.ProcessedProjectionEvents.CountAsync());
+        Assert.Equal(3, await db.ProcessedProjectionEvents.CountAsync());
         Assert.Equal(1, await db.BudgetSnapshotProjections.CountAsync(x => x.BudgetId == budget.Id && x.Date == new DateOnly(2026, 6, 10)));
     }
 
@@ -235,7 +252,7 @@ public sealed class Phase2EventDrivenTests
 
         var response = await client.GetAsync($"/api/budgets/{budget.Id}/snapshot?date=2026-06-10");
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
         using var verifyScope = app.Services.CreateScope();
         var db = verifyScope.ServiceProvider.GetRequiredService<BudgetDbContext>();
@@ -244,7 +261,7 @@ public sealed class Phase2EventDrivenTests
     }
 
     [Fact]
-    public async Task ProjectionBackedSnapshotReturnsNotFoundWhenProjectionRowsAreMissing()
+    public async Task ProjectionBackedSnapshotReturnsAcceptedWhenProjectionRowsAreMissing()
     {
         await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
         var client = app.CreateClient();
@@ -252,8 +269,11 @@ public sealed class Phase2EventDrivenTests
         var budget = await CreateBudget(client);
 
         var response = await client.GetAsync($"/api/budgets/{budget.Id}/snapshot?date=2026-06-30");
+        var pending = await response.Content.ReadFromJsonAsync<ProjectionPendingResponse>();
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.Equal("pending", pending!.Status);
+        Assert.Equal($"/api/budgets/{budget.Id}/projection-events", pending.EventStreamUrl);
     }
 
     [Fact]
@@ -287,15 +307,52 @@ public sealed class Phase2EventDrivenTests
         await app.ResetDatabaseAsync();
         var budget = await CreateBudget(client);
 
-        var apiAuditEvents = await client.GetFromJsonAsync<IReadOnlyList<AuditEventDto>>(
-            $"/api/budgets/{budget.Id}/audit-events");
+        var response = await client.GetAsync($"/api/budgets/{budget.Id}/audit-events");
+        var pending = await response.Content.ReadFromJsonAsync<ProjectionPendingResponse>();
 
-        Assert.Empty(apiAuditEvents!);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.Equal("pending", pending!.Status);
 
         using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
         Assert.False(await db.BudgetAuditTimelines.AnyAsync(x => x.BudgetId == budget.Id));
         Assert.False(await db.OutboxMessages.AnyAsync(x => x.BudgetId == budget.Id && x.ProjectedAt != null));
+    }
+
+    [Fact]
+    public async Task ProjectionStatusTransitionsFromPendingToReady()
+    {
+        await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+
+        var createResponse = await client.PostAsJsonAsync("/api/budgets", new CreateBudgetRequest("Personal", "GBP"));
+        createResponse.EnsureSuccessStatusCode();
+        var budget = (await createResponse.Content.ReadFromJsonAsync<Budget>())!;
+        var eventId = Guid.Parse(Assert.Single(createResponse.Headers.GetValues(CommandResultHttpExtensions.EventIdHeaderName)));
+
+        var pending = await client.GetFromJsonAsync<ProjectionStatusResponse>(
+            $"/api/budgets/{budget.Id}/projections/status?eventId={eventId}");
+        Assert.Equal("pending", pending!.Status);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+            var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
+            var envelopeJson = await db.OutboxMessages
+                .Where(x => x.Id == eventId)
+                .Select(x => x.EnvelopeJson)
+                .SingleAsync();
+            await projector.ProjectEnvelope(envelopeJson, CancellationToken.None);
+        }
+
+        var ready = await client.GetFromJsonAsync<ProjectionStatusResponse>(
+            $"/api/budgets/{budget.Id}/projections/status?eventId={eventId}");
+        var unknown = await client.GetFromJsonAsync<ProjectionStatusResponse>(
+            $"/api/budgets/{Guid.NewGuid()}/projections/status?eventId={eventId}");
+
+        Assert.Equal("ready", ready!.Status);
+        Assert.Equal("unknown", unknown!.Status);
     }
 
     [Fact]

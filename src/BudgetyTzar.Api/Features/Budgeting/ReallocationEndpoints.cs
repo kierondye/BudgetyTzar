@@ -77,6 +77,7 @@ public static partial class Endpoints
             CreateBudgetItemReallocationRequest request,
             IValidator<CreateBudgetItemReallocationRequest> validator,
             RecordReallocationHandler handler,
+            HttpContext httpContext,
             CancellationToken ct) =>
         {
             if (await validator.Validate(request, ct) is { } validationProblem)
@@ -90,7 +91,7 @@ public static partial class Endpoints
                 request.Notes,
                 request.Adjustments,
                 ct);
-            return result.ToHttpResult(reallocation => Results.Created(
+            return result.ToHttpResult(httpContext, reallocation => Results.Created(
                 $"/api/budgets/{budgetId}/reallocations/{reallocation.Id}",
                 new BudgetReallocationDto(
                     reallocation.Id,

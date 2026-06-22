@@ -33,6 +33,7 @@ public static partial class Endpoints
             CreateBudgetRequest request,
             IValidator<CreateBudgetRequest> validator,
             CreateBudgetHandler handler,
+            HttpContext httpContext,
             CancellationToken ct) =>
         {
             if (await validator.Validate(request, ct) is { } validationProblem)
@@ -41,7 +42,7 @@ public static partial class Endpoints
             }
 
             var result = await handler.Handle(request.Name, request.Currency, ct);
-            return result.ToHttpResult(budget => Results.Created($"/api/budgets/{budget.Id}", budget));
+            return result.ToHttpResult(httpContext, budget => Results.Created($"/api/budgets/{budget.Id}", budget));
         });
 
         MapBudgetItemEndpoints(budgets);

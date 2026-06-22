@@ -119,6 +119,48 @@ public sealed class Phase1ApiIntegrationTests
     }
 
     [Fact]
+    public async Task TransactionAllocationNotesAreStoredTrimmedAndReturned()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
+        var transaction = await CreateTransaction(client, budget.Id, 50m, TransactionDirection.Debit);
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
+            new ReplaceTransactionAllocationsRequest([
+                new TransactionAllocationItem(groceries.Id, 30m, "  Weekly shop  ")
+            ]));
+        var allocations = await client.GetFromJsonAsync<IReadOnlyList<TransactionAllocation>>(
+            $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations");
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        var allocation = Assert.Single(allocations!);
+        Assert.Equal("Weekly shop", allocation.Notes);
+    }
+
+    [Fact]
+    public async Task TransactionAllocationNotesValidateMaximumLength()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
+        var transaction = await CreateTransaction(client, budget.Id, 50m, TransactionDirection.Debit);
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
+            new ReplaceTransactionAllocationsRequest([
+                new TransactionAllocationItem(groceries.Id, 30m, new string('x', 501))
+            ]));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task TransactionAllocationAliasRejectsOverAllocation()
     {
         await using var app = new BudgetApiFactory();

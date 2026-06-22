@@ -20,7 +20,8 @@
         "required": ["budgetItemId", "amount"],
         "properties": {
           "budgetItemId": { "type": "string", "format": "uuid" },
-          "amount": { "type": "number" }
+          "amount": { "type": "number" },
+          "notes": { "type": ["string", "null"] }
         }
       }
     }

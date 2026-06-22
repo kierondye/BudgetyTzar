@@ -7,8 +7,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BudgetyTzar.Api.Application.Reporting;
 
-public sealed class ReportingProjectionService(BudgetDbContext db)
+public sealed class ReportingProjectionService(BudgetDbContext db, ProjectionNotificationService notifications)
 {
+    private static readonly string[] UpdatedReadModels = ["snapshot", "auditTimeline"];
+
     public async Task RebuildFromOutbox(CancellationToken ct)
     {
         db.BudgetSnapshotItemProjections.RemoveRange(db.BudgetSnapshotItemProjections);
@@ -22,10 +24,12 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
         PersistState(state);
 
         var projectedAt = DateTimeOffset.UtcNow;
+        AddProcessedProjectionEvents(envelopes, projectedAt);
         await db.OutboxMessages
             .Where(x => x.BudgetId != null && x.ProjectedAt == null)
             .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.ProjectedAt, projectedAt), ct);
         await db.SaveChangesAsync(ct);
+        PublishNotifications(envelopes, projectedAt);
     }
 
     public async Task ProjectEnvelope(string envelopeJson, CancellationToken ct)
@@ -38,24 +42,30 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
         }
 
         var budgetId = TryGetGuid(envelope.Payload, "budgetId");
+        var projectedAt = DateTimeOffset.UtcNow;
         if (budgetId.HasValue)
         {
-            await RebuildBudget(budgetId.Value, envelope, ct);
+            projectedAt = await RebuildBudget(budgetId.Value, envelope, ct);
         }
 
-        var projectedAt = DateTimeOffset.UtcNow;
         await db.OutboxMessages
             .Where(x => x.Id == envelope.EventId && x.ProjectedAt == null)
             .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.ProjectedAt, projectedAt), ct);
 
-        db.ProcessedProjectionEvents.Add(new ProcessedProjectionEvent
+        if (!budgetId.HasValue)
         {
-            EventId = envelope.EventId,
-            EventType = envelope.EventType,
-            BudgetId = budgetId,
-            OccurredAt = envelope.OccurredAt
-        });
+            db.ProcessedProjectionEvents.Add(new ProcessedProjectionEvent
+            {
+                EventId = envelope.EventId,
+                EventType = envelope.EventType,
+                BudgetId = budgetId,
+                OccurredAt = envelope.OccurredAt,
+                ProcessedAt = projectedAt
+            });
+        }
+
         await db.SaveChangesAsync(ct);
+        PublishNotification(envelope, projectedAt);
     }
 
     public async Task RebuildBudget(Guid budgetId, CancellationToken ct)
@@ -63,6 +73,7 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
         db.BudgetSnapshotItemProjections.RemoveRange(db.BudgetSnapshotItemProjections.Where(x => x.BudgetId == budgetId));
         db.BudgetSnapshotProjections.RemoveRange(db.BudgetSnapshotProjections.Where(x => x.BudgetId == budgetId));
         db.BudgetAuditTimelines.RemoveRange(db.BudgetAuditTimelines.Where(x => x.BudgetId == budgetId));
+        db.ProcessedProjectionEvents.RemoveRange(db.ProcessedProjectionEvents.Where(x => x.BudgetId == budgetId));
         await db.SaveChangesAsync(ct);
 
         var envelopes = await LoadOutboxEnvelopes(budgetId, ct);
@@ -70,17 +81,20 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
         PersistState(state);
 
         var projectedAt = DateTimeOffset.UtcNow;
+        AddProcessedProjectionEvents(envelopes, projectedAt);
         await db.OutboxMessages
             .Where(x => x.BudgetId == budgetId && x.ProjectedAt == null)
             .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.ProjectedAt, projectedAt), ct);
         await db.SaveChangesAsync(ct);
+        PublishNotifications(envelopes, projectedAt);
     }
 
-    private async Task RebuildBudget(Guid budgetId, EventEnvelope additionalEnvelope, CancellationToken ct)
+    private async Task<DateTimeOffset> RebuildBudget(Guid budgetId, EventEnvelope additionalEnvelope, CancellationToken ct)
     {
         db.BudgetSnapshotItemProjections.RemoveRange(db.BudgetSnapshotItemProjections.Where(x => x.BudgetId == budgetId));
         db.BudgetSnapshotProjections.RemoveRange(db.BudgetSnapshotProjections.Where(x => x.BudgetId == budgetId));
         db.BudgetAuditTimelines.RemoveRange(db.BudgetAuditTimelines.Where(x => x.BudgetId == budgetId));
+        db.ProcessedProjectionEvents.RemoveRange(db.ProcessedProjectionEvents.Where(x => x.BudgetId == budgetId));
         await db.SaveChangesAsync(ct);
 
         var envelopes = (await LoadOutboxEnvelopes(budgetId, ct))
@@ -91,7 +105,53 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
             .ToList();
         var state = Replay(envelopes);
         PersistState(state);
+        var projectedAt = DateTimeOffset.UtcNow;
+        AddProcessedProjectionEvents(envelopes, projectedAt);
         await db.SaveChangesAsync(ct);
+        return projectedAt;
+    }
+
+    private void AddProcessedProjectionEvents(IEnumerable<EventEnvelope> envelopes, DateTimeOffset projectedAt)
+    {
+        var processedEvents = envelopes
+            .Select(envelope => new { Envelope = envelope, BudgetId = TryGetGuid(envelope.Payload, "budgetId") })
+            .Where(x => x.BudgetId.HasValue)
+            .GroupBy(x => x.Envelope.EventId)
+            .Select(x => x.First())
+            .Select(x => new ProcessedProjectionEvent
+            {
+                EventId = x.Envelope.EventId,
+                EventType = x.Envelope.EventType,
+                BudgetId = x.BudgetId,
+                OccurredAt = x.Envelope.OccurredAt,
+                ProcessedAt = projectedAt
+            });
+
+        db.ProcessedProjectionEvents.AddRange(processedEvents);
+    }
+
+    private void PublishNotifications(IEnumerable<EventEnvelope> envelopes, DateTimeOffset projectedAt)
+    {
+        foreach (var envelope in envelopes)
+        {
+            PublishNotification(envelope, projectedAt);
+        }
+    }
+
+    private void PublishNotification(EventEnvelope envelope, DateTimeOffset projectedAt)
+    {
+        var budgetId = TryGetGuid(envelope.Payload, "budgetId");
+        if (!budgetId.HasValue)
+        {
+            return;
+        }
+
+        notifications.Publish(new ProjectionReadyNotification(
+            budgetId.Value,
+            envelope.EventId,
+            envelope.EventType,
+            projectedAt,
+            UpdatedReadModels));
     }
 
     private async Task<IReadOnlyList<EventEnvelope>> LoadOutboxEnvelopes(Guid? budgetId, CancellationToken ct)

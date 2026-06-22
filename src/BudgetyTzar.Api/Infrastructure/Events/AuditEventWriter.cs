@@ -7,7 +7,7 @@ namespace BudgetyTzar.Api.Infrastructure.Events;
 
 public sealed class AuditEventWriter(BudgetDbContext db, IOptions<EventTopicOptions> topics)
 {
-    public void Add(DomainEvent domainEvent)
+    public Guid Add(DomainEvent domainEvent)
     {
         var occurredAt = domainEvent.OccurredAt ?? DateTimeOffset.UtcNow;
         var audit = new AuditEvent
@@ -46,6 +46,8 @@ public sealed class AuditEventWriter(BudgetDbContext db, IOptions<EventTopicOpti
             BudgetId = domainEvent.BudgetId,
             EnvelopeJson = JsonSerializer.Serialize(envelope, EventSerialization.Options)
         });
+
+        return outboxId;
     }
 
     private static JsonObject CreatePayload(DomainEvent domainEvent, Guid auditEventId)

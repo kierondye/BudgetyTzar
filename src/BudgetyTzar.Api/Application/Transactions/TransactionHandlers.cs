@@ -28,7 +28,7 @@ public sealed class CreateTransactionHandler(BudgetDbContext db, AuditEventWrite
 
         var transaction = FinancialTransaction.Create(budgetId, transactionDate, description, amount, direction, sourceAccount, externalReference, notes);
         db.Transactions.Add(transaction);
-        audit.Add(new DomainEvent(
+        var eventId = audit.Add(new DomainEvent(
             "TransactionManuallyCreated",
             budgetId,
             nameof(FinancialTransaction),
@@ -36,7 +36,7 @@ public sealed class CreateTransactionHandler(BudgetDbContext db, AuditEventWrite
             $"Created transaction {transaction.Description} for {transaction.Amount} {transaction.Direction}.",
             Payload: TransactionEventPayloads.TransactionPayload(transaction)));
         await db.SaveChangesAsync(ct);
-        return CommandResult<FinancialTransaction>.Created(transaction);
+        return CommandResult<FinancialTransaction>.Created(transaction, eventId);
     }
 }
 
@@ -78,7 +78,7 @@ public sealed class UpdateTransactionHandler(BudgetDbContext db, AuditEventWrite
 
         transaction.Edit(transactionDate, description, amount, direction, sourceAccount, externalReference, notes);
 
-        audit.Add(new DomainEvent(
+        var eventId = audit.Add(new DomainEvent(
             "TransactionEdited",
             budgetId,
             nameof(FinancialTransaction),
@@ -87,7 +87,7 @@ public sealed class UpdateTransactionHandler(BudgetDbContext db, AuditEventWrite
             $"Previous={previousDescription}, {previousAmount} {previousDirection}; New={transaction.Description}, {transaction.Amount} {transaction.Direction}",
             Payload: TransactionEventPayloads.TransactionPayload(transaction)));
         await db.SaveChangesAsync(ct);
-        return CommandResult.NoContent();
+        return CommandResult.NoContent(eventId);
     }
 }
 
@@ -102,7 +102,7 @@ public sealed class IgnoreTransactionHandler(BudgetDbContext db, AuditEventWrite
         }
 
         transaction.Ignore();
-        audit.Add(new DomainEvent(
+        var eventId = audit.Add(new DomainEvent(
             "TransactionIgnored",
             budgetId,
             nameof(FinancialTransaction),
@@ -110,7 +110,7 @@ public sealed class IgnoreTransactionHandler(BudgetDbContext db, AuditEventWrite
             $"Ignored transaction {transaction.Description}.",
             Payload: TransactionEventPayloads.TransactionPayload(transaction)));
         await db.SaveChangesAsync(ct);
-        return CommandResult.NoContent();
+        return CommandResult.NoContent(eventId);
     }
 }
 
@@ -158,7 +158,7 @@ public sealed class ReplaceTransactionAllocationsHandler(BudgetDbContext db, Aud
             .ToListAsync(ct);
         db.TransactionAllocations.RemoveRange(existing);
         db.TransactionAllocations.AddRange(transaction.ReplaceAllocations(allocations));
-        audit.Add(new DomainEvent(
+        var eventId = audit.Add(new DomainEvent(
             "TransactionAllocationsReplaced",
             budgetId,
             nameof(FinancialTransaction),
@@ -173,11 +173,12 @@ public sealed class ReplaceTransactionAllocationsHandler(BudgetDbContext db, Aud
                 Allocations = allocations.Select(x => new
                 {
                     BudgetItemId = x.BudgetItemId,
-                    x.Amount
+                    x.Amount,
+                    Notes = string.IsNullOrWhiteSpace(x.Notes) ? null : x.Notes.Trim()
                 }).ToList()
             }));
         await db.SaveChangesAsync(ct);
-        return CommandResult.NoContent();
+        return CommandResult.NoContent(eventId);
     }
 }
 
@@ -195,7 +196,7 @@ public sealed class ClearTransactionAllocationsHandler(BudgetDbContext db, Audit
             .Where(x => x.TransactionId == transactionId)
             .ToListAsync(ct);
         db.TransactionAllocations.RemoveRange(allocations);
-        audit.Add(new DomainEvent(
+        var eventId = audit.Add(new DomainEvent(
             "TransactionAllocationsCleared",
             budgetId,
             nameof(FinancialTransaction),
@@ -209,11 +210,12 @@ public sealed class ClearTransactionAllocationsHandler(BudgetDbContext db, Audit
                 ClearedAllocations = allocations.Select(x => new
                 {
                     BudgetItemId = x.BudgetItemId,
-                    x.Amount
+                    x.Amount,
+                    x.Notes
                 }).ToList()
             }));
         await db.SaveChangesAsync(ct);
-        return CommandResult.NoContent();
+        return CommandResult.NoContent(eventId);
     }
 }
 

@@ -99,9 +99,12 @@ Default local settings:
 - `Kafka:Topics:BudgetingEvents`: `budgetytzar.budgeting.events`
 - `Kafka:Topics:TransactionEvents`: `budgetytzar.transactions.events`
 - `Kafka:Topics:ReportingEvents`: `budgetytzar.reporting.events`
+- `Kafka:TopicManagement:AutoCreateTopics`: `true`
 - `Outbox:PublisherEnabled`: `true`
 - `Projections:ConsumerEnabled`: `true`
 - `Projections:UseProjectionBackedReports`: `true`
+
+On startup, the API creates the configured local Kafka topics if Kafka publishing or projection consuming is enabled. Existing topics are left unchanged. Set `Kafka__TopicManagement__AutoCreateTopics=false` if you want to manage topics manually.
 
 Opt out locally with environment variables when you want to run the API without Kafka:
 
