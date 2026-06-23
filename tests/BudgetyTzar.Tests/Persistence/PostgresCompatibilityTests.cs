@@ -2,11 +2,10 @@ using System.Net;
 using System.Net.Http.Json;
 using BudgetyTzar.Api;
 using BudgetyTzar.Api.Features;
-using Xunit;
 
 namespace BudgetyTzar.Tests;
 
-public sealed class PostgresPhase1ApiIntegrationTests
+public sealed class PostgresCompatibilityTests
 {
     [Fact]
     public async Task ApiStartsAgainstPostgreSql()
@@ -26,9 +25,9 @@ public sealed class PostgresPhase1ApiIntegrationTests
         await using var app = await PostgresBudgetApiFactory.StartAsync();
         await app.ResetDatabaseAsync();
         var client = app.CreateClient();
-        var budget = await CreateBudget(client);
-        var groceries = await CreateBudgetItem(client, budget.Id, "Groceries");
-        var transaction = await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 15), 1234.56m);
+        var budget = await BudgetApiTestClient.CreateBudget(client);
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
+        var transaction = await BudgetApiTestClient.CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 15), 1234.56m, TransactionDirection.Debit, "PostgreSQL transaction");
 
         var allocationResponse = await client.PutAsJsonAsync(
             $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
@@ -45,9 +44,9 @@ public sealed class PostgresPhase1ApiIntegrationTests
         await using var app = await PostgresBudgetApiFactory.StartAsync();
         await app.ResetDatabaseAsync();
         var client = app.CreateClient();
-        var budget = await CreateBudget(client);
-        await CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 20), 12.34m, "June shop");
-        await CreateTransaction(client, budget.Id, new DateOnly(2026, 7, 5), 45.67m, "July shop");
+        var budget = await BudgetApiTestClient.CreateBudget(client);
+        await BudgetApiTestClient.CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 20), 12.34m, TransactionDirection.Debit, "June shop");
+        await BudgetApiTestClient.CreateTransaction(client, budget.Id, new DateOnly(2026, 7, 5), 45.67m, TransactionDirection.Debit, "July shop");
 
         var transactionsByDateRange = await client.GetFromJsonAsync<IReadOnlyList<FinancialTransaction>>(
             $"/api/budgets/{budget.Id}/transactions?from=2026-07-01&to=2026-07-31");
@@ -62,53 +61,13 @@ public sealed class PostgresPhase1ApiIntegrationTests
         await using var app = await PostgresBudgetApiFactory.StartAsync();
         await app.ResetDatabaseAsync();
         var client = app.CreateClient();
-        var budget = await CreateBudget(client);
-        await CreateBudgetItem(client, budget.Id, "Groceries");
+        var budget = await BudgetApiTestClient.CreateBudget(client);
+        await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
 
         var duplicateLine = await client.PostAsJsonAsync(
             $"/api/budgets/{budget.Id}/budget-items",
             new CreateBudgetItemRequest("Groceries"));
 
         Assert.Equal(HttpStatusCode.BadRequest, duplicateLine.StatusCode);
-    }
-
-    private static async Task<Budget> CreateBudget(HttpClient client, string name = "Personal")
-    {
-        var response = await client.PostAsJsonAsync("/api/budgets", new CreateBudgetRequest(name, "GBP"));
-        response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<Budget>())!;
-    }
-
-    private static async Task<BudgetItemDto> CreateBudgetItem(
-        HttpClient client,
-        Guid budgetId,
-        string name)
-    {
-        var response = await client.PostAsJsonAsync(
-            $"/api/budgets/{budgetId}/budget-items",
-            new CreateBudgetItemRequest(name));
-        response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<BudgetItemDto>())!;
-    }
-
-    private static async Task<FinancialTransaction> CreateTransaction(
-        HttpClient client,
-        Guid budgetId,
-        DateOnly date,
-        decimal amount,
-        string description = "PostgreSQL transaction")
-    {
-        var response = await client.PostAsJsonAsync(
-            $"/api/budgets/{budgetId}/transactions",
-            new CreateTransactionRequest(
-                date,
-                description,
-                amount,
-                TransactionDirection.Debit,
-                "Current account",
-                null,
-                null));
-        response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<FinancialTransaction>())!;
     }
 }

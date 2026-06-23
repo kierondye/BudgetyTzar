@@ -2,7 +2,6 @@ using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using BudgetyTzar.Api;
-using Xunit;
 
 namespace BudgetyTzar.Tests;
 
