@@ -139,7 +139,6 @@ public sealed class BudgetSnapshotsTests
             await purgeDb.Transactions.ExecuteDeleteAsync();
             await purgeDb.BudgetAdjustments.ExecuteDeleteAsync();
             await purgeDb.BudgetItems.ExecuteDeleteAsync();
-            await purgeDb.AuditEvents.ExecuteDeleteAsync();
 
             var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
             await projector.RebuildFromOutbox(CancellationToken.None);

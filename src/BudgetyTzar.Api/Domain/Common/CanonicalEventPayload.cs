@@ -6,8 +6,6 @@ public sealed record CanonicalEventPayload(
     string EntityType,
     Guid EntityId,
     string EventName,
-    string Description,
-    string? Details,
     bool AppliesToAllPeriods)
 {
     public static CanonicalEventPayload From(DomainEvent domainEvent, Guid auditEventId) =>
@@ -17,7 +15,5 @@ public sealed record CanonicalEventPayload(
             domainEvent.EntityType,
             domainEvent.EntityId,
             domainEvent.EventType,
-            domainEvent.Description,
-            domainEvent.Details,
             domainEvent.AppliesToAllPeriods);
 }

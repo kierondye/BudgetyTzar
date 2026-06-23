@@ -43,7 +43,6 @@ public sealed class ProjectionReadinessApiTests
             var purgeDb = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
             await purgeDb.BudgetAdjustments.ExecuteDeleteAsync();
             await purgeDb.BudgetItems.ExecuteDeleteAsync();
-            await purgeDb.AuditEvents.ExecuteDeleteAsync();
         }
 
         var response = await client.GetAsync($"/api/budgets/{budget.Id}/snapshot?date=2026-06-10");

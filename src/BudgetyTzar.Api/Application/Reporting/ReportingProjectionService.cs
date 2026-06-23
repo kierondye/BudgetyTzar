@@ -69,7 +69,7 @@ public sealed class ReportingProjectionService(
 
         var budgetId = GetGuid(envelope.Payload, "budgetId");
         var affectedDate = await ApplyProjectionState(envelope, budgetId, ct);
-        UpsertAuditTimeline(envelope, budgetId);
+        await UpsertAuditTimeline(envelope, budgetId, ct);
         await db.SaveChangesAsync(ct);
 
         var projectedAt = DateTimeOffset.UtcNow;
@@ -310,22 +310,27 @@ public sealed class ReportingProjectionService(
         return transactionDate ?? DateOnly.FromDateTime(envelope.OccurredAt.UtcDateTime);
     }
 
-    private void UpsertAuditTimeline(EventEnvelope envelope, Guid budgetId)
+    private async Task UpsertAuditTimeline(EventEnvelope envelope, Guid budgetId, CancellationToken ct)
     {
         var auditEventId = GetGuid(envelope.Payload, "auditEventId");
         var existing = db.BudgetAuditTimelines.Local.FirstOrDefault(x => x.AuditEventId == auditEventId);
         if (existing is null)
         {
+            var audit = await db.AuditEvents
+                .AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == auditEventId && x.BudgetId == budgetId, ct)
+                ?? throw new PermanentProjectionException($"No durable audit event exists for audit event id '{auditEventId}'.");
+
             db.BudgetAuditTimelines.Add(new BudgetAuditTimelineProjection
             {
                 AuditEventId = auditEventId,
-                BudgetId = budgetId,
-                OccurredAt = envelope.OccurredAt,
-                EventType = GetString(envelope.Payload, "auditEventType"),
-                EntityType = envelope.AggregateType,
-                EntityId = envelope.AggregateId,
-                Description = GetString(envelope.Payload, "auditDescription"),
-                Details = GetNullableString(envelope.Payload, "auditDetails")
+                BudgetId = audit.BudgetId,
+                OccurredAt = audit.OccurredAt,
+                EventType = audit.EventType,
+                EntityType = audit.EntityType,
+                EntityId = audit.EntityId,
+                Description = audit.Description,
+                Details = audit.Details
             });
         }
     }
