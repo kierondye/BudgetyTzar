@@ -11,68 +11,17 @@ get {
 }
 
 script:pre-request {
-  const eventId = bru.getVar("lastProjectionEventId");
-  const budgetId = bru.getVar("budgetId");
-  const baseUrl = bru.getEnvVar("baseUrl") || bru.getVar("baseUrl");
-  if (!eventId) {
-    throw new Error("Missing lastProjectionEventId from the previous write response.");
-  }
-  if (!baseUrl) {
-    throw new Error("Missing baseUrl environment variable.");
-  }
-
-  const snapshotUrl = bru.interpolate(req.getUrl());
-  const snapshotSeparator = snapshotUrl.includes("?") ? "&" : "?";
-  req.setUrl(`${snapshotUrl}${snapshotSeparator}waitForEventId=${eventId}`);
-
-  const eventUrl = `${baseUrl.replace(/\/$/, "")}/api/budgets/${budgetId}/projection-events?eventId=${eventId}`;
-  const eventResponse = await bru.sendRequest({ method: "GET", url: eventUrl, timeout: 10000 });
-  const body = typeof eventResponse.body === "string"
-    ? eventResponse.body
-    : JSON.stringify(eventResponse.body || eventResponse.data || {});
-
-  if (eventResponse.status === 404) {
-    throw new Error(`Projection event ${eventId} is unknown for budget ${budgetId}.`);
-  }
-  if (eventResponse.status < 200 || eventResponse.status >= 300) {
-    throw new Error(`Projection event stream returned HTTP ${eventResponse.status}.`);
-  }
-  if (!body.includes("event: projection-ready") || !body.includes(eventId)) {
-    throw new Error(`Projection event ${eventId} did not produce a projection-ready SSE event.`);
-  }
+  const { waitForProjectionReady } = require("./Budgeting/budgeting-scripts.js");
+  await waitForProjectionReady(bru, req);
 }
 
 tests {
-  function assertSnapshotShape() {
-    expect(Object.keys(res.body).sort()).to.eql([
-      "budgetId",
-      "budgetItems",
-      "date",
-      "totalBalance",
-      "totalBudgetedBalance",
-      "totalTransactionBalance",
-      "unbudgetedBalance"
-    ].sort());
-    res.body.budgetItems.forEach((item) => {
-      expect(Object.keys(item).sort()).to.eql([
-        "actualCredit",
-        "actualDebit",
-        "balance",
-        "budgetItemId",
-        "name",
-        "plannedCredit",
-        "plannedDebit"
-      ].sort());
-    });
-  }
-
-  function item(id) {
-    return res.body.budgetItems.find((item) => item.budgetItemId === id);
-  }
-
+  const { assertSnapshotShape, findSnapshotItem } = require("./Budgeting/budgeting-scripts.js");
+  const item = (id) => findSnapshotItem(res, id);
+  
   test("initial snapshot matches planned budget", function() {
     expect(res.status).to.equal(200);
-    assertSnapshotShape();
+    assertSnapshotShape(res, expect);
     expect(item(bru.getVar("salaryItemId"))).to.include({ balance: -2500, plannedCredit: 2500, plannedDebit: 0, actualCredit: 0, actualDebit: 0 });
     expect(item(bru.getVar("groceriesItemId"))).to.include({ balance: 500, plannedCredit: 0, plannedDebit: 500, actualCredit: 0, actualDebit: 0 });
     expect(item(bru.getVar("mortgageItemId"))).to.include({ balance: 800, plannedCredit: 0, plannedDebit: 800, actualCredit: 0, actualDebit: 0 });

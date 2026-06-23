@@ -24,11 +24,9 @@ body:json {
 }
 
 script:post-response {
-  const eventId = typeof res.getHeader === "function"
-    ? res.getHeader("X-BudgetyTzar-Event-Id") || res.getHeader("x-budgetytzar-event-id")
-    : res.headers?.["X-BudgetyTzar-Event-Id"] || res.headers?.["x-budgetytzar-event-id"];
+  const { captureProjectionEventId } = require("./Budgeting/budgeting-scripts.js");
   bru.setVar("initialIncidentalsAdjustmentId", res.body.id);
-  bru.setVar("lastProjectionEventId", eventId);
+  captureProjectionEventId(bru, res);
 }
 
 tests {

@@ -30,10 +30,8 @@ body:json {
 }
 
 script:post-response {
-  const eventId = typeof res.getHeader === "function"
-    ? res.getHeader("X-BudgetyTzar-Event-Id") || res.getHeader("x-budgetytzar-event-id")
-    : res.headers?.["X-BudgetyTzar-Event-Id"] || res.headers?.["x-budgetytzar-event-id"];
-  bru.setVar("lastProjectionEventId", eventId);
+  const { captureProjectionEventId } = require("./Budgeting/budgeting-scripts.js");
+  captureProjectionEventId(bru, res);
 }
 
 tests {
