@@ -17,6 +17,11 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
     public DbSet<BudgetSnapshotItemProjection> BudgetSnapshotItemProjections => Set<BudgetSnapshotItemProjection>();
     public DbSet<BudgetAuditTimelineProjection> BudgetAuditTimelines => Set<BudgetAuditTimelineProjection>();
     public DbSet<ProcessedProjectionEvent> ProcessedProjectionEvents => Set<ProcessedProjectionEvent>();
+    public DbSet<BudgetItemProjectionState> BudgetItemProjectionStates => Set<BudgetItemProjectionState>();
+    public DbSet<BudgetAdjustmentProjectionState> BudgetAdjustmentProjectionStates => Set<BudgetAdjustmentProjectionState>();
+    public DbSet<TransactionProjectionState> TransactionProjectionStates => Set<TransactionProjectionState>();
+    public DbSet<TransactionAllocationProjectionState> TransactionAllocationProjectionStates => Set<TransactionAllocationProjectionState>();
+    public DbSet<ProjectionEventFailure> ProjectionEventFailures => Set<ProjectionEventFailure>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -152,6 +157,58 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
             entity.HasKey(x => x.EventId);
             entity.Property(x => x.EventType).HasMaxLength(160).IsRequired();
             entity.HasIndex(x => new { x.BudgetId, x.ProcessedAt });
+        });
+
+        modelBuilder.Entity<BudgetItemProjectionState>(entity =>
+        {
+            entity.ToTable("budget_item_projection_state");
+            entity.HasKey(x => x.BudgetItemId);
+            entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            entity.HasIndex(x => new { x.BudgetId, x.Name });
+        });
+
+        modelBuilder.Entity<BudgetAdjustmentProjectionState>(entity =>
+        {
+            entity.ToTable("budget_adjustment_projection_state");
+            entity.HasKey(x => x.ActivityId);
+            entity.Property(x => x.Amount).HasPrecision(18, 2);
+            entity.Property(x => x.Direction).HasConversion<string>().HasMaxLength(16);
+            entity.HasIndex(x => new { x.BudgetId, x.Date });
+            entity.HasIndex(x => x.BudgetItemId);
+            entity.HasIndex(x => x.SourceEventId);
+        });
+
+        modelBuilder.Entity<TransactionProjectionState>(entity =>
+        {
+            entity.ToTable("transaction_projection_state");
+            entity.HasKey(x => x.TransactionId);
+            entity.Property(x => x.Amount).HasPrecision(18, 2);
+            entity.Property(x => x.Direction).HasConversion<string>().HasMaxLength(16);
+            entity.HasIndex(x => new { x.BudgetId, x.TransactionDate });
+        });
+
+        modelBuilder.Entity<TransactionAllocationProjectionState>(entity =>
+        {
+            entity.ToTable("transaction_allocation_projection_state");
+            entity.HasKey(x => new { x.TransactionId, x.BudgetItemId });
+            entity.Property(x => x.Amount).HasPrecision(18, 2);
+            entity.HasIndex(x => new { x.BudgetId, x.BudgetItemId });
+        });
+
+        modelBuilder.Entity<ProjectionEventFailure>(entity =>
+        {
+            entity.ToTable("projection_event_failure");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Topic).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.ConsumerGroup).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.EventType).HasMaxLength(160);
+            entity.Property(x => x.Category).HasConversion<string>().HasMaxLength(32);
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+            entity.Property(x => x.LastError).HasMaxLength(4000).IsRequired();
+            entity.Property(x => x.RawEventJson).IsRequired();
+            entity.HasIndex(x => x.EventId);
+            entity.HasIndex(x => new { x.Topic, x.Partition, x.Offset });
+            entity.HasIndex(x => new { x.Status, x.LastFailedAt });
         });
     }
 }

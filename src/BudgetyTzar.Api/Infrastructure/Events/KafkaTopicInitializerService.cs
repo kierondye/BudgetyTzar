@@ -25,7 +25,8 @@ public sealed class KafkaTopicInitializerService(
             {
                 topicOptions.Value.Budgeting,
                 topicOptions.Value.Transactions,
-                topicOptions.Value.Reporting
+                topicOptions.Value.Reporting,
+                projectionOptions.Value.DeadLetterTopic
             }
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Distinct(StringComparer.Ordinal)

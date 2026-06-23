@@ -3,6 +3,7 @@ using System.Data.Common;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using BudgetyTzar.Api;
 using BudgetyTzar.Api.Application.Reporting;
@@ -204,7 +205,7 @@ public sealed class Phase2EventDrivenTests
         await projector.ProjectEnvelope(envelopeJson, CancellationToken.None);
         await projector.ProjectEnvelope(envelopeJson, CancellationToken.None);
 
-        Assert.Equal(3, await db.ProcessedProjectionEvents.CountAsync());
+        Assert.Equal(1, await db.ProcessedProjectionEvents.CountAsync());
         Assert.Equal(1, await db.BudgetSnapshotProjections.CountAsync(x => x.BudgetId == budget.Id && x.Date == new DateOnly(2026, 6, 10)));
     }
 
@@ -230,6 +231,34 @@ public sealed class Phase2EventDrivenTests
         var outbox = await db.OutboxMessages.AsNoTracking().Where(x => x.BudgetId == budget.Id).ToListAsync();
         Assert.NotNull(outbox.Single(x => x.Id == consumedMessage.Id).ProjectedAt);
         Assert.All(outbox.Where(x => x.Id != consumedMessage.Id), x => Assert.Null(x.ProjectedAt));
+    }
+
+    [Fact]
+    public async Task DeltaProjectionProcessingUpdatesProjectionStateWithoutImplicitOutboxReplay()
+    {
+        await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var salary = await CreateBudgetItem(client, budget.Id, "Salary");
+        await RecordAdjustment(client, budget.Id, salary.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 10));
+
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var messages = (await db.OutboxMessages.AsNoTracking().Where(x => x.BudgetId == budget.Id).ToListAsync())
+            .OrderBy(x => x.CreatedAt)
+            .ToList();
+        var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
+
+        foreach (var message in messages)
+        {
+            await projector.ProjectEnvelope(message.EnvelopeJson, CancellationToken.None);
+        }
+
+        Assert.Equal(messages.Count, await db.ProcessedProjectionEvents.CountAsync(x => x.BudgetId == budget.Id));
+        Assert.Single(await db.BudgetItemProjectionStates.AsNoTracking().Where(x => x.BudgetId == budget.Id).ToListAsync());
+        Assert.Single(await db.BudgetAdjustmentProjectionStates.AsNoTracking().Where(x => x.BudgetId == budget.Id).ToListAsync());
+        Assert.True(await db.BudgetSnapshotItemProjections.AnyAsync(x => x.BudgetId == budget.Id && x.BudgetItemId == salary.Id && x.Balance == -100m));
     }
 
     [Fact]
@@ -447,6 +476,108 @@ public sealed class Phase2EventDrivenTests
             return await db.BudgetSnapshotItemProjections.AnyAsync(x => x.BudgetId == budget.Id && x.BudgetItemId == salary.Id && x.Balance == -100m)
                 && await db.BudgetAuditTimelines.AnyAsync(x => x.BudgetId == budget.Id && x.EventType == "BudgetAdjustmentRecorded");
         });
+    }
+
+    [Fact]
+    public async Task ReportingProjectionConsumerDeadLettersPoisonEventAndContinuesWithLaterEvents()
+    {
+        var kafkaPort = GetFreeTcpPort();
+        var bootstrapServers = $"127.0.0.1:{kafkaPort}";
+        await using var kafka = new ContainerBuilder("docker.redpanda.com/redpandadata/redpanda:v24.3.7")
+            .WithPortBinding(kafkaPort, 19092)
+            .WithCommand(
+                "redpanda",
+                "start",
+                "--mode", "dev-container",
+                "--smp", "1",
+                "--memory", "512M",
+                "--overprovisioned",
+                "--node-id", "0",
+                "--check=false",
+                "--kafka-addr", "internal://0.0.0.0:9092,external://0.0.0.0:19092",
+                "--advertise-kafka-addr", $"internal://127.0.0.1:9092,external://127.0.0.1:{kafkaPort}")
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(19092))
+            .Build();
+        await kafka.StartAsync();
+
+        await using var app = new KafkaBudgetApiFactory(bootstrapServers);
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var salary = await CreateBudgetItem(client, budget.Id, "Salary");
+        await RecordAdjustment(client, budget.Id, salary.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 10));
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+            var messages = (await db.OutboxMessages.AsNoTracking().ToListAsync())
+                .OrderBy(x => x.CreatedAt)
+                .ToList();
+            using var producer = new ProducerBuilder<string, string>(new ProducerConfig
+            {
+                BootstrapServers = bootstrapServers
+            }).Build();
+
+            await producer.ProduceAsync(
+                "budgetytzar.budgeting.events",
+                new Message<string, string>
+                {
+                    Key = Guid.NewGuid().ToString(),
+                    Value = "{ invalid-json"
+                });
+
+            foreach (var message in messages)
+            {
+                await producer.ProduceAsync(
+                    message.Topic,
+                    new Message<string, string>
+                    {
+                        Key = message.AggregateId.ToString(),
+                        Value = message.EnvelopeJson
+                    });
+            }
+
+            producer.Flush(TimeSpan.FromSeconds(10));
+        }
+
+        await WaitUntil(async () =>
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+            return await db.ProjectionEventFailures.AnyAsync(x => x.Status == ProjectionFailureStatus.DeadLettered)
+                && await db.BudgetSnapshotItemProjections.AnyAsync(x => x.BudgetId == budget.Id && x.BudgetItemId == salary.Id && x.Balance == -100m);
+        });
+    }
+
+    [Fact]
+    public async Task RuntimeEventSchemaValidatorRejectsMalformedUnknownAndInvalidPayloadEvents()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await CreateBudget(client);
+        var salary = await CreateBudgetItem(client, budget.Id, "Salary");
+        await RecordAdjustment(client, budget.Id, salary.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 10));
+
+        using var scope = app.Services.CreateScope();
+        var validator = scope.ServiceProvider.GetRequiredService<EventSchemaValidator>();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var validEnvelopeJson = await db.OutboxMessages
+            .AsNoTracking()
+            .Where(x => x.EventType == "budgetytzar.budgeting.budget-adjustment-recorded.v1")
+            .Select(x => x.EnvelopeJson)
+            .SingleAsync();
+
+        Assert.NotNull(validator.ValidateAndDeserialize(validEnvelopeJson));
+        Assert.Throws<PermanentProjectionException>(() => validator.ValidateAndDeserialize("{ invalid-json"));
+
+        var unknown = JsonNode.Parse(validEnvelopeJson)!.AsObject();
+        unknown["eventType"] = "budgetytzar.budgeting.unknown-event.v1";
+        Assert.Throws<PermanentProjectionException>(() => validator.ValidateAndDeserialize(unknown.ToJsonString(EventSerialization.Options)));
+
+        var invalidPayload = JsonNode.Parse(validEnvelopeJson)!.AsObject();
+        invalidPayload["payload"]!.AsObject().Remove("amount");
+        Assert.Throws<PermanentProjectionException>(() => validator.ValidateAndDeserialize(invalidPayload.ToJsonString(EventSerialization.Options)));
     }
 
     [Fact]
@@ -781,6 +912,9 @@ internal sealed class KafkaBudgetApiFactory(string bootstrapServers) : WebApplic
         builder.UseSetting("Outbox:PublisherEnabled", "false");
         builder.UseSetting("Projections:ConsumerEnabled", "true");
         builder.UseSetting("Projections:UseProjectionBackedReports", "true");
+        builder.UseSetting("Projections:MaxRetryAttempts", "1");
+        builder.UseSetting("Projections:InitialRetryDelayMilliseconds", "10");
+        builder.UseSetting("Projections:MaxRetryDelayMilliseconds", "10");
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<BudgetDbContext>();

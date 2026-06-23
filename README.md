@@ -103,8 +103,12 @@ Default local settings:
 - `Outbox:PublisherEnabled`: `true`
 - `Projections:ConsumerEnabled`: `true`
 - `Projections:UseProjectionBackedReports`: `true`
+- `Projections:MaxRetryAttempts`: `3`
+- `Projections:InitialRetryDelayMilliseconds`: `1000`
+- `Projections:MaxRetryDelayMilliseconds`: `30000`
+- `Projections:DeadLetterTopic`: `budgetytzar.reporting.dead-letter-events`
 
-On startup, the API creates the configured local Kafka topics if Kafka publishing or projection consuming is enabled. Existing topics are left unchanged. Set `Kafka__TopicManagement__AutoCreateTopics=false` if you want to manage topics manually.
+On startup, the API creates the configured local Kafka topics, including the reporting dead-letter topic, if Kafka publishing or projection consuming is enabled. Existing topics are left unchanged. Set `Kafka__TopicManagement__AutoCreateTopics=false` if you want to manage topics manually.
 
 Opt out locally with environment variables when you want to run the API without Kafka:
 

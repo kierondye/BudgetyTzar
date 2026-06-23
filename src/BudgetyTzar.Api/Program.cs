@@ -31,6 +31,7 @@ builder.Services.Configure<EventTopicOptions>(options =>
     options.Reporting = builder.Configuration["Kafka:Topics:ReportingEvents"] ?? options.Reporting;
 });
 builder.Services.AddScoped<AuditEventWriter>();
+builder.Services.AddSingleton<EventSchemaValidator>();
 builder.Services.AddScoped<ReportingProjectionService>();
 builder.Services.AddSingleton<ProjectionNotificationService>();
 builder.Services.AddHostedService<KafkaTopicInitializerService>();

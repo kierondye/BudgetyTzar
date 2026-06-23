@@ -27,4 +27,8 @@ public sealed class ProjectionOptions
 {
     public bool ConsumerEnabled { get; set; }
     public bool UseProjectionBackedReports { get; set; }
+    public int MaxRetryAttempts { get; set; } = 3;
+    public int InitialRetryDelayMilliseconds { get; set; } = 1000;
+    public int MaxRetryDelayMilliseconds { get; set; } = 30000;
+    public string DeadLetterTopic { get; set; } = "budgetytzar.reporting.dead-letter-events";
 }
