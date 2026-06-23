@@ -273,7 +273,38 @@ public sealed class Phase2EventDrivenTests
 
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
         Assert.Equal("pending", pending!.Status);
-        Assert.Equal($"/api/budgets/{budget.Id}/projection-events", pending.EventStreamUrl);
+        Assert.Equal($"/api/budgets/{budget.Id}/projection-events?eventId={pending.EventId}", pending.EventStreamUrl);
+    }
+
+    [Fact]
+    public async Task ProjectionEventStreamForPendingEventCompletesWhenMatchingNotificationArrives()
+    {
+        await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+
+        var response = await client.PostAsJsonAsync("/api/budgets", new CreateBudgetRequest("Personal", "GBP"));
+        response.EnsureSuccessStatusCode();
+        var budget = (await response.Content.ReadFromJsonAsync<Budget>())!;
+        var eventId = Guid.Parse(Assert.Single(response.Headers.GetValues(CommandResultHttpExtensions.EventIdHeaderName)));
+
+        var streamTask = client.GetStringAsync($"/api/budgets/{budget.Id}/projection-events?eventId={eventId}");
+        var notifications = app.Services.GetRequiredService<ProjectionNotificationService>();
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(2);
+        while (!streamTask.IsCompleted && DateTimeOffset.UtcNow < deadline)
+        {
+            notifications.Publish(new ProjectionReadyNotification(
+                budget.Id,
+                eventId,
+                "budgetytzar.budgeting.budget-created.v1",
+                DateTimeOffset.UtcNow,
+                ["snapshot", "auditTimeline"]));
+            await Task.Delay(50);
+        }
+
+        var body = await streamTask.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Contains("event: projection-ready", body);
+        Assert.Contains(eventId.ToString(), body);
     }
 
     [Fact]

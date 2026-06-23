@@ -4,6 +4,7 @@ using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
+using System.Threading.Channels;
 
 namespace BudgetyTzar.Api.Features;
 
@@ -131,7 +132,9 @@ public static partial class Endpoints
 
         budgets.MapGet("/{budgetId:guid}/projection-events", async (
             Guid budgetId,
+            Guid? eventId,
             ProjectionNotificationService notifications,
+            BudgetDbContext db,
             HttpContext httpContext,
             CancellationToken ct) =>
         {
@@ -139,19 +142,84 @@ public static partial class Endpoints
             httpContext.Response.Headers.Connection = "keep-alive";
             httpContext.Response.ContentType = "text/event-stream";
 
-            var reader = notifications.Subscribe(ct);
-            await foreach (var notification in reader.ReadAllAsync(ct))
+            CancellationTokenSource? oneShotSubscription = null;
+            var readerCancellationToken = ct;
+            if (eventId.HasValue)
             {
-                if (notification.BudgetId != budgetId)
+                oneShotSubscription = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                readerCancellationToken = oneShotSubscription.Token;
+            }
+
+            var reader = notifications.Subscribe(readerCancellationToken);
+            try
+            {
+                if (eventId.HasValue)
                 {
-                    continue;
+                    await WriteWhenProjectionEventIsReady(budgetId, eventId.Value, reader, db, httpContext, ct);
+                    return;
                 }
 
-                await httpContext.Response.WriteAsync("event: projection-ready\n", ct);
-                await httpContext.Response.WriteAsync($"data: {JsonSerializer.Serialize(notification, EventSerialization.Options)}\n\n", ct);
-                await httpContext.Response.Body.FlushAsync(ct);
+                await foreach (var notification in reader.ReadAllAsync(ct))
+                {
+                    if (notification.BudgetId != budgetId)
+                    {
+                        continue;
+                    }
+
+                    if (eventId.HasValue && notification.EventId != eventId.Value)
+                    {
+                        continue;
+                    }
+
+                    await WriteProjectionReadyEvent(httpContext, notification, ct);
+                    if (eventId.HasValue)
+                    {
+                        return;
+                    }
+                }
+            }
+            finally
+            {
+                oneShotSubscription?.Cancel();
+                oneShotSubscription?.Dispose();
             }
         });
+    }
+
+    private static async Task WriteWhenProjectionEventIsReady(
+        Guid budgetId,
+        Guid eventId,
+        ChannelReader<ProjectionReadyNotification> reader,
+        BudgetDbContext db,
+        HttpContext httpContext,
+        CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var status = await GetProjectionStatus(db, budgetId, eventId, ct);
+            if (status == "unknown")
+            {
+                httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+
+            if (status == "ready")
+            {
+                await WriteProjectionReadyEvent(httpContext, await CreateProjectionReadyNotification(db, budgetId, eventId, ct), ct);
+                return;
+            }
+
+            while (reader.TryRead(out var notification))
+            {
+                if (notification.BudgetId == budgetId && notification.EventId == eventId)
+                {
+                    await WriteProjectionReadyEvent(httpContext, notification, ct);
+                    return;
+                }
+            }
+
+            await Task.Delay(250, ct);
+        }
     }
 
     private static async Task<ProjectionPendingResponse?> GetPendingProjectionResponse(
@@ -195,7 +263,7 @@ public static partial class Endpoints
             eventId.Value,
             status,
             statusUrl,
-            $"/api/budgets/{budgetId}/projection-events");
+            $"/api/budgets/{budgetId}/projection-events?eventId={eventId.Value}");
     }
 
     private static async Task<string> GetProjectionStatus(BudgetDbContext db, Guid budgetId, Guid eventId, CancellationToken ct)
@@ -219,5 +287,50 @@ public static partial class Endpoints
         }
 
         return "pending";
+    }
+
+    private static async Task<ProjectionReadyNotification> CreateProjectionReadyNotification(
+        BudgetDbContext db,
+        Guid budgetId,
+        Guid eventId,
+        CancellationToken ct)
+    {
+        var projected = await db.ProcessedProjectionEvents
+            .AsNoTracking()
+            .Where(x => x.EventId == eventId && x.BudgetId == budgetId)
+            .Select(x => new { x.EventType, x.ProcessedAt })
+            .FirstOrDefaultAsync(ct);
+        if (projected is not null)
+        {
+            return new ProjectionReadyNotification(
+                budgetId,
+                eventId,
+                projected.EventType,
+                projected.ProcessedAt,
+                ["snapshot", "auditTimeline"]);
+        }
+
+        var outbox = await db.OutboxMessages
+            .AsNoTracking()
+            .Where(x => x.Id == eventId && x.BudgetId == budgetId && x.ProjectedAt != null)
+            .Select(x => new { x.EventType, x.ProjectedAt })
+            .SingleAsync(ct);
+
+        return new ProjectionReadyNotification(
+            budgetId,
+            eventId,
+            outbox.EventType,
+            outbox.ProjectedAt!.Value,
+            ["snapshot", "auditTimeline"]);
+    }
+
+    private static async Task WriteProjectionReadyEvent(
+        HttpContext httpContext,
+        ProjectionReadyNotification notification,
+        CancellationToken ct)
+    {
+        await httpContext.Response.WriteAsync("event: projection-ready\n", ct);
+        await httpContext.Response.WriteAsync($"data: {JsonSerializer.Serialize(notification, EventSerialization.Options)}\n\n", ct);
+        await httpContext.Response.Body.FlushAsync(ct);
     }
 }

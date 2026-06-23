@@ -11,7 +11,39 @@ get {
 }
 
 script:pre-request {
-  await new Promise((resolve) => setTimeout(resolve, 6500));
+  const eventId = bru.getVar("lastProjectionEventId");
+  const budgetId = bru.getVar("budgetId");
+  const baseUrl = bru.getEnvVar("baseUrl") || bru.getVar("baseUrl");
+  if (!eventId) {
+    throw new Error("Missing lastProjectionEventId from the previous write response.");
+  }
+  if (!baseUrl) {
+    throw new Error("Missing baseUrl environment variable.");
+  }
+
+  const snapshotUrl = bru.interpolate(req.getUrl());
+  const snapshotSeparator = snapshotUrl.includes("?") ? "&" : "?";
+  req.setUrl(`${snapshotUrl}${snapshotSeparator}waitForEventId=${eventId}`);
+
+  const statusUrl = `${baseUrl.replace(/\/$/, "")}/api/budgets/${budgetId}/projections/status?eventId=${eventId}`;
+  const deadline = Date.now() + 10000;
+  let lastStatus = "pending";
+  while (Date.now() < deadline) {
+    const statusResponse = await bru.sendRequest({ method: "GET", url: statusUrl });
+    const body = typeof statusResponse.body === "string"
+      ? JSON.parse(statusResponse.body)
+      : statusResponse.body || statusResponse.data;
+    lastStatus = body?.status || `http-${statusResponse.status}`;
+    if (lastStatus === "ready") {
+      return;
+    }
+    if (lastStatus === "unknown") {
+      throw new Error(`Projection event ${eventId} is unknown for budget ${budgetId}.`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error(`Projection event ${eventId} was not ready before timeout. Last status: ${lastStatus}.`);
 }
 
 tests {

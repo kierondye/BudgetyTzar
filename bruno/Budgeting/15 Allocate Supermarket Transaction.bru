@@ -29,6 +29,13 @@ body:json {
   }
 }
 
+script:post-response {
+  const eventId = typeof res.getHeader === "function"
+    ? res.getHeader("X-BudgetyTzar-Event-Id") || res.getHeader("x-budgetytzar-event-id")
+    : res.headers?.["X-BudgetyTzar-Event-Id"] || res.headers?.["x-budgetytzar-event-id"];
+  bru.setVar("lastProjectionEventId", eventId);
+}
+
 tests {
   test("partially allocates supermarket transaction", function() {
     expect(res.status).to.be.within(200, 299);
