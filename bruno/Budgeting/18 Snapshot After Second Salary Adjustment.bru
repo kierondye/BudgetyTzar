@@ -25,25 +25,21 @@ script:pre-request {
   const snapshotSeparator = snapshotUrl.includes("?") ? "&" : "?";
   req.setUrl(`${snapshotUrl}${snapshotSeparator}waitForEventId=${eventId}`);
 
-  const statusUrl = `${baseUrl.replace(/\/$/, "")}/api/budgets/${budgetId}/projections/status?eventId=${eventId}`;
-  const deadline = Date.now() + 10000;
-  let lastStatus = "pending";
-  while (Date.now() < deadline) {
-    const statusResponse = await bru.sendRequest({ method: "GET", url: statusUrl });
-    const body = typeof statusResponse.body === "string"
-      ? JSON.parse(statusResponse.body)
-      : statusResponse.body || statusResponse.data;
-    lastStatus = body?.status || `http-${statusResponse.status}`;
-    if (lastStatus === "ready") {
-      return;
-    }
-    if (lastStatus === "unknown") {
-      throw new Error(`Projection event ${eventId} is unknown for budget ${budgetId}.`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
+  const eventUrl = `${baseUrl.replace(/\/$/, "")}/api/budgets/${budgetId}/projection-events?eventId=${eventId}`;
+  const eventResponse = await bru.sendRequest({ method: "GET", url: eventUrl, timeout: 10000 });
+  const body = typeof eventResponse.body === "string"
+    ? eventResponse.body
+    : JSON.stringify(eventResponse.body || eventResponse.data || {});
 
-  throw new Error(`Projection event ${eventId} was not ready before timeout. Last status: ${lastStatus}.`);
+  if (eventResponse.status === 404) {
+    throw new Error(`Projection event ${eventId} is unknown for budget ${budgetId}.`);
+  }
+  if (eventResponse.status < 200 || eventResponse.status >= 300) {
+    throw new Error(`Projection event stream returned HTTP ${eventResponse.status}.`);
+  }
+  if (!body.includes("event: projection-ready") || !body.includes(eventId)) {
+    throw new Error(`Projection event ${eventId} did not produce a projection-ready SSE event.`);
+  }
 }
 
 tests {
