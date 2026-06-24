@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using BudgetyTzar.Api;
 using BudgetyTzar.Api.Application.Reporting;
 using BudgetyTzar.Api.Features;
+using BudgetyTzar.Api.Infrastructure.Events;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -141,7 +142,7 @@ public sealed class ProjectionReadinessApiTests
         using (var scope = app.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
-            var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
+            var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionConsumerService>();
             var envelopeJson = await db.OutboxMessages
                 .Where(x => x.Id == eventId)
                 .Select(x => x.EnvelopeJson)

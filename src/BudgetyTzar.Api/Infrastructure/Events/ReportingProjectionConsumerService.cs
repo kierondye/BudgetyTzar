@@ -15,6 +15,63 @@ public sealed class ReportingProjectionConsumerService(
     IOptions<ProjectionOptions> projectionOptions,
     ILogger<ReportingProjectionConsumerService> logger) : BackgroundService
 {
+    public async Task RebuildFromOutbox(CancellationToken ct)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
+        var schemaValidator = scope.ServiceProvider.GetRequiredService<EventSchemaValidator>();
+
+        db.BudgetSnapshotItemProjections.RemoveRange(db.BudgetSnapshotItemProjections);
+        db.BudgetSnapshotProjections.RemoveRange(db.BudgetSnapshotProjections);
+        db.BudgetAuditTimelines.RemoveRange(db.BudgetAuditTimelines);
+        db.ProcessedProjectionEvents.RemoveRange(db.ProcessedProjectionEvents);
+        db.BudgetItemProjectionStates.RemoveRange(db.BudgetItemProjectionStates);
+        db.BudgetAdjustmentProjectionStates.RemoveRange(db.BudgetAdjustmentProjectionStates);
+        db.TransactionAllocationProjectionStates.RemoveRange(db.TransactionAllocationProjectionStates);
+        db.TransactionProjectionStates.RemoveRange(db.TransactionProjectionStates);
+        await db.SaveChangesAsync(ct);
+
+        var envelopes = await LoadOutboxEnvelopes(db, schemaValidator, null, ct);
+        foreach (var envelope in envelopes)
+        {
+            await projector.ApplyEnvelope(envelope, markOutboxProjected: true, ct);
+        }
+    }
+
+    public async Task ProjectEnvelope(string envelopeJson, CancellationToken ct)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var schemaValidator = scope.ServiceProvider.GetRequiredService<EventSchemaValidator>();
+        var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
+        var envelope = schemaValidator.ValidateAndDeserialize(envelopeJson);
+        await projector.ApplyEnvelope(envelope, markOutboxProjected: true, ct);
+    }
+
+    public async Task RebuildBudget(Guid budgetId, CancellationToken ct)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
+        var schemaValidator = scope.ServiceProvider.GetRequiredService<EventSchemaValidator>();
+
+        db.BudgetSnapshotItemProjections.RemoveRange(db.BudgetSnapshotItemProjections.Where(x => x.BudgetId == budgetId));
+        db.BudgetSnapshotProjections.RemoveRange(db.BudgetSnapshotProjections.Where(x => x.BudgetId == budgetId));
+        db.BudgetAuditTimelines.RemoveRange(db.BudgetAuditTimelines.Where(x => x.BudgetId == budgetId));
+        db.ProcessedProjectionEvents.RemoveRange(db.ProcessedProjectionEvents.Where(x => x.BudgetId == budgetId));
+        db.BudgetItemProjectionStates.RemoveRange(db.BudgetItemProjectionStates.Where(x => x.BudgetId == budgetId));
+        db.BudgetAdjustmentProjectionStates.RemoveRange(db.BudgetAdjustmentProjectionStates.Where(x => x.BudgetId == budgetId));
+        db.TransactionAllocationProjectionStates.RemoveRange(db.TransactionAllocationProjectionStates.Where(x => x.BudgetId == budgetId));
+        db.TransactionProjectionStates.RemoveRange(db.TransactionProjectionStates.Where(x => x.BudgetId == budgetId));
+        await db.SaveChangesAsync(ct);
+
+        var envelopes = await LoadOutboxEnvelopes(db, schemaValidator, budgetId, ct);
+        foreach (var envelope in envelopes)
+        {
+            await projector.ApplyEnvelope(envelope, markOutboxProjected: true, ct);
+        }
+    }
+
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!projectionOptions.Value.ConsumerEnabled)
@@ -80,9 +137,7 @@ public sealed class ReportingProjectionConsumerService(
         {
             try
             {
-                using var scope = scopeFactory.CreateScope();
-                var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
-                await projector.ProjectEnvelope(result.Message.Value, ct);
+                await ProjectEnvelope(result.Message.Value, ct);
                 return true;
             }
             catch (PermanentProjectionException ex)
@@ -212,6 +267,30 @@ public sealed class ReportingProjectionConsumerService(
         var maxDelay = Math.Max(initialDelay, projectionOptions.Value.MaxRetryDelayMilliseconds);
         var delay = Math.Min(maxDelay, initialDelay * (int)Math.Pow(2, attempt - 1));
         await Task.Delay(delay, ct);
+    }
+
+    private static async Task<IReadOnlyList<EventEnvelope>> LoadOutboxEnvelopes(
+        BudgetDbContext db,
+        EventSchemaValidator schemaValidator,
+        Guid? budgetId,
+        CancellationToken ct)
+    {
+        var query = db.OutboxMessages
+            .AsNoTracking()
+            .Where(x => x.BudgetId != null);
+        if (budgetId.HasValue)
+        {
+            query = query.Where(x => x.BudgetId == budgetId.Value);
+        }
+
+        var messages = await query
+            .Select(x => new { x.CreatedAt, x.EnvelopeJson })
+            .ToListAsync(ct);
+
+        return messages
+            .OrderBy(x => x.CreatedAt)
+            .Select(x => schemaValidator.ValidateAndDeserialize(x.EnvelopeJson))
+            .ToList();
     }
 
     private static (Guid? EventId, string? EventType, Guid? BudgetId) TryReadMetadata(string eventJson)

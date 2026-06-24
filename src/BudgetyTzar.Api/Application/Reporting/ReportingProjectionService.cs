@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using BudgetyTzar.Api.Infrastructure.Events;
 using BudgetyTzar.Api.Infrastructure.Persistence;
@@ -11,56 +10,11 @@ namespace BudgetyTzar.Api.Application.Reporting;
 
 public sealed class ReportingProjectionService(
     BudgetDbContext db,
-    ProjectionNotificationService notifications,
-    EventSchemaValidator schemaValidator)
+    ProjectionNotificationService notifications)
 {
     private static readonly string[] UpdatedReadModels = ["snapshot", "auditTimeline"];
 
-    public async Task RebuildFromOutbox(CancellationToken ct)
-    {
-        db.BudgetSnapshotItemProjections.RemoveRange(db.BudgetSnapshotItemProjections);
-        db.BudgetSnapshotProjections.RemoveRange(db.BudgetSnapshotProjections);
-        db.BudgetAuditTimelines.RemoveRange(db.BudgetAuditTimelines);
-        db.ProcessedProjectionEvents.RemoveRange(db.ProcessedProjectionEvents);
-        db.BudgetItemProjectionStates.RemoveRange(db.BudgetItemProjectionStates);
-        db.BudgetAdjustmentProjectionStates.RemoveRange(db.BudgetAdjustmentProjectionStates);
-        db.TransactionAllocationProjectionStates.RemoveRange(db.TransactionAllocationProjectionStates);
-        db.TransactionProjectionStates.RemoveRange(db.TransactionProjectionStates);
-        await db.SaveChangesAsync(ct);
-
-        var envelopes = await LoadOutboxEnvelopes(null, ct);
-        foreach (var envelope in envelopes)
-        {
-            await ApplyEnvelope(envelope, markOutboxProjected: true, ct);
-        }
-    }
-
-    public async Task ProjectEnvelope(string envelopeJson, CancellationToken ct)
-    {
-        var envelope = schemaValidator.ValidateAndDeserialize(envelopeJson);
-        await ApplyEnvelope(envelope, markOutboxProjected: true, ct);
-    }
-
-    public async Task RebuildBudget(Guid budgetId, CancellationToken ct)
-    {
-        db.BudgetSnapshotItemProjections.RemoveRange(db.BudgetSnapshotItemProjections.Where(x => x.BudgetId == budgetId));
-        db.BudgetSnapshotProjections.RemoveRange(db.BudgetSnapshotProjections.Where(x => x.BudgetId == budgetId));
-        db.BudgetAuditTimelines.RemoveRange(db.BudgetAuditTimelines.Where(x => x.BudgetId == budgetId));
-        db.ProcessedProjectionEvents.RemoveRange(db.ProcessedProjectionEvents.Where(x => x.BudgetId == budgetId));
-        db.BudgetItemProjectionStates.RemoveRange(db.BudgetItemProjectionStates.Where(x => x.BudgetId == budgetId));
-        db.BudgetAdjustmentProjectionStates.RemoveRange(db.BudgetAdjustmentProjectionStates.Where(x => x.BudgetId == budgetId));
-        db.TransactionAllocationProjectionStates.RemoveRange(db.TransactionAllocationProjectionStates.Where(x => x.BudgetId == budgetId));
-        db.TransactionProjectionStates.RemoveRange(db.TransactionProjectionStates.Where(x => x.BudgetId == budgetId));
-        await db.SaveChangesAsync(ct);
-
-        var envelopes = await LoadOutboxEnvelopes(budgetId, ct);
-        foreach (var envelope in envelopes)
-        {
-            await ApplyEnvelope(envelope, markOutboxProjected: true, ct);
-        }
-    }
-
-    private async Task ApplyEnvelope(EventEnvelope envelope, bool markOutboxProjected, CancellationToken ct)
+    public async Task ApplyEnvelope(EventEnvelope envelope, bool markOutboxProjected, CancellationToken ct)
     {
         if (await db.ProcessedProjectionEvents.AnyAsync(x => x.EventId == envelope.EventId, ct))
         {
@@ -509,26 +463,6 @@ public sealed class ReportingProjectionService(
                 x.PlannedDebit,
                 x.ActualCredit,
                 x.ActualDebit)).ToList());
-    }
-
-    private async Task<IReadOnlyList<EventEnvelope>> LoadOutboxEnvelopes(Guid? budgetId, CancellationToken ct)
-    {
-        var query = db.OutboxMessages
-            .AsNoTracking()
-            .Where(x => x.BudgetId != null);
-        if (budgetId.HasValue)
-        {
-            query = query.Where(x => x.BudgetId == budgetId.Value);
-        }
-
-        var messages = await query
-            .Select(x => new { x.CreatedAt, x.EnvelopeJson })
-            .ToListAsync(ct);
-
-        return messages
-            .OrderBy(x => x.CreatedAt)
-            .Select(x => schemaValidator.ValidateAndDeserialize(x.EnvelopeJson))
-            .ToList();
     }
 
     private static Guid DeterministicActivityId(Guid eventId, int ordinal)

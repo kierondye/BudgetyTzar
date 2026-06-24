@@ -27,7 +27,7 @@ public sealed class ProjectionProcessingTests
             .Where(x => x.EventType == "budgetytzar.budgeting.budget-adjustment-recorded.v1")
             .SingleAsync())
             .EnvelopeJson;
-        var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
+        var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionConsumerService>();
 
         await projector.ProjectEnvelope(envelopeJson, CancellationToken.None);
         await projector.ProjectEnvelope(envelopeJson, CancellationToken.None);
@@ -51,7 +51,7 @@ public sealed class ProjectionProcessingTests
         var consumedMessage = await db.OutboxMessages
             .AsNoTracking()
             .SingleAsync(x => x.EventType == "budgetytzar.budgeting.budget-adjustment-recorded.v1");
-        var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
+        var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionConsumerService>();
 
         await projector.ProjectEnvelope(consumedMessage.EnvelopeJson, CancellationToken.None);
 
@@ -75,7 +75,7 @@ public sealed class ProjectionProcessingTests
         var messages = (await db.OutboxMessages.AsNoTracking().Where(x => x.BudgetId == budget.Id).ToListAsync())
             .OrderBy(x => x.CreatedAt)
             .ToList();
-        var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
+        var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionConsumerService>();
 
         foreach (var message in messages)
         {

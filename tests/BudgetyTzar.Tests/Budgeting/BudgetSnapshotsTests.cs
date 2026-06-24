@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using BudgetyTzar.Api;
 using BudgetyTzar.Api.Application.Reporting;
 using BudgetyTzar.Api.Features;
+using BudgetyTzar.Api.Infrastructure.Events;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -106,7 +107,7 @@ public sealed class BudgetSnapshotsTests
 
         using (var scope = app.Services.CreateScope())
         {
-            var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
+            var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionConsumerService>();
             await projector.RebuildFromOutbox(CancellationToken.None);
         }
 
@@ -140,7 +141,7 @@ public sealed class BudgetSnapshotsTests
             await purgeDb.BudgetAdjustments.ExecuteDeleteAsync();
             await purgeDb.BudgetItems.ExecuteDeleteAsync();
 
-            var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
+            var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionConsumerService>();
             await projector.RebuildFromOutbox(CancellationToken.None);
         }
 

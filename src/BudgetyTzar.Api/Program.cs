@@ -33,10 +33,11 @@ builder.Services.Configure<EventTopicOptions>(options =>
 builder.Services.AddScoped<AuditEventWriter>();
 builder.Services.AddSingleton<EventSchemaValidator>();
 builder.Services.AddScoped<ReportingProjectionService>();
+builder.Services.AddSingleton<ReportingProjectionConsumerService>();
 builder.Services.AddSingleton<ProjectionNotificationService>();
 builder.Services.AddHostedService<KafkaTopicInitializerService>();
 builder.Services.AddHostedService<OutboxPublisherService>();
-builder.Services.AddHostedService<ReportingProjectionConsumerService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ReportingProjectionConsumerService>());
 builder.Services.AddScoped<BudgetItemEligibilityService>();
 builder.Services.AddScoped<CreateBudgetHandler>();
 builder.Services.AddScoped<CreateBudgetItemHandler>();
