@@ -8,7 +8,7 @@ namespace BudgetyTzar.Tests;
 public sealed class TransactionEditingTests
 {
     [Fact]
-    public async Task TransactionEditWritesAuditAndPreservesAllocations()
+    public async Task TransactionEditProjectsAuditAndPreservesAllocations()
     {
         await using var app = new BudgetApiFactory();
         var client = app.CreateClient();
@@ -36,6 +36,7 @@ public sealed class TransactionEditingTests
         Assert.Equal(30m, edited.Amount);
         Assert.Equal(1, await app.CountAllocationsAsync(transaction.Id));
 
+        await app.ProjectAuditEventsAsync(budget.Id);
         var audit = await app.GetAuditEventsAsync(budget.Id);
         var editAudit = audit.Single(x => x.EventType == "TransactionEdited");
         Assert.NotEqual(Guid.Empty, editAudit.Id);

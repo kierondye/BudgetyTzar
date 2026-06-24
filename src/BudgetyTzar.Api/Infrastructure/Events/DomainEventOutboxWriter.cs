@@ -1,33 +1,20 @@
+using BudgetyTzar.Api.Application.Reporting;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using BudgetyTzar.Api.Application.Reporting;
 
 namespace BudgetyTzar.Api.Infrastructure.Events;
 
-public sealed class AuditEventWriter(BudgetDbContext db, IOptions<EventTopicOptions> topics)
+public sealed class DomainEventOutboxWriter(BudgetDbContext db, IOptions<EventTopicOptions> topics)
 {
     public Guid Add(DomainEvent domainEvent)
     {
         var occurredAt = domainEvent.OccurredAt ?? DateTimeOffset.UtcNow;
-        var audit = new AuditEvent
-        {
-            OccurredAt = occurredAt,
-            BudgetId = domainEvent.BudgetId,
-            AppliesToAllPeriods = domainEvent.AppliesToAllPeriods,
-            EntityType = domainEvent.EntityType,
-            EntityId = domainEvent.EntityId,
-            EventType = domainEvent.EventType,
-            Description = domainEvent.Description,
-            Details = domainEvent.Details
-        };
-        db.AuditEvents.Add(audit);
-
         var canonicalEventType = EventTypes.ToCanonical(domainEvent.EventType);
-        var outboxId = Guid.NewGuid();
+        var eventId = Guid.NewGuid();
         var envelope = new EventEnvelope<JsonObject>(
-            outboxId,
+            eventId,
             canonicalEventType,
             occurredAt,
             Guid.NewGuid(),
@@ -39,7 +26,7 @@ public sealed class AuditEventWriter(BudgetDbContext db, IOptions<EventTopicOpti
 
         db.OutboxMessages.Add(new OutboxMessage
         {
-            Id = outboxId,
+            Id = eventId,
             Topic = EventTypes.ToTopic(canonicalEventType, topics.Value),
             EventType = canonicalEventType,
             AggregateId = domainEvent.EntityId,
@@ -49,7 +36,7 @@ public sealed class AuditEventWriter(BudgetDbContext db, IOptions<EventTopicOpti
         });
         db.ProcessedProjectionEvents.Add(new ProcessedProjectionEvent
         {
-            EventId = outboxId,
+            EventId = eventId,
             EventType = canonicalEventType,
             BudgetId = domainEvent.BudgetId,
             OccurredAt = occurredAt,
@@ -57,7 +44,7 @@ public sealed class AuditEventWriter(BudgetDbContext db, IOptions<EventTopicOpti
             Status = ProjectionProcessingStatus.Pending
         });
 
-        return outboxId;
+        return eventId;
     }
 
     private static JsonObject CreatePayload(DomainEvent domainEvent)

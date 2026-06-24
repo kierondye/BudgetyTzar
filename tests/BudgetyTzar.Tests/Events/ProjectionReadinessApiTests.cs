@@ -104,12 +104,13 @@ public sealed class ProjectionReadinessApiTests
     }
 
     [Fact]
-    public async Task ProjectionBackedAuditEndpointReadsDurableAuditEventsEvenWhenProjectionIsPending()
+    public async Task ProjectionBackedAuditEndpointReadsDurableAuditEventsAfterAuditProjectionEvenWhenReportingProjectionIsPending()
     {
         await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
+        await app.ProjectAuditEventsAsync(budget.Id);
 
         var response = await client.GetAsync($"/api/budgets/{budget.Id}/audit-events");
         var auditEvents = await response.Content.ReadFromJsonAsync<IReadOnlyList<AuditEventDto>>();

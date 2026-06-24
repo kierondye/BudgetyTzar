@@ -24,20 +24,24 @@ builder.Services.Configure<KafkaOptions>(builder.Configuration.GetSection("Kafka
 builder.Services.Configure<KafkaTopicOptions>(builder.Configuration.GetSection("Kafka:TopicManagement"));
 builder.Services.Configure<OutboxOptions>(builder.Configuration.GetSection("Outbox"));
 builder.Services.Configure<ProjectionOptions>(builder.Configuration.GetSection("Projections"));
+builder.Services.Configure<AuditOptions>(builder.Configuration.GetSection("Audit"));
 builder.Services.Configure<EventTopicOptions>(options =>
 {
     options.Budgeting = builder.Configuration["Kafka:Topics:BudgetingEvents"] ?? options.Budgeting;
     options.Transactions = builder.Configuration["Kafka:Topics:TransactionEvents"] ?? options.Transactions;
     options.Reporting = builder.Configuration["Kafka:Topics:ReportingEvents"] ?? options.Reporting;
 });
-builder.Services.AddScoped<AuditEventWriter>();
+builder.Services.AddScoped<DomainEventOutboxWriter>();
 builder.Services.AddSingleton<EventSchemaValidator>();
 builder.Services.AddScoped<ReportingProjectionService>();
+builder.Services.AddScoped<AuditEventProjectionService>();
 builder.Services.AddSingleton<ReportingProjectionConsumerService>();
+builder.Services.AddSingleton<AuditEventConsumerService>();
 builder.Services.AddSingleton<ProjectionNotificationService>();
 builder.Services.AddHostedService<KafkaTopicInitializerService>();
 builder.Services.AddHostedService<OutboxPublisherService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ReportingProjectionConsumerService>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<AuditEventConsumerService>());
 builder.Services.AddScoped<BudgetItemEligibilityService>();
 builder.Services.AddScoped<CreateBudgetHandler>();
 builder.Services.AddScoped<CreateBudgetItemHandler>();

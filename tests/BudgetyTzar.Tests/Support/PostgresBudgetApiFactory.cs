@@ -29,6 +29,7 @@ internal sealed class PostgresBudgetApiFactory : WebApplicationFactory<Program>
     {
         builder.UseSetting("Database:MigrateOnStartup", "false");
         builder.UseSetting("Outbox:PublisherEnabled", "false");
+        builder.UseSetting("Audit:ConsumerEnabled", "false");
         builder.UseSetting("Projections:ConsumerEnabled", "false");
         builder.UseSetting("Projections:UseProjectionBackedReports", "false");
         builder.ConfigureServices(services =>

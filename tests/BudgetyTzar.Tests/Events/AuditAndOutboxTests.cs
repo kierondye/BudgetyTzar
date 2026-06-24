@@ -13,7 +13,7 @@ namespace BudgetyTzar.Tests;
 public sealed class AuditAndOutboxTests
 {
     [Fact]
-    public async Task CommandsWriteAuditRecordsAndDomainShapedOutboxEnvelopesAtomically()
+    public async Task CommandsWriteDomainShapedOutboxEnvelopesWithoutSynchronousAuditRows()
     {
         await using var app = new BudgetApiFactory();
         var client = app.CreateClient();
@@ -23,11 +23,10 @@ public sealed class AuditAndOutboxTests
 
         using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
-        var audit = await db.AuditEvents.AsNoTracking().SingleAsync(x => x.EntityId == budget.Id);
         var outbox = await db.OutboxMessages.AsNoTracking().SingleAsync(x => x.AggregateId == budget.Id);
         var envelope = JsonSerializer.Deserialize<EventEnvelope>(outbox.EnvelopeJson, EventSerialization.Options)!;
 
-        Assert.Equal("BudgetCreated", audit.EventType);
+        Assert.False(await db.AuditEvents.AnyAsync(x => x.EntityId == budget.Id));
         Assert.Equal("budgetytzar.budgeting.budget-created.v1", outbox.EventType);
         Assert.Equal("budgetytzar.budgeting.events", outbox.Topic);
         Assert.Equal(outbox.Id, envelope.EventId);
@@ -69,6 +68,7 @@ public sealed class AuditAndOutboxTests
         await BudgetApiTestClient.ReplaceAllocations(client, budget.Id, manyToOne.Id, [new TransactionAllocationItem(household.Id, 50m)]);
         await BudgetApiTestClient.ReplaceAllocations(client, budget.Id, empty.Id, []);
         await BudgetApiTestClient.ClearAllocations(client, budget.Id, multi.Id);
+        await app.ProjectAuditEventsAsync(budget.Id);
 
         using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
@@ -86,10 +86,7 @@ public sealed class AuditAndOutboxTests
         Assert.Single(auditEvents, x => x.EventType == "TransactionAllocationsCleared");
         Assert.DoesNotContain(auditEvents, x => x.EventType == "TransactionAllocationRecorded");
         Assert.All(auditEvents.Where(x => x.EventType == "TransactionAllocationsReplaced"), x =>
-        {
-            Assert.StartsWith("Allocated transaction ", x.Description);
-            Assert.DoesNotContain("split", x.Description, StringComparison.OrdinalIgnoreCase);
-        });
+            Assert.Equal("Replaced transaction allocations.", x.Description));
     }
 
     [Fact]
@@ -99,6 +96,7 @@ public sealed class AuditAndOutboxTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
+        await app.ProjectAuditEventsAsync(budget.Id);
 
         var apiAuditEvents = await client.GetFromJsonAsync<IReadOnlyList<AuditEventDto>>(
             $"/api/budgets/{budget.Id}/audit-events");
@@ -115,6 +113,7 @@ public sealed class AuditAndOutboxTests
         var budget = await BudgetApiTestClient.CreateBudget(client);
         var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
         await BudgetApiTestClient.RecordAdjustment(client, budget.Id, groceries.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 1), "Initial groceries.");
+        await app.ProjectAuditEventsAsync(budget.Id);
 
         var events = await client.GetFromJsonAsync<IReadOnlyList<AuditEventDto>>(
             $"/api/budgets/{budget.Id}/audit-events");

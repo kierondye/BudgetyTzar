@@ -21,6 +21,7 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
     public DbSet<TransactionProjectionState> TransactionProjectionStates => Set<TransactionProjectionState>();
     public DbSet<TransactionAllocationProjectionState> TransactionAllocationProjectionStates => Set<TransactionAllocationProjectionState>();
     public DbSet<ProjectionEventFailure> ProjectionEventFailures => Set<ProjectionEventFailure>();
+    public DbSet<AuditEventFailure> AuditEventFailures => Set<AuditEventFailure>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -190,6 +191,22 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
         modelBuilder.Entity<ProjectionEventFailure>(entity =>
         {
             entity.ToTable("projection_event_failure");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Topic).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.ConsumerGroup).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.EventType).HasMaxLength(160);
+            entity.Property(x => x.Category).HasConversion<string>().HasMaxLength(32);
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+            entity.Property(x => x.LastError).HasMaxLength(4000).IsRequired();
+            entity.Property(x => x.RawEventJson).IsRequired();
+            entity.HasIndex(x => x.EventId);
+            entity.HasIndex(x => new { x.Topic, x.Partition, x.Offset });
+            entity.HasIndex(x => new { x.Status, x.LastFailedAt });
+        });
+
+        modelBuilder.Entity<AuditEventFailure>(entity =>
+        {
+            entity.ToTable("audit_event_failure");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Topic).HasMaxLength(160).IsRequired();
             entity.Property(x => x.ConsumerGroup).HasMaxLength(160).IsRequired();

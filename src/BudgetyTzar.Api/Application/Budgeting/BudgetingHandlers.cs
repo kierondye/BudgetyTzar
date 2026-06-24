@@ -6,19 +6,19 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BudgetyTzar.Api.Application.Budgeting;
 
-public sealed class CreateBudgetHandler(BudgetDbContext db, AuditEventWriter audit)
+public sealed class CreateBudgetHandler(BudgetDbContext db, DomainEventOutboxWriter events)
 {
     public async Task<CommandResult<Budget>> Handle(string name, string currency, CancellationToken ct)
     {
         var budget = Budget.Create(name, currency);
         db.Budgets.Add(budget);
-        var eventId = audit.Add(budget.CreatedEvent());
+        var eventId = events.Add(budget.CreatedEvent());
         await db.SaveChangesAsync(ct);
         return CommandResult<Budget>.Created(budget, eventId);
     }
 }
 
-public sealed class CreateBudgetItemHandler(BudgetDbContext db, AuditEventWriter audit)
+public sealed class CreateBudgetItemHandler(BudgetDbContext db, DomainEventOutboxWriter events)
 {
     public async Task<CommandResult<BudgetItem>> Handle(Guid budgetId, string name, CancellationToken ct)
     {
@@ -38,13 +38,13 @@ public sealed class CreateBudgetItemHandler(BudgetDbContext db, AuditEventWriter
 
         var item = BudgetItem.Create(budgetId, trimmedName);
         db.BudgetItems.Add(item);
-        var eventId = audit.Add(item.CreatedEvent());
+        var eventId = events.Add(item.CreatedEvent());
         await db.SaveChangesAsync(ct);
         return CommandResult<BudgetItem>.Created(item, eventId);
     }
 }
 
-public sealed class ArchiveBudgetItemHandler(BudgetDbContext db, AuditEventWriter audit)
+public sealed class ArchiveBudgetItemHandler(BudgetDbContext db, DomainEventOutboxWriter events)
 {
     public async Task<CommandResult> Handle(Guid budgetId, Guid itemId, CancellationToken ct)
     {
@@ -54,13 +54,13 @@ public sealed class ArchiveBudgetItemHandler(BudgetDbContext db, AuditEventWrite
             return CommandResult.NotFound();
         }
 
-        var eventId = audit.Add(item.Archive(DateTimeOffset.UtcNow));
+        var eventId = events.Add(item.Archive(DateTimeOffset.UtcNow));
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent(eventId);
     }
 }
 
-public sealed class RecordAdjustmentHandler(BudgetDbContext db, AuditEventWriter audit, BudgetItemEligibilityService eligibility)
+public sealed class RecordAdjustmentHandler(BudgetDbContext db, DomainEventOutboxWriter events, BudgetItemEligibilityService eligibility)
 {
     public async Task<CommandResult<BudgetAdjustment>> HandleCanonical(
         Guid budgetId,
@@ -97,7 +97,7 @@ public sealed class RecordAdjustmentHandler(BudgetDbContext db, AuditEventWriter
         }
 
         db.BudgetAdjustments.Add(adjustment);
-        var eventId = audit.Add(adjustment.RecordedEvent(budgetId, item.Name));
+        var eventId = events.Add(adjustment.RecordedEvent(budgetId, item.Name));
         await db.SaveChangesAsync(ct);
         return CommandResult<BudgetAdjustment>.Created(adjustment, eventId);
     }
@@ -116,7 +116,7 @@ public sealed class RecordAdjustmentHandler(BudgetDbContext db, AuditEventWriter
         adjustment.Type == BudgetAdjustmentType.Credit ? adjustment.Amount : -adjustment.Amount;
 }
 
-public sealed class RecordReallocationHandler(BudgetDbContext db, AuditEventWriter audit, BudgetItemEligibilityService eligibility)
+public sealed class RecordReallocationHandler(BudgetDbContext db, DomainEventOutboxWriter events, BudgetItemEligibilityService eligibility)
 {
     public async Task<CommandResult<BudgetReallocation>> HandleCanonical(
         Guid budgetId,
@@ -165,7 +165,7 @@ public sealed class RecordReallocationHandler(BudgetDbContext db, AuditEventWrit
         db.BudgetReallocations.Add(reallocation);
         db.BudgetAdjustments.AddRange(adjustments.Select(x =>
             BudgetAdjustment.Create(budgetId, x.BudgetItemId, x.Amount, x.Direction, date, notes, reallocation.Id)));
-        var eventId = audit.Add(reallocation.RecordedEvent(
+        var eventId = events.Add(reallocation.RecordedEvent(
             budgetId,
             adjustments
                 .Select(x => new BudgetReallocationAdjustmentPayload(x.BudgetItemId, x.Amount, x.Direction))

@@ -157,6 +157,7 @@ public sealed class BudgetSnapshotsTests
             $"/api/budgets/{budget.Id}/snapshot?date=2026-06-30");
         Assert.Equal(65m, apiSnapshot!.BudgetItems.Single(x => x.BudgetItemId == groceries.Id).Balance);
 
+        await app.ProjectAuditEventsAsync(budget.Id);
         var apiAuditEvents = await client.GetFromJsonAsync<IReadOnlyList<AuditEventDto>>(
             $"/api/budgets/{budget.Id}/audit-events");
         Assert.Contains(apiAuditEvents!, x => x.EventType == "TransactionAllocationsReplaced");

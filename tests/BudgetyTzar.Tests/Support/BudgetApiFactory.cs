@@ -1,5 +1,6 @@
 using System.Data.Common;
 using BudgetyTzar.Api;
+using BudgetyTzar.Api.Infrastructure.Events;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -24,6 +25,7 @@ internal sealed class BudgetApiFactory : WebApplicationFactory<Program>
     {
         builder.UseSetting("Database:MigrateOnStartup", "false");
         builder.UseSetting("Outbox:PublisherEnabled", "false");
+        builder.UseSetting("Audit:ConsumerEnabled", "false");
         builder.UseSetting("Projections:ConsumerEnabled", "false");
         builder.UseSetting("Projections:UseProjectionBackedReports", _useProjectionBackedReports.ToString());
         builder.ConfigureServices(services =>
@@ -76,5 +78,21 @@ internal sealed class BudgetApiFactory : WebApplicationFactory<Program>
             .AsNoTracking()
             .Where(x => x.BudgetId == budgetId)
             .ToListAsync();
+    }
+
+    public async Task ProjectAuditEventsAsync(Guid budgetId)
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var auditor = scope.ServiceProvider.GetRequiredService<AuditEventConsumerService>();
+        var envelopes = await db.OutboxMessages
+            .AsNoTracking()
+            .Where(x => x.BudgetId == budgetId)
+            .ToListAsync();
+
+        foreach (var envelope in envelopes.OrderBy(x => x.CreatedAt).Select(x => x.EnvelopeJson))
+        {
+            await auditor.ProjectEnvelope(envelope, CancellationToken.None);
+        }
     }
 }

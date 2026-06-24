@@ -33,3 +33,12 @@ public sealed class ProjectionOptions
     public int MaxRetryDelayMilliseconds { get; set; } = 30000;
     public string DeadLetterTopic { get; set; } = "budgetytzar.reporting.dead-letter-events";
 }
+
+public sealed class AuditOptions
+{
+    public bool ConsumerEnabled { get; set; }
+    public int MaxRetryAttempts { get; set; } = 3;
+    public int InitialRetryDelayMilliseconds { get; set; } = 1000;
+    public int MaxRetryDelayMilliseconds { get; set; } = 30000;
+    public string DeadLetterTopic { get; set; } = "budgetytzar.audit.dead-letter-events";
+}

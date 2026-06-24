@@ -22,6 +22,77 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("BudgetyTzar.Api.Application.Reporting.AuditEventFailure", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("BudgetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("ConsumerGroup")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<Guid?>("EventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EventType")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<DateTimeOffset>("FirstFailedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastError")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<DateTimeOffset>("LastFailedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("Offset")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Partition")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RawEventJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("RetryCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Topic")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventId");
+
+                    b.HasIndex("Status", "LastFailedAt");
+
+                    b.HasIndex("Topic", "Partition", "Offset");
+
+                    b.ToTable("audit_event_failure", (string)null);
+                });
+
             modelBuilder.Entity("BudgetyTzar.Api.Application.Reporting.BudgetAdjustmentProjectionState", b =>
                 {
                     b.Property<Guid>("ActivityId")

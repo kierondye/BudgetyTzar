@@ -10,12 +10,15 @@ public sealed class KafkaTopicInitializerService(
     IOptions<KafkaTopicOptions> kafkaTopicOptions,
     IOptions<OutboxOptions> outboxOptions,
     IOptions<ProjectionOptions> projectionOptions,
+    IOptions<AuditOptions> auditOptions,
     ILogger<KafkaTopicInitializerService> logger) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         if (!kafkaTopicOptions.Value.AutoCreateTopics
-            || (!outboxOptions.Value.PublisherEnabled && !projectionOptions.Value.ConsumerEnabled))
+            || (!outboxOptions.Value.PublisherEnabled
+                && !projectionOptions.Value.ConsumerEnabled
+                && !auditOptions.Value.ConsumerEnabled))
         {
             logger.LogInformation("Kafka topic initialization is disabled.");
             return;
@@ -26,7 +29,8 @@ public sealed class KafkaTopicInitializerService(
                 topicOptions.Value.Budgeting,
                 topicOptions.Value.Transactions,
                 topicOptions.Value.Reporting,
-                projectionOptions.Value.DeadLetterTopic
+                projectionOptions.Value.DeadLetterTopic,
+                auditOptions.Value.DeadLetterTopic
             }
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Distinct(StringComparer.Ordinal)

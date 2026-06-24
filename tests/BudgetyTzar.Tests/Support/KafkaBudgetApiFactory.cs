@@ -18,6 +18,10 @@ internal sealed class KafkaBudgetApiFactory(string bootstrapServers) : WebApplic
         builder.UseSetting("Database:MigrateOnStartup", "false");
         builder.UseSetting("Kafka:BootstrapServers", bootstrapServers);
         builder.UseSetting("Outbox:PublisherEnabled", "false");
+        builder.UseSetting("Audit:ConsumerEnabled", "true");
+        builder.UseSetting("Audit:MaxRetryAttempts", "1");
+        builder.UseSetting("Audit:InitialRetryDelayMilliseconds", "10");
+        builder.UseSetting("Audit:MaxRetryDelayMilliseconds", "10");
         builder.UseSetting("Projections:ConsumerEnabled", "true");
         builder.UseSetting("Projections:UseProjectionBackedReports", "true");
         builder.UseSetting("Projections:MaxRetryAttempts", "1");

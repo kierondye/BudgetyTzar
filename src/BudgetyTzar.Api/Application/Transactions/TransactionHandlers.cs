@@ -9,7 +9,7 @@ namespace BudgetyTzar.Api.Application.Transactions;
 
 public sealed record TransactionDetail(FinancialTransaction Transaction, IReadOnlyList<TransactionAllocation> Allocations);
 
-public sealed class CreateTransactionHandler(BudgetDbContext db, AuditEventWriter audit)
+public sealed class CreateTransactionHandler(BudgetDbContext db, DomainEventOutboxWriter events)
 {
     public async Task<CommandResult<FinancialTransaction>> Handle(
         Guid budgetId,
@@ -29,7 +29,7 @@ public sealed class CreateTransactionHandler(BudgetDbContext db, AuditEventWrite
 
         var transaction = FinancialTransaction.Create(budgetId, transactionDate, description, amount, direction, sourceAccount, externalReference, notes);
         db.Transactions.Add(transaction);
-        var eventId = audit.Add(new DomainEvent(
+        var eventId = events.Add(new DomainEvent(
             "TransactionManuallyCreated",
             budgetId,
             nameof(FinancialTransaction),
@@ -51,7 +51,7 @@ public sealed class CreateTransactionHandler(BudgetDbContext db, AuditEventWrite
     }
 }
 
-public sealed class UpdateTransactionHandler(BudgetDbContext db, AuditEventWriter audit)
+public sealed class UpdateTransactionHandler(BudgetDbContext db, DomainEventOutboxWriter events)
 {
     public async Task<CommandResult> Handle(
         Guid budgetId,
@@ -89,7 +89,7 @@ public sealed class UpdateTransactionHandler(BudgetDbContext db, AuditEventWrite
 
         transaction.Edit(transactionDate, description, amount, direction, sourceAccount, externalReference, notes);
 
-        var eventId = audit.Add(new DomainEvent(
+        var eventId = events.Add(new DomainEvent(
             "TransactionEdited",
             budgetId,
             nameof(FinancialTransaction),
@@ -112,7 +112,7 @@ public sealed class UpdateTransactionHandler(BudgetDbContext db, AuditEventWrite
     }
 }
 
-public sealed class IgnoreTransactionHandler(BudgetDbContext db, AuditEventWriter audit)
+public sealed class IgnoreTransactionHandler(BudgetDbContext db, DomainEventOutboxWriter events)
 {
     public async Task<CommandResult> Handle(Guid budgetId, Guid transactionId, CancellationToken ct)
     {
@@ -123,7 +123,7 @@ public sealed class IgnoreTransactionHandler(BudgetDbContext db, AuditEventWrite
         }
 
         transaction.Ignore();
-        var eventId = audit.Add(new DomainEvent(
+        var eventId = events.Add(new DomainEvent(
             "TransactionIgnored",
             budgetId,
             nameof(FinancialTransaction),
@@ -145,7 +145,7 @@ public sealed class IgnoreTransactionHandler(BudgetDbContext db, AuditEventWrite
     }
 }
 
-public sealed class ReplaceTransactionAllocationsHandler(BudgetDbContext db, AuditEventWriter audit, BudgetItemEligibilityService eligibility)
+public sealed class ReplaceTransactionAllocationsHandler(BudgetDbContext db, DomainEventOutboxWriter events, BudgetItemEligibilityService eligibility)
 {
     public async Task<CommandResult> Handle(Guid budgetId, Guid transactionId, IReadOnlyList<TransactionAllocationItem> allocations, CancellationToken ct)
     {
@@ -189,7 +189,7 @@ public sealed class ReplaceTransactionAllocationsHandler(BudgetDbContext db, Aud
             .ToListAsync(ct);
         db.TransactionAllocations.RemoveRange(existing);
         db.TransactionAllocations.AddRange(transaction.ReplaceAllocations(allocations));
-        var eventId = audit.Add(new DomainEvent(
+        var eventId = events.Add(new DomainEvent(
             "TransactionAllocationsReplaced",
             budgetId,
             nameof(FinancialTransaction),
@@ -211,7 +211,7 @@ public sealed class ReplaceTransactionAllocationsHandler(BudgetDbContext db, Aud
     }
 }
 
-public sealed class ClearTransactionAllocationsHandler(BudgetDbContext db, AuditEventWriter audit)
+public sealed class ClearTransactionAllocationsHandler(BudgetDbContext db, DomainEventOutboxWriter events)
 {
     public async Task<CommandResult> Handle(Guid budgetId, Guid transactionId, CancellationToken ct)
     {
@@ -225,7 +225,7 @@ public sealed class ClearTransactionAllocationsHandler(BudgetDbContext db, Audit
             .Where(x => x.TransactionId == transactionId)
             .ToListAsync(ct);
         db.TransactionAllocations.RemoveRange(allocations);
-        var eventId = audit.Add(new DomainEvent(
+        var eventId = events.Add(new DomainEvent(
             "TransactionAllocationsCleared",
             budgetId,
             nameof(FinancialTransaction),
