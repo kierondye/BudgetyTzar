@@ -27,6 +27,7 @@ public sealed class ProjectionOptions
 {
     public bool ConsumerEnabled { get; set; }
     public bool UseProjectionBackedReports { get; set; }
+    public int ProcessingLeaseSeconds { get; set; } = 120;
     public int MaxRetryAttempts { get; set; } = 3;
     public int InitialRetryDelayMilliseconds { get; set; } = 1000;
     public int MaxRetryDelayMilliseconds { get; set; } = 30000;

@@ -200,14 +200,15 @@ public static partial class Endpoints
         var eventId = waitForEventId;
         if (!eventId.HasValue)
         {
-            var outboxEvents = await db.OutboxMessages
+            var projectionEvents = await db.ProcessedProjectionEvents
                 .AsNoTracking()
                 .Where(x => x.BudgetId == budgetId)
-                .Select(x => new { x.Id, x.CreatedAt })
+                .Select(x => new { x.EventId, x.OccurredAt, x.ProcessedAt })
                 .ToListAsync(ct);
-            eventId = outboxEvents
-                .OrderByDescending(x => x.CreatedAt)
-                .Select(x => (Guid?)x.Id)
+            eventId = projectionEvents
+                .OrderByDescending(x => x.OccurredAt)
+                .ThenByDescending(x => x.ProcessedAt)
+                .Select(x => (Guid?)x.EventId)
                 .FirstOrDefault();
         }
         if (!eventId.HasValue)
@@ -232,20 +233,17 @@ public static partial class Endpoints
 
     private static async Task<string> GetProjectionStatus(BudgetDbContext db, Guid budgetId, Guid eventId, CancellationToken ct)
     {
-        var outbox = await db.OutboxMessages
+        var projectionEvent = await db.ProcessedProjectionEvents
             .AsNoTracking()
-            .Where(x => x.Id == eventId)
-            .Select(x => new { x.BudgetId, x.ProjectedAt })
+            .Where(x => x.EventId == eventId)
+            .Select(x => new { x.BudgetId, x.Status })
             .FirstOrDefaultAsync(ct);
-        if (outbox is null || outbox.BudgetId != budgetId)
+        if (projectionEvent is null || projectionEvent.BudgetId != budgetId)
         {
             return "unknown";
         }
 
-        if (await db.ProcessedProjectionEvents
-                .AsNoTracking()
-                .AnyAsync(x => x.EventId == eventId && x.BudgetId == budgetId, ct)
-            || outbox.ProjectedAt.HasValue)
+        if (projectionEvent.Status == ProjectionProcessingStatus.Completed)
         {
             return "ready";
         }
@@ -261,30 +259,15 @@ public static partial class Endpoints
     {
         var projected = await db.ProcessedProjectionEvents
             .AsNoTracking()
-            .Where(x => x.EventId == eventId && x.BudgetId == budgetId)
-            .Select(x => new { x.EventType, x.ProcessedAt })
-            .FirstOrDefaultAsync(ct);
-        if (projected is not null)
-        {
-            return new ProjectionReadyNotification(
-                budgetId,
-                eventId,
-                projected.EventType,
-                projected.ProcessedAt,
-                ["snapshot"]);
-        }
-
-        var outbox = await db.OutboxMessages
-            .AsNoTracking()
-            .Where(x => x.Id == eventId && x.BudgetId == budgetId && x.ProjectedAt != null)
-            .Select(x => new { x.EventType, x.ProjectedAt })
+            .Where(x => x.EventId == eventId && x.BudgetId == budgetId && x.Status == ProjectionProcessingStatus.Completed)
+            .Select(x => new { x.EventType, x.CompletedAt, x.ProcessedAt })
             .SingleAsync(ct);
 
         return new ProjectionReadyNotification(
             budgetId,
             eventId,
-            outbox.EventType,
-            outbox.ProjectedAt!.Value,
+            projected.EventType,
+            projected.CompletedAt ?? projected.ProcessedAt,
             ["snapshot"]);
     }
 

@@ -157,4 +157,30 @@ public sealed class ProjectionReadinessApiTests
         Assert.Equal("ready", ready!.Status);
         Assert.Equal("unknown", unknown!.Status);
     }
+
+    [Fact]
+    public async Task ProjectionStatusIgnoresOutboxProjectedAt()
+    {
+        await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+
+        var createResponse = await client.PostAsJsonAsync("/api/budgets", new CreateBudgetRequest("Personal", "GBP"));
+        createResponse.EnsureSuccessStatusCode();
+        var budget = (await createResponse.Content.ReadFromJsonAsync<Budget>())!;
+        var eventId = Guid.Parse(Assert.Single(createResponse.Headers.GetValues(CommandResultHttpExtensions.EventIdHeaderName)));
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+            var outbox = await db.OutboxMessages.SingleAsync(x => x.Id == eventId);
+            outbox.ProjectedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        var status = await client.GetFromJsonAsync<ProjectionStatusResponse>(
+            $"/api/budgets/{budget.Id}/projections/status?eventId={eventId}");
+
+        Assert.Equal("pending", status!.Status);
+    }
 }

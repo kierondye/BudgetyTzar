@@ -27,6 +27,14 @@ public sealed class BudgetSnapshotItemProjection
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public enum ProjectionProcessingStatus
+{
+    Pending,
+    Processing,
+    Completed,
+    Failed
+}
+
 public sealed class ProcessedProjectionEvent
 {
     public Guid EventId { get; set; }
@@ -34,6 +42,12 @@ public sealed class ProcessedProjectionEvent
     public Guid? BudgetId { get; set; }
     public DateTimeOffset OccurredAt { get; set; }
     public DateTimeOffset ProcessedAt { get; set; } = DateTimeOffset.UtcNow;
+    public ProjectionProcessingStatus Status { get; set; } = ProjectionProcessingStatus.Pending;
+    public Guid? ProcessingInstanceId { get; set; }
+    public DateTimeOffset? ProcessingStartedAt { get; set; }
+    public DateTimeOffset? ProcessingUpdatedAt { get; set; }
+    public DateTimeOffset? CompletedAt { get; set; }
+    public string? LastError { get; set; }
 }
 
 public sealed class BudgetItemProjectionState

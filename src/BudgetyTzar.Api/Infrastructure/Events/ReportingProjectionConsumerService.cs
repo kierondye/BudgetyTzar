@@ -17,6 +17,7 @@ public sealed class ReportingProjectionConsumerService(
     ILogger<ReportingProjectionConsumerService> logger) : BackgroundService
 {
     private static readonly string[] UpdatedReadModels = ["snapshot"];
+    private readonly Guid processingInstanceId = Guid.NewGuid();
 
     public async Task RebuildFromOutbox(CancellationToken ct)
     {
@@ -38,11 +39,11 @@ public sealed class ReportingProjectionConsumerService(
         var envelopes = await LoadOutboxEnvelopes(db, schemaValidator, null, ct);
         foreach (var envelope in envelopes)
         {
-            await ProjectValidatedEnvelope(db, projector, notifications, envelope, markOutboxProjected: true, ct);
+            await ProjectValidatedEnvelope(db, projector, notifications, envelope, processingInstanceId, projectionOptions.Value.ProcessingLeaseSeconds, ct);
         }
     }
 
-    public async Task ProjectEnvelope(string envelopeJson, CancellationToken ct)
+    public async Task<bool> ProjectEnvelope(string envelopeJson, CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var schemaValidator = scope.ServiceProvider.GetRequiredService<EventSchemaValidator>();
@@ -50,7 +51,7 @@ public sealed class ReportingProjectionConsumerService(
         var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
         var notifications = scope.ServiceProvider.GetRequiredService<ProjectionNotificationService>();
         var envelope = schemaValidator.ValidateAndDeserialize(envelopeJson);
-        await ProjectValidatedEnvelope(db, projector, notifications, envelope, markOutboxProjected: true, ct);
+        return await ProjectValidatedEnvelope(db, projector, notifications, envelope, processingInstanceId, projectionOptions.Value.ProcessingLeaseSeconds, ct);
     }
 
     public async Task RebuildBudget(Guid budgetId, CancellationToken ct)
@@ -73,7 +74,7 @@ public sealed class ReportingProjectionConsumerService(
         var envelopes = await LoadOutboxEnvelopes(db, schemaValidator, budgetId, ct);
         foreach (var envelope in envelopes)
         {
-            await ProjectValidatedEnvelope(db, projector, notifications, envelope, markOutboxProjected: true, ct);
+            await ProjectValidatedEnvelope(db, projector, notifications, envelope, processingInstanceId, projectionOptions.Value.ProcessingLeaseSeconds, ct);
         }
     }
 
@@ -129,63 +130,135 @@ public sealed class ReportingProjectionConsumerService(
         }
     }
 
-    private static async Task ProjectValidatedEnvelope(
+    private static async Task<bool> ProjectValidatedEnvelope(
         BudgetDbContext db,
         ReportingProjectionService projector,
         ProjectionNotificationService notifications,
         EventEnvelope envelope,
-        bool markOutboxProjected,
+        Guid processingInstanceId,
+        int processingLeaseSeconds,
         CancellationToken ct)
     {
-        if (await db.ProcessedProjectionEvents.AnyAsync(x => x.EventId == envelope.EventId, ct))
+        var now = DateTimeOffset.UtcNow;
+        if (!await TryClaimProjectionEvent(db, envelope, processingInstanceId, processingLeaseSeconds, now, ct))
         {
-            return;
+            return await db.ProcessedProjectionEvents
+                .AsNoTracking()
+                .AnyAsync(x => x.EventId == envelope.EventId && x.Status == ProjectionProcessingStatus.Completed, ct);
         }
 
-        var result = envelope.EventType switch
+        ProjectionApplyResult result;
+        try
         {
-            "budgetytzar.budgeting.budget-created.v1" =>
-                await projector.ApplyBudgetCreated(ReadPayload<BudgetCreatedPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
-            "budgetytzar.budgeting.budget-item-created.v1" =>
-                await projector.ApplyBudgetItemCreated(ReadPayload<BudgetItemCreatedPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
-            "budgetytzar.budgeting.budget-item-archived.v1" =>
-                await projector.ApplyBudgetItemArchived(ReadPayload<BudgetItemArchivedPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
-            "budgetytzar.budgeting.budget-adjustment-recorded.v1" =>
-                await projector.ApplyBudgetAdjustmentRecorded(ReadPayload<BudgetAdjustmentRecordedPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
-            "budgetytzar.budgeting.budget-reallocation-recorded.v1" =>
-                await projector.ApplyBudgetReallocationRecorded(ReadPayload<BudgetReallocationRecordedPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
-            "budgetytzar.transactions.transaction-manually-created.v1" =>
-                await projector.ApplyTransactionManuallyCreated(ReadPayload<TransactionManuallyCreatedPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
-            "budgetytzar.transactions.transaction-edited.v1" =>
-                await projector.ApplyTransactionEdited(ReadPayload<TransactionEditedPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
-            "budgetytzar.transactions.transaction-ignored.v1" =>
-                await projector.ApplyTransactionIgnored(ReadPayload<TransactionIgnoredPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
-            "budgetytzar.transactions.transaction-allocations-replaced.v1" =>
-                await projector.ApplyTransactionAllocationsReplaced(ReadPayload<TransactionAllocationsReplacedPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
-            "budgetytzar.transactions.transaction-allocations-cleared.v1" =>
-                await projector.ApplyTransactionAllocationsCleared(ReadPayload<TransactionAllocationsClearedPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
-            _ => throw new PermanentProjectionException($"No reporting projector exists for event type '{envelope.EventType}'.")
-        };
+            result = envelope.EventType switch
+            {
+                "budgetytzar.budgeting.budget-created.v1" =>
+                    await projector.ApplyBudgetCreated(ReadPayload<BudgetCreatedPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
+                "budgetytzar.budgeting.budget-item-created.v1" =>
+                    await projector.ApplyBudgetItemCreated(ReadPayload<BudgetItemCreatedPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
+                "budgetytzar.budgeting.budget-item-archived.v1" =>
+                    await projector.ApplyBudgetItemArchived(ReadPayload<BudgetItemArchivedPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
+                "budgetytzar.budgeting.budget-adjustment-recorded.v1" =>
+                    await projector.ApplyBudgetAdjustmentRecorded(ReadPayload<BudgetAdjustmentRecordedPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
+                "budgetytzar.budgeting.budget-reallocation-recorded.v1" =>
+                    await projector.ApplyBudgetReallocationRecorded(ReadPayload<BudgetReallocationRecordedPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
+                "budgetytzar.transactions.transaction-manually-created.v1" =>
+                    await projector.ApplyTransactionManuallyCreated(ReadPayload<TransactionManuallyCreatedPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
+                "budgetytzar.transactions.transaction-edited.v1" =>
+                    await projector.ApplyTransactionEdited(ReadPayload<TransactionEditedPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
+                "budgetytzar.transactions.transaction-ignored.v1" =>
+                    await projector.ApplyTransactionIgnored(ReadPayload<TransactionIgnoredPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
+                "budgetytzar.transactions.transaction-allocations-replaced.v1" =>
+                    await projector.ApplyTransactionAllocationsReplaced(ReadPayload<TransactionAllocationsReplacedPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
+                "budgetytzar.transactions.transaction-allocations-cleared.v1" =>
+                    await projector.ApplyTransactionAllocationsCleared(ReadPayload<TransactionAllocationsClearedPayload>(envelope), envelope.EventId, envelope.EventType, envelope.OccurredAt, ct),
+                _ => throw new PermanentProjectionException($"No reporting projector exists for event type '{envelope.EventType}'.")
+            };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await MarkProjectionFailed(db, envelope.EventId, ex, ct);
+            throw;
+        }
 
         var projectedAt = DateTimeOffset.UtcNow;
+        var projectionEvent = await db.ProcessedProjectionEvents.SingleAsync(x => x.EventId == envelope.EventId, ct);
+        projectionEvent.EventType = envelope.EventType;
+        projectionEvent.BudgetId = result.BudgetId;
+        projectionEvent.OccurredAt = envelope.OccurredAt;
+        projectionEvent.ProcessedAt = projectedAt;
+        projectionEvent.Status = ProjectionProcessingStatus.Completed;
+        projectionEvent.ProcessingUpdatedAt = projectedAt;
+        projectionEvent.CompletedAt = projectedAt;
+        projectionEvent.LastError = null;
+        await db.SaveChangesAsync(ct);
+        notifications.Publish(new ProjectionReadyNotification(result.BudgetId, envelope.EventId, envelope.EventType, projectedAt, UpdatedReadModels));
+        return true;
+    }
+
+    private static async Task<bool> TryClaimProjectionEvent(
+        BudgetDbContext db,
+        EventEnvelope envelope,
+        Guid processingInstanceId,
+        int processingLeaseSeconds,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
+        var leaseCutoff = now.AddSeconds(-Math.Max(1, processingLeaseSeconds));
+        var projectionEvent = await db.ProcessedProjectionEvents
+            .SingleOrDefaultAsync(x => x.EventId == envelope.EventId, ct);
+        if (projectionEvent is not null)
+        {
+            if (projectionEvent.Status == ProjectionProcessingStatus.Completed)
+            {
+                return false;
+            }
+
+            if (projectionEvent.Status == ProjectionProcessingStatus.Processing
+                && projectionEvent.ProcessingUpdatedAt >= leaseCutoff)
+            {
+                return false;
+            }
+
+            projectionEvent.EventType = envelope.EventType;
+            projectionEvent.OccurredAt = envelope.OccurredAt;
+            projectionEvent.Status = ProjectionProcessingStatus.Processing;
+            projectionEvent.ProcessingInstanceId = processingInstanceId;
+            projectionEvent.ProcessingStartedAt = now;
+            projectionEvent.ProcessingUpdatedAt = now;
+            projectionEvent.LastError = null;
+            await db.SaveChangesAsync(ct);
+            return true;
+        }
+
         db.ProcessedProjectionEvents.Add(new ProcessedProjectionEvent
         {
             EventId = envelope.EventId,
             EventType = envelope.EventType,
-            BudgetId = result.BudgetId,
             OccurredAt = envelope.OccurredAt,
-            ProcessedAt = projectedAt
+            ProcessedAt = now,
+            Status = ProjectionProcessingStatus.Processing,
+            ProcessingInstanceId = processingInstanceId,
+            ProcessingStartedAt = now,
+            ProcessingUpdatedAt = now
         });
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
 
-        if (markOutboxProjected)
+    private static async Task MarkProjectionFailed(BudgetDbContext db, Guid eventId, Exception exception, CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var projectionEvent = await db.ProcessedProjectionEvents.SingleOrDefaultAsync(x => x.EventId == eventId, ct);
+        if (projectionEvent is null)
         {
-            await db.OutboxMessages
-                .Where(x => x.Id == envelope.EventId && x.ProjectedAt == null)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.ProjectedAt, projectedAt), ct);
+            return;
         }
 
+        projectionEvent.Status = ProjectionProcessingStatus.Failed;
+        projectionEvent.ProcessingUpdatedAt = now;
+        projectionEvent.LastError = Truncate(exception.Message, 4000);
         await db.SaveChangesAsync(ct);
-        notifications.Publish(new ProjectionReadyNotification(result.BudgetId, envelope.EventId, envelope.EventType, projectedAt, UpdatedReadModels));
     }
 
     private static TPayload ReadPayload<TPayload>(EventEnvelope envelope)
@@ -214,8 +287,7 @@ public sealed class ReportingProjectionConsumerService(
         {
             try
             {
-                await ProjectEnvelope(result.Message.Value, ct);
-                return true;
+                return await ProjectEnvelope(result.Message.Value, ct);
             }
             catch (PermanentProjectionException ex)
             {

@@ -63,12 +63,12 @@ public sealed class ProjectionProcessingTests
         await projector.ProjectEnvelope(envelopeJson, CancellationToken.None);
         await projector.ProjectEnvelope(envelopeJson, CancellationToken.None);
 
-        Assert.Equal(1, await db.ProcessedProjectionEvents.CountAsync());
+        Assert.Equal(1, await db.ProcessedProjectionEvents.CountAsync(x => x.Status == ProjectionProcessingStatus.Completed));
         Assert.Equal(1, await db.BudgetSnapshotProjections.CountAsync(x => x.BudgetId == budget.Id && x.Date == new DateOnly(2026, 6, 10)));
     }
 
     [Fact]
-    public async Task ProjectionEnvelopeProcessingMarksOnlyTheConsumedOutboxMessageProjected()
+    public async Task ProjectionEnvelopeProcessingCompletesOnlyTheConsumedProjectionEvent()
     {
         await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
         var client = app.CreateClient();
@@ -87,8 +87,11 @@ public sealed class ProjectionProcessingTests
         await projector.ProjectEnvelope(consumedMessage.EnvelopeJson, CancellationToken.None);
 
         var outbox = await db.OutboxMessages.AsNoTracking().Where(x => x.BudgetId == budget.Id).ToListAsync();
-        Assert.NotNull(outbox.Single(x => x.Id == consumedMessage.Id).ProjectedAt);
-        Assert.All(outbox.Where(x => x.Id != consumedMessage.Id), x => Assert.Null(x.ProjectedAt));
+        Assert.All(outbox, x => Assert.Null(x.ProjectedAt));
+
+        var projectionEvents = await db.ProcessedProjectionEvents.AsNoTracking().Where(x => x.BudgetId == budget.Id).ToListAsync();
+        Assert.Equal(ProjectionProcessingStatus.Completed, projectionEvents.Single(x => x.EventId == consumedMessage.Id).Status);
+        Assert.All(projectionEvents.Where(x => x.EventId != consumedMessage.Id), x => Assert.Equal(ProjectionProcessingStatus.Pending, x.Status));
     }
 
     [Fact]
@@ -113,9 +116,86 @@ public sealed class ProjectionProcessingTests
             await projector.ProjectEnvelope(message.EnvelopeJson, CancellationToken.None);
         }
 
-        Assert.Equal(messages.Count, await db.ProcessedProjectionEvents.CountAsync(x => x.BudgetId == budget.Id));
+        Assert.Equal(messages.Count, await db.ProcessedProjectionEvents.CountAsync(x => x.BudgetId == budget.Id && x.Status == ProjectionProcessingStatus.Completed));
         Assert.Single(await db.BudgetItemProjectionStates.AsNoTracking().Where(x => x.BudgetId == budget.Id).ToListAsync());
         Assert.Single(await db.BudgetAdjustmentProjectionStates.AsNoTracking().Where(x => x.BudgetId == budget.Id).ToListAsync());
         Assert.True(await db.BudgetSnapshotItemProjections.AnyAsync(x => x.BudgetId == budget.Id && x.BudgetItemId == salary.Id && x.Balance == -100m));
+    }
+
+    [Fact]
+    public async Task CommandsCreatePendingProjectionProcessingRows()
+    {
+        await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+
+        var budget = await BudgetApiTestClient.CreateBudget(client);
+
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var projectionEvent = await db.ProcessedProjectionEvents.AsNoTracking().SingleAsync(x => x.BudgetId == budget.Id);
+
+        Assert.Equal(ProjectionProcessingStatus.Pending, projectionEvent.Status);
+        Assert.Null(projectionEvent.CompletedAt);
+        Assert.Null(projectionEvent.ProcessingInstanceId);
+    }
+
+    [Fact]
+    public async Task ProjectionEnvelopeProcessingSkipsEventsActivelyClaimedByAnotherInstance()
+    {
+        await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await BudgetApiTestClient.CreateBudget(client);
+
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var message = await db.OutboxMessages.AsNoTracking().SingleAsync(x => x.BudgetId == budget.Id);
+        var processingEvent = await db.ProcessedProjectionEvents.SingleAsync(x => x.EventId == message.Id);
+        var now = DateTimeOffset.UtcNow;
+        processingEvent.Status = ProjectionProcessingStatus.Processing;
+        processingEvent.ProcessingInstanceId = Guid.NewGuid();
+        processingEvent.ProcessingStartedAt = now;
+        processingEvent.ProcessingUpdatedAt = now;
+        await db.SaveChangesAsync();
+        var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionConsumerService>();
+
+        var projected = await projector.ProjectEnvelope(message.EnvelopeJson, CancellationToken.None);
+
+        Assert.False(projected);
+        Assert.Equal(ProjectionProcessingStatus.Processing, await db.ProcessedProjectionEvents
+            .Where(x => x.EventId == message.Id)
+            .Select(x => x.Status)
+            .SingleAsync());
+    }
+
+    [Fact]
+    public async Task ProjectionEnvelopeProcessingReclaimsStaleProcessingRows()
+    {
+        await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await BudgetApiTestClient.CreateBudget(client);
+
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var message = await db.OutboxMessages.AsNoTracking().SingleAsync(x => x.BudgetId == budget.Id);
+        var processingEvent = await db.ProcessedProjectionEvents.SingleAsync(x => x.EventId == message.Id);
+        var staleAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        processingEvent.Status = ProjectionProcessingStatus.Processing;
+        processingEvent.ProcessingInstanceId = Guid.NewGuid();
+        processingEvent.ProcessingStartedAt = staleAt;
+        processingEvent.ProcessingUpdatedAt = staleAt;
+        await db.SaveChangesAsync();
+        var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionConsumerService>();
+
+        var projected = await projector.ProjectEnvelope(message.EnvelopeJson, CancellationToken.None);
+
+        Assert.True(projected);
+        db.ChangeTracker.Clear();
+        Assert.Equal(ProjectionProcessingStatus.Completed, await db.ProcessedProjectionEvents
+            .Where(x => x.EventId == message.Id)
+            .Select(x => x.Status)
+            .SingleAsync());
     }
 }

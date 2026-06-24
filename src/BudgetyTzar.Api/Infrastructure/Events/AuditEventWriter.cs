@@ -2,6 +2,7 @@ using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using BudgetyTzar.Api.Application.Reporting;
 
 namespace BudgetyTzar.Api.Infrastructure.Events;
 
@@ -45,6 +46,15 @@ public sealed class AuditEventWriter(BudgetDbContext db, IOptions<EventTopicOpti
             AggregateType = domainEvent.EntityType,
             BudgetId = domainEvent.BudgetId,
             EnvelopeJson = JsonSerializer.Serialize(envelope, EventSerialization.Options)
+        });
+        db.ProcessedProjectionEvents.Add(new ProcessedProjectionEvent
+        {
+            EventId = outboxId,
+            EventType = canonicalEventType,
+            BudgetId = domainEvent.BudgetId,
+            OccurredAt = occurredAt,
+            ProcessedAt = occurredAt,
+            Status = ProjectionProcessingStatus.Pending
         });
 
         return outboxId;

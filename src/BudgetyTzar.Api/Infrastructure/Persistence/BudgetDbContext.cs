@@ -144,7 +144,11 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
             entity.ToTable("processed_projection_event");
             entity.HasKey(x => x.EventId);
             entity.Property(x => x.EventType).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
+            entity.Property(x => x.LastError).HasMaxLength(4000);
             entity.HasIndex(x => new { x.BudgetId, x.ProcessedAt });
+            entity.HasIndex(x => new { x.Status, x.ProcessingUpdatedAt });
+            entity.HasIndex(x => x.ProcessingInstanceId);
         });
 
         modelBuilder.Entity<BudgetItemProjectionState>(entity =>
