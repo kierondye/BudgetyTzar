@@ -1,5 +1,6 @@
 using BudgetyTzar.Api;
 using BudgetyTzar.Api.Application.Reporting;
+using BudgetyTzar.Api.Contracts.Events;
 using BudgetyTzar.Api.Features;
 using BudgetyTzar.Api.Infrastructure.Events;
 using BudgetyTzar.Api.Infrastructure.Persistence;
@@ -10,6 +11,36 @@ namespace BudgetyTzar.Tests;
 
 public sealed class ProjectionProcessingTests
 {
+    [Fact]
+    public async Task ReportingProjectionServiceAppliesTypedPayloadsWithoutEventEnvelope()
+    {
+        await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
+        await app.ResetDatabaseAsync();
+
+        var budgetId = Guid.NewGuid();
+        var budgetItemId = Guid.NewGuid();
+        var eventId = Guid.NewGuid();
+        var occurredAt = new DateTimeOffset(2026, 6, 10, 12, 0, 0, TimeSpan.Zero);
+
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
+
+        var result = await projector.ApplyBudgetItemCreated(
+            new BudgetItemCreatedPayload(budgetId, budgetItemId, "Salary"),
+            eventId,
+            "budgetytzar.budgeting.budget-item-created.v1",
+            occurredAt,
+            CancellationToken.None);
+
+        Assert.Equal(budgetId, result.BudgetId);
+        Assert.True(await db.BudgetItemProjectionStates.AnyAsync(x =>
+            x.BudgetId == budgetId
+            && x.BudgetItemId == budgetItemId
+            && x.Name == "Salary"));
+        Assert.False(await db.ProcessedProjectionEvents.AnyAsync(x => x.EventId == eventId));
+    }
+
     [Fact]
     public async Task ProjectionEnvelopeProcessingIsIdempotentForDuplicateEvents()
     {
