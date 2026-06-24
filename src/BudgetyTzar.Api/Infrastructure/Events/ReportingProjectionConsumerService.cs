@@ -35,7 +35,7 @@ public sealed class ReportingProjectionConsumerService(
         var envelopes = await LoadOutboxEnvelopes(db, schemaValidator, null, ct);
         foreach (var envelope in envelopes)
         {
-            await projector.ApplyEnvelope(envelope, markOutboxProjected: true, ct);
+            await ProjectValidatedEnvelope(projector, envelope, markOutboxProjected: true, ct);
         }
     }
 
@@ -45,7 +45,7 @@ public sealed class ReportingProjectionConsumerService(
         var schemaValidator = scope.ServiceProvider.GetRequiredService<EventSchemaValidator>();
         var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
         var envelope = schemaValidator.ValidateAndDeserialize(envelopeJson);
-        await projector.ApplyEnvelope(envelope, markOutboxProjected: true, ct);
+        await ProjectValidatedEnvelope(projector, envelope, markOutboxProjected: true, ct);
     }
 
     public async Task RebuildBudget(Guid budgetId, CancellationToken ct)
@@ -68,7 +68,7 @@ public sealed class ReportingProjectionConsumerService(
         var envelopes = await LoadOutboxEnvelopes(db, schemaValidator, budgetId, ct);
         foreach (var envelope in envelopes)
         {
-            await projector.ApplyEnvelope(envelope, markOutboxProjected: true, ct);
+            await ProjectValidatedEnvelope(projector, envelope, markOutboxProjected: true, ct);
         }
     }
 
@@ -123,6 +123,36 @@ public sealed class ReportingProjectionConsumerService(
             }
         }
     }
+
+    private static Task ProjectValidatedEnvelope(
+        ReportingProjectionService projector,
+        EventEnvelope envelope,
+        bool markOutboxProjected,
+        CancellationToken ct) =>
+        envelope.EventType switch
+        {
+            "budgetytzar.budgeting.budget-created.v1" =>
+                projector.ApplyBudgetCreated(envelope, markOutboxProjected, ct),
+            "budgetytzar.budgeting.budget-item-created.v1" =>
+                projector.ApplyBudgetItemCreated(envelope, markOutboxProjected, ct),
+            "budgetytzar.budgeting.budget-item-archived.v1" =>
+                projector.ApplyBudgetItemArchived(envelope, markOutboxProjected, ct),
+            "budgetytzar.budgeting.budget-adjustment-recorded.v1" =>
+                projector.ApplyBudgetAdjustmentRecorded(envelope, markOutboxProjected, ct),
+            "budgetytzar.budgeting.budget-reallocation-recorded.v1" =>
+                projector.ApplyBudgetReallocationRecorded(envelope, markOutboxProjected, ct),
+            "budgetytzar.transactions.transaction-manually-created.v1" =>
+                projector.ApplyTransactionManuallyCreated(envelope, markOutboxProjected, ct),
+            "budgetytzar.transactions.transaction-edited.v1" =>
+                projector.ApplyTransactionEdited(envelope, markOutboxProjected, ct),
+            "budgetytzar.transactions.transaction-ignored.v1" =>
+                projector.ApplyTransactionIgnored(envelope, markOutboxProjected, ct),
+            "budgetytzar.transactions.transaction-allocations-replaced.v1" =>
+                projector.ApplyTransactionAllocationsReplaced(envelope, markOutboxProjected, ct),
+            "budgetytzar.transactions.transaction-allocations-cleared.v1" =>
+                projector.ApplyTransactionAllocationsCleared(envelope, markOutboxProjected, ct),
+            _ => throw new PermanentProjectionException($"No reporting projector exists for event type '{envelope.EventType}'.")
+        };
 
     private async Task<bool> TryProjectOrDeadLetter(
         ConsumeResult<string, string> result,

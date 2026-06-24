@@ -14,7 +14,54 @@ public sealed class ReportingProjectionService(
 {
     private static readonly string[] UpdatedReadModels = ["snapshot", "auditTimeline"];
 
-    public async Task ApplyEnvelope(EventEnvelope envelope, bool markOutboxProjected, CancellationToken ct)
+    public Task ApplyBudgetCreated(EventEnvelope envelope, bool markOutboxProjected, CancellationToken ct) =>
+        ApplyProjectionEnvelope(
+            envelope,
+            markOutboxProjected,
+            (_, _) => Task.FromResult<DateOnly?>(DateOnly.FromDateTime(envelope.OccurredAt.UtcDateTime)),
+            ct);
+
+    public Task ApplyBudgetItemCreated(EventEnvelope envelope, bool markOutboxProjected, CancellationToken ct) =>
+        ApplyProjectionEnvelope(envelope, markOutboxProjected, (budgetId, cancellationToken) =>
+            ApplyBudgetItemCreatedState(envelope, budgetId, cancellationToken), ct);
+
+    public Task ApplyBudgetItemArchived(EventEnvelope envelope, bool markOutboxProjected, CancellationToken ct) =>
+        ApplyProjectionEnvelope(envelope, markOutboxProjected, (budgetId, cancellationToken) =>
+            ApplyBudgetItemArchivedState(envelope, budgetId, cancellationToken), ct);
+
+    public Task ApplyBudgetAdjustmentRecorded(EventEnvelope envelope, bool markOutboxProjected, CancellationToken ct) =>
+        ApplyProjectionEnvelope(envelope, markOutboxProjected, (budgetId, cancellationToken) =>
+            ApplyBudgetAdjustmentRecordedState(envelope, budgetId, cancellationToken), ct);
+
+    public Task ApplyBudgetReallocationRecorded(EventEnvelope envelope, bool markOutboxProjected, CancellationToken ct) =>
+        ApplyProjectionEnvelope(envelope, markOutboxProjected, (budgetId, cancellationToken) =>
+            ApplyBudgetReallocationRecordedState(envelope, budgetId, cancellationToken), ct);
+
+    public Task ApplyTransactionManuallyCreated(EventEnvelope envelope, bool markOutboxProjected, CancellationToken ct) =>
+        ApplyProjectionEnvelope(envelope, markOutboxProjected, (budgetId, cancellationToken) =>
+            ApplyTransactionState(envelope, budgetId, cancellationToken), ct);
+
+    public Task ApplyTransactionEdited(EventEnvelope envelope, bool markOutboxProjected, CancellationToken ct) =>
+        ApplyProjectionEnvelope(envelope, markOutboxProjected, (budgetId, cancellationToken) =>
+            ApplyTransactionState(envelope, budgetId, cancellationToken), ct);
+
+    public Task ApplyTransactionIgnored(EventEnvelope envelope, bool markOutboxProjected, CancellationToken ct) =>
+        ApplyProjectionEnvelope(envelope, markOutboxProjected, (budgetId, cancellationToken) =>
+            ApplyTransactionState(envelope, budgetId, cancellationToken), ct);
+
+    public Task ApplyTransactionAllocationsReplaced(EventEnvelope envelope, bool markOutboxProjected, CancellationToken ct) =>
+        ApplyProjectionEnvelope(envelope, markOutboxProjected, (budgetId, cancellationToken) =>
+            ApplyTransactionAllocationsReplacedState(envelope, budgetId, cancellationToken), ct);
+
+    public Task ApplyTransactionAllocationsCleared(EventEnvelope envelope, bool markOutboxProjected, CancellationToken ct) =>
+        ApplyProjectionEnvelope(envelope, markOutboxProjected, (budgetId, cancellationToken) =>
+            ApplyTransactionAllocationsClearedState(envelope, budgetId, cancellationToken), ct);
+
+    private async Task ApplyProjectionEnvelope(
+        EventEnvelope envelope,
+        bool markOutboxProjected,
+        Func<Guid, CancellationToken, Task<DateOnly?>> applyProjectionState,
+        CancellationToken ct)
     {
         if (await db.ProcessedProjectionEvents.AnyAsync(x => x.EventId == envelope.EventId, ct))
         {
@@ -22,7 +69,7 @@ public sealed class ReportingProjectionService(
         }
 
         var budgetId = GetGuid(envelope.Payload, "budgetId");
-        var affectedDate = await ApplyProjectionState(envelope, budgetId, ct);
+        var affectedDate = await applyProjectionState(budgetId, ct);
         await UpsertAuditTimeline(envelope, budgetId, ct);
         await db.SaveChangesAsync(ct);
 
@@ -49,101 +96,106 @@ public sealed class ReportingProjectionService(
         notifications.Publish(new ProjectionReadyNotification(budgetId, envelope.EventId, envelope.EventType, projectedAt, UpdatedReadModels));
     }
 
-    private async Task<DateOnly?> ApplyProjectionState(EventEnvelope envelope, Guid budgetId, CancellationToken ct)
+    private async Task<DateOnly?> ApplyBudgetItemCreatedState(EventEnvelope envelope, Guid budgetId, CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
-        switch (envelope.EventType)
+        await UpsertBudgetItemState(
+            GetGuid(envelope.Payload, "budgetItemId"),
+            budgetId,
+            GetString(envelope.Payload, "name"),
+            isArchived: false,
+            archivedAt: null,
+            now,
+            ct);
+        return DateOnly.FromDateTime(envelope.OccurredAt.UtcDateTime);
+    }
+
+    private async Task<DateOnly?> ApplyBudgetItemArchivedState(EventEnvelope envelope, Guid budgetId, CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        await UpsertBudgetItemState(
+            GetGuid(envelope.Payload, "budgetItemId"),
+            budgetId,
+            GetString(envelope.Payload, "name"),
+            isArchived: true,
+            GetDateTimeOffset(envelope.Payload, "archivedAt"),
+            now,
+            ct);
+        return null;
+    }
+
+    private async Task<DateOnly?> ApplyBudgetAdjustmentRecordedState(EventEnvelope envelope, Guid budgetId, CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var adjustmentDate = GetDate(envelope.Payload, "date");
+        await UpsertAdjustmentState(
+            GetGuid(envelope.Payload, "budgetAdjustmentId"),
+            budgetId,
+            GetGuid(envelope.Payload, "budgetItemId"),
+            envelope.EventId,
+            adjustmentDate,
+            GetDecimal(envelope.Payload, "amount"),
+            GetEnum<BudgetAdjustmentType>(envelope.Payload, "direction"),
+            now,
+            ct);
+        return adjustmentDate;
+    }
+
+    private async Task<DateOnly?> ApplyBudgetReallocationRecordedState(EventEnvelope envelope, Guid budgetId, CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var reallocationDate = GetDate(envelope.Payload, "date");
+        await db.BudgetAdjustmentProjectionStates
+            .Where(x => x.SourceEventId == envelope.EventId)
+            .ExecuteDeleteAsync(ct);
+        var ordinal = 0;
+        foreach (var adjustment in GetArray(envelope.Payload, "adjustments"))
         {
-            case "budgetytzar.budgeting.budget-created.v1":
-                return DateOnly.FromDateTime(envelope.OccurredAt.UtcDateTime);
-
-            case "budgetytzar.budgeting.budget-item-created.v1":
-                await UpsertBudgetItemState(
-                    GetGuid(envelope.Payload, "budgetItemId"),
-                    budgetId,
-                    GetString(envelope.Payload, "name"),
-                    isArchived: false,
-                    archivedAt: null,
-                    now,
-                    ct);
-                return DateOnly.FromDateTime(envelope.OccurredAt.UtcDateTime);
-
-            case "budgetytzar.budgeting.budget-item-archived.v1":
-                await UpsertBudgetItemState(
-                    GetGuid(envelope.Payload, "budgetItemId"),
-                    budgetId,
-                    GetString(envelope.Payload, "name"),
-                    isArchived: true,
-                    GetDateTimeOffset(envelope.Payload, "archivedAt"),
-                    now,
-                    ct);
-                return null;
-
-            case "budgetytzar.budgeting.budget-adjustment-recorded.v1":
-                var adjustmentDate = GetDate(envelope.Payload, "date");
-                await UpsertAdjustmentState(
-                    GetGuid(envelope.Payload, "budgetAdjustmentId"),
-                    budgetId,
-                    GetGuid(envelope.Payload, "budgetItemId"),
-                    envelope.EventId,
-                    adjustmentDate,
-                    GetDecimal(envelope.Payload, "amount"),
-                    GetEnum<BudgetAdjustmentType>(envelope.Payload, "direction"),
-                    now,
-                    ct);
-                return adjustmentDate;
-
-            case "budgetytzar.budgeting.budget-reallocation-recorded.v1":
-                var reallocationDate = GetDate(envelope.Payload, "date");
-                await db.BudgetAdjustmentProjectionStates
-                    .Where(x => x.SourceEventId == envelope.EventId)
-                    .ExecuteDeleteAsync(ct);
-                var ordinal = 0;
-                foreach (var adjustment in GetArray(envelope.Payload, "adjustments"))
-                {
-                    var item = adjustment!.AsObject();
-                    db.BudgetAdjustmentProjectionStates.Add(new BudgetAdjustmentProjectionState
-                    {
-                        ActivityId = DeterministicActivityId(envelope.EventId, ordinal++),
-                        BudgetId = budgetId,
-                        BudgetItemId = GetGuid(item, "budgetItemId"),
-                        SourceEventId = envelope.EventId,
-                        Date = reallocationDate,
-                        Amount = GetDecimal(item, "amount"),
-                        Direction = GetEnum<BudgetAdjustmentType>(item, "direction"),
-                        UpdatedAt = now
-                    });
-                }
-                return reallocationDate;
-
-            case "budgetytzar.transactions.transaction-manually-created.v1":
-            case "budgetytzar.transactions.transaction-edited.v1":
-            case "budgetytzar.transactions.transaction-ignored.v1":
-                var transactionId = GetGuid(envelope.Payload, "transactionId");
-                var transactionDate = GetDate(envelope.Payload, "transactionDate");
-                var existingTransaction = await db.TransactionProjectionStates
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.TransactionId == transactionId, ct);
-                await UpsertTransactionState(transactionId, budgetId, transactionDate, now, envelope.Payload, ct);
-                return existingTransaction is null
-                    ? transactionDate
-                    : Min(existingTransaction.TransactionDate, transactionDate);
-
-            case "budgetytzar.transactions.transaction-allocations-replaced.v1":
-                var replacedTransactionId = GetGuid(envelope.Payload, "transactionId");
-                await ReplaceAllocationState(replacedTransactionId, budgetId, envelope.Payload, now, ct);
-                return await GetTransactionDateOrOccurredDate(replacedTransactionId, envelope, ct);
-
-            case "budgetytzar.transactions.transaction-allocations-cleared.v1":
-                var clearedTransactionId = GetGuid(envelope.Payload, "transactionId");
-                await db.TransactionAllocationProjectionStates
-                    .Where(x => x.TransactionId == clearedTransactionId)
-                    .ExecuteDeleteAsync(ct);
-                return await GetTransactionDateOrOccurredDate(clearedTransactionId, envelope, ct);
-
-            default:
-                throw new PermanentProjectionException($"No reporting projector exists for event type '{envelope.EventType}'.");
+            var item = adjustment!.AsObject();
+            db.BudgetAdjustmentProjectionStates.Add(new BudgetAdjustmentProjectionState
+            {
+                ActivityId = DeterministicActivityId(envelope.EventId, ordinal++),
+                BudgetId = budgetId,
+                BudgetItemId = GetGuid(item, "budgetItemId"),
+                SourceEventId = envelope.EventId,
+                Date = reallocationDate,
+                Amount = GetDecimal(item, "amount"),
+                Direction = GetEnum<BudgetAdjustmentType>(item, "direction"),
+                UpdatedAt = now
+            });
         }
+        return reallocationDate;
+    }
+
+    private async Task<DateOnly?> ApplyTransactionState(EventEnvelope envelope, Guid budgetId, CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var transactionId = GetGuid(envelope.Payload, "transactionId");
+        var transactionDate = GetDate(envelope.Payload, "transactionDate");
+        var existingTransaction = await db.TransactionProjectionStates
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.TransactionId == transactionId, ct);
+        await UpsertTransactionState(transactionId, budgetId, transactionDate, now, envelope.Payload, ct);
+        return existingTransaction is null
+            ? transactionDate
+            : Min(existingTransaction.TransactionDate, transactionDate);
+    }
+
+    private async Task<DateOnly?> ApplyTransactionAllocationsReplacedState(EventEnvelope envelope, Guid budgetId, CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var replacedTransactionId = GetGuid(envelope.Payload, "transactionId");
+        await ReplaceAllocationState(replacedTransactionId, budgetId, envelope.Payload, now, ct);
+        return await GetTransactionDateOrOccurredDate(replacedTransactionId, envelope, ct);
+    }
+
+    private async Task<DateOnly?> ApplyTransactionAllocationsClearedState(EventEnvelope envelope, Guid budgetId, CancellationToken ct)
+    {
+        var clearedTransactionId = GetGuid(envelope.Payload, "transactionId");
+        await db.TransactionAllocationProjectionStates
+            .Where(x => x.TransactionId == clearedTransactionId)
+            .ExecuteDeleteAsync(ct);
+        return await GetTransactionDateOrOccurredDate(clearedTransactionId, envelope, ct);
     }
 
     private async Task UpsertBudgetItemState(
