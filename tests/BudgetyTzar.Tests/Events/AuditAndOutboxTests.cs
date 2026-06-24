@@ -34,10 +34,36 @@ public sealed class AuditAndOutboxTests
         Assert.Equal(budget.Id, envelope.Payload["budgetId"]!.GetValue<Guid>());
         Assert.Equal(budget.Name, envelope.Payload["name"]!.GetValue<string>());
         Assert.Equal(budget.Currency, envelope.Payload["currency"]!.GetValue<string>());
+        Assert.False(envelope.Payload.ContainsKey("entityType"));
+        Assert.False(envelope.Payload.ContainsKey("entityId"));
+        Assert.False(envelope.Payload.ContainsKey("eventName"));
+        Assert.False(envelope.Payload.ContainsKey("appliesToAllPeriods"));
         Assert.False(envelope.Payload.ContainsKey("auditEventId"));
         Assert.False(envelope.Payload.ContainsKey("auditEventType"));
         Assert.False(envelope.Payload.ContainsKey("auditDescription"));
         Assert.False(envelope.Payload.ContainsKey("auditDetails"));
+    }
+
+    [Fact]
+    public async Task OutboxWriterRequiresExplicitDomainEventPayloads()
+    {
+        await using var app = new BudgetApiFactory();
+        await app.ResetDatabaseAsync();
+
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var writer = scope.ServiceProvider.GetRequiredService<DomainEventOutboxWriter>();
+        var domainEvent = new DomainEvent(
+            "PayloadRequired",
+            Guid.NewGuid(),
+            "TestEntity",
+            Guid.NewGuid(),
+            "Payload required test.");
+
+        var exception = Assert.Throws<InvalidOperationException>(() => writer.Add(domainEvent));
+
+        Assert.Contains("PayloadRequired", exception.Message);
+        Assert.Equal(0, await db.OutboxMessages.CountAsync());
     }
 
     [Fact]

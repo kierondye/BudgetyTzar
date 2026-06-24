@@ -21,7 +21,7 @@ public sealed class DomainEventOutboxWriter(BudgetDbContext db, IOptions<EventTo
             domainEvent.EntityId,
             domainEvent.EntityType,
             1,
-            CreatePayload(domainEvent));
+            SerializePayload(domainEvent));
 
         db.OutboxMessages.Add(new OutboxMessage
         {
@@ -37,12 +37,8 @@ public sealed class DomainEventOutboxWriter(BudgetDbContext db, IOptions<EventTo
         return eventId;
     }
 
-    private static JsonObject CreatePayload(DomainEvent domainEvent)
-    {
-        var payload = domainEvent.Payload is null
-            ? JsonSerializer.SerializeToNode(CanonicalEventPayload.From(domainEvent), EventSerialization.Options)!.AsObject()
+    private static JsonObject SerializePayload(DomainEvent domainEvent) =>
+        domainEvent.Payload is null
+            ? throw new InvalidOperationException($"Domain event '{domainEvent.EventType}' must provide an explicit payload.")
             : JsonSerializer.SerializeToNode(domainEvent.Payload, EventSerialization.Options)!.AsObject();
-        payload["budgetId"] = domainEvent.BudgetId;
-        return payload;
-    }
 }
