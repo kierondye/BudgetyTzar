@@ -1,3 +1,5 @@
+using BudgetyTzar.Api.Contracts.Events;
+
 namespace BudgetyTzar.Api;
 
 public sealed class Budget
@@ -21,10 +23,5 @@ public sealed class Budget
             nameof(Budget),
             Id,
             $"Created budget {Name}.",
-            Payload: new
-            {
-                BudgetId = Id,
-                Name,
-                Currency
-            });
+            Payload: new BudgetCreatedPayload(Id, Name, Currency));
 }

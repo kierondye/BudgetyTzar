@@ -1,4 +1,5 @@
 using BudgetyTzar.Api.Application.Common;
+using BudgetyTzar.Api.Contracts.Events;
 using BudgetyTzar.Api.Infrastructure.Events;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -164,25 +165,11 @@ public sealed class RecordReallocationHandler(BudgetDbContext db, AuditEventWrit
         db.BudgetReallocations.Add(reallocation);
         db.BudgetAdjustments.AddRange(adjustments.Select(x =>
             BudgetAdjustment.Create(budgetId, x.BudgetItemId, x.Amount, x.Direction, date, notes, reallocation.Id)));
-        var eventId = audit.Add(new DomainEvent(
-            "BudgetReallocationRecorded",
+        var eventId = audit.Add(reallocation.RecordedEvent(
             budgetId,
-            nameof(BudgetReallocation),
-            reallocation.Id,
-            $"Recorded budget reallocation {reallocation.Id}: {reallocation.Reason}",
-            Payload: new
-            {
-                BudgetReallocationId = reallocation.Id,
-                BudgetId = budgetId,
-                Date = date,
-                Notes = notes,
-                Adjustments = adjustments.Select(x => new
-                {
-                    x.BudgetItemId,
-                    x.Amount,
-                    Direction = x.Direction
-                }).ToList()
-            }));
+            adjustments
+                .Select(x => new BudgetReallocationAdjustmentPayload(x.BudgetItemId, x.Amount, x.Direction))
+                .ToList()));
         await db.SaveChangesAsync(ct);
         return CommandResult<BudgetReallocation>.Created(reallocation, eventId);
     }

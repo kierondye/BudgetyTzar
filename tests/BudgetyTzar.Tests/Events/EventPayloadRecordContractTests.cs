@@ -7,7 +7,6 @@ namespace BudgetyTzar.Tests;
 
 public sealed class EventPayloadRecordContractTests
 {
-    private static readonly Guid AuditEventId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid BudgetId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private static readonly Guid BudgetItemId = Guid.Parse("33333333-3333-3333-3333-333333333333");
     private static readonly Guid SecondBudgetItemId = Guid.Parse("44444444-4444-4444-4444-444444444444");
@@ -18,7 +17,6 @@ public sealed class EventPayloadRecordContractTests
         {
             "budgetytzar.budgeting.budget-created.v1",
             new BudgetCreatedPayload(
-                AuditEventId,
                 BudgetId,
                 "Household",
                 "GBP")
@@ -26,7 +24,6 @@ public sealed class EventPayloadRecordContractTests
         {
             "budgetytzar.budgeting.budget-item-created.v1",
             new BudgetItemCreatedPayload(
-                AuditEventId,
                 BudgetId,
                 BudgetItemId,
                 "Groceries")
@@ -34,7 +31,6 @@ public sealed class EventPayloadRecordContractTests
         {
             "budgetytzar.budgeting.budget-item-archived.v1",
             new BudgetItemArchivedPayload(
-                AuditEventId,
                 BudgetId,
                 BudgetItemId,
                 "Old category",
@@ -43,7 +39,6 @@ public sealed class EventPayloadRecordContractTests
         {
             "budgetytzar.budgeting.budget-adjustment-recorded.v1",
             new BudgetAdjustmentRecordedPayload(
-                AuditEventId,
                 Guid.Parse("66666666-6666-6666-6666-666666666666"),
                 BudgetId,
                 BudgetItemId,
@@ -55,7 +50,6 @@ public sealed class EventPayloadRecordContractTests
         {
             "budgetytzar.budgeting.budget-reallocation-recorded.v1",
             new BudgetReallocationRecordedPayload(
-                AuditEventId,
                 Guid.Parse("77777777-7777-7777-7777-777777777777"),
                 BudgetId,
                 new DateOnly(2026, 6, 13),
@@ -68,7 +62,6 @@ public sealed class EventPayloadRecordContractTests
         {
             "budgetytzar.transactions.transaction-manually-created.v1",
             new TransactionManuallyCreatedPayload(
-                AuditEventId,
                 TransactionId,
                 BudgetId,
                 new DateOnly(2026, 6, 14),
@@ -83,7 +76,6 @@ public sealed class EventPayloadRecordContractTests
         {
             "budgetytzar.transactions.transaction-edited.v1",
             new TransactionEditedPayload(
-                AuditEventId,
                 TransactionId,
                 BudgetId,
                 new DateOnly(2026, 6, 15),
@@ -98,7 +90,6 @@ public sealed class EventPayloadRecordContractTests
         {
             "budgetytzar.transactions.transaction-ignored.v1",
             new TransactionIgnoredPayload(
-                AuditEventId,
                 TransactionId,
                 BudgetId,
                 new DateOnly(2026, 6, 16),

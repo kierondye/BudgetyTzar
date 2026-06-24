@@ -1,7 +1,6 @@
 namespace BudgetyTzar.Api.Contracts.Events;
 
 public sealed record TransactionManuallyCreatedPayload(
-    Guid AuditEventId,
     Guid TransactionId,
     Guid BudgetId,
     DateOnly TransactionDate,
@@ -14,7 +13,6 @@ public sealed record TransactionManuallyCreatedPayload(
     bool IsIgnored);
 
 public sealed record TransactionEditedPayload(
-    Guid AuditEventId,
     Guid TransactionId,
     Guid BudgetId,
     DateOnly TransactionDate,
@@ -27,7 +25,6 @@ public sealed record TransactionEditedPayload(
     bool IsIgnored);
 
 public sealed record TransactionIgnoredPayload(
-    Guid AuditEventId,
     Guid TransactionId,
     Guid BudgetId,
     DateOnly TransactionDate,

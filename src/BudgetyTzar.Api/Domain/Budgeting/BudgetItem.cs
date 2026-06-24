@@ -1,3 +1,5 @@
+using BudgetyTzar.Api.Contracts.Events;
+
 namespace BudgetyTzar.Api;
 
 public sealed class BudgetItem
@@ -23,12 +25,7 @@ public sealed class BudgetItem
             nameof(BudgetItem),
             Id,
             $"Created budget item {Name}.",
-            Payload: new
-            {
-                BudgetId,
-                BudgetItemId = Id,
-                Name
-            });
+            Payload: new BudgetItemCreatedPayload(BudgetId, Id, Name));
 
     public DomainEvent Archive(DateTimeOffset archivedAt)
     {
@@ -40,13 +37,7 @@ public sealed class BudgetItem
             nameof(BudgetItem),
             Id,
             $"Archived budget item {Name}.",
-            Payload: new
-            {
-                BudgetId,
-                BudgetItemId = Id,
-                Name,
-                ArchivedAt
-            });
+            Payload: new BudgetItemArchivedPayload(BudgetId, Id, Name, archivedAt));
     }
 
     public bool CanAcceptActivityOn(DateOnly activityDate)

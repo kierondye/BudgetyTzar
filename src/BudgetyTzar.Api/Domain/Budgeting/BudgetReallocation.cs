@@ -1,3 +1,5 @@
+using BudgetyTzar.Api.Contracts.Events;
+
 namespace BudgetyTzar.Api;
 
 public sealed class BudgetReallocation
@@ -22,18 +24,12 @@ public sealed class BudgetReallocation
             Notes = notes?.Trim()
         };
 
-    public DomainEvent RecordedEvent(Guid budgetId) =>
+    public DomainEvent RecordedEvent(Guid budgetId, IReadOnlyList<BudgetReallocationAdjustmentPayload> adjustments) =>
         new(
             "BudgetReallocationRecorded",
             budgetId,
             nameof(BudgetReallocation),
             Id,
             $"Recorded budget reallocation {Id}: {Reason}",
-            Payload: new
-            {
-                BudgetReallocationId = Id,
-                BudgetId = budgetId,
-                Date,
-                Notes
-            });
+            Payload: new BudgetReallocationRecordedPayload(Id, budgetId, Date, Notes, adjustments));
 }

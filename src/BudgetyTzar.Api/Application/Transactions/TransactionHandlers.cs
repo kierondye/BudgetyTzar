@@ -1,5 +1,6 @@
 using BudgetyTzar.Api.Application.Budgeting;
 using BudgetyTzar.Api.Application.Common;
+using BudgetyTzar.Api.Contracts.Events;
 using BudgetyTzar.Api.Infrastructure.Events;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -34,7 +35,17 @@ public sealed class CreateTransactionHandler(BudgetDbContext db, AuditEventWrite
             nameof(FinancialTransaction),
             transaction.Id,
             $"Created transaction {transaction.Description} for {transaction.Amount} {transaction.Direction}.",
-            Payload: TransactionEventPayloads.TransactionPayload(transaction)));
+            Payload: new TransactionManuallyCreatedPayload(
+                transaction.Id,
+                transaction.BudgetId,
+                transaction.TransactionDate,
+                transaction.Description,
+                transaction.Amount,
+                transaction.Direction,
+                transaction.SourceAccount,
+                transaction.ExternalReference,
+                transaction.Notes,
+                transaction.IsIgnored)));
         await db.SaveChangesAsync(ct);
         return CommandResult<FinancialTransaction>.Created(transaction, eventId);
     }
@@ -85,7 +96,17 @@ public sealed class UpdateTransactionHandler(BudgetDbContext db, AuditEventWrite
             transaction.Id,
             $"Edited transaction {transaction.Description}.",
             $"Previous={previousDescription}, {previousAmount} {previousDirection}; New={transaction.Description}, {transaction.Amount} {transaction.Direction}",
-            Payload: TransactionEventPayloads.TransactionPayload(transaction)));
+            Payload: new TransactionEditedPayload(
+                transaction.Id,
+                transaction.BudgetId,
+                transaction.TransactionDate,
+                transaction.Description,
+                transaction.Amount,
+                transaction.Direction,
+                transaction.SourceAccount,
+                transaction.ExternalReference,
+                transaction.Notes,
+                transaction.IsIgnored)));
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent(eventId);
     }
@@ -108,7 +129,17 @@ public sealed class IgnoreTransactionHandler(BudgetDbContext db, AuditEventWrite
             nameof(FinancialTransaction),
             transaction.Id,
             $"Ignored transaction {transaction.Description}.",
-            Payload: TransactionEventPayloads.TransactionPayload(transaction)));
+            Payload: new TransactionIgnoredPayload(
+                transaction.Id,
+                transaction.BudgetId,
+                transaction.TransactionDate,
+                transaction.Description,
+                transaction.Amount,
+                transaction.Direction,
+                transaction.SourceAccount,
+                transaction.ExternalReference,
+                transaction.Notes,
+                transaction.IsIgnored)));
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent(eventId);
     }
@@ -165,18 +196,16 @@ public sealed class ReplaceTransactionAllocationsHandler(BudgetDbContext db, Aud
             transactionId,
             $"Allocated transaction {transaction.Description}.",
             $"Previous={TransactionAllocationFormatting.Format(existing)}; New={TransactionAllocationFormatting.Format(allocations)}",
-            Payload: new
-            {
-                TransactionId = transaction.Id,
-                BudgetId = budgetId,
-                TransactionAmount = transaction.Amount,
-                Allocations = allocations.Select(x => new
-                {
-                    BudgetItemId = x.BudgetItemId,
-                    x.Amount,
-                    Notes = string.IsNullOrWhiteSpace(x.Notes) ? null : x.Notes.Trim()
-                }).ToList()
-            }));
+            Payload: new TransactionAllocationsReplacedPayload(
+                transaction.Id,
+                budgetId,
+                transaction.Amount,
+                allocations
+                    .Select(x => new TransactionAllocationPayload(
+                        x.BudgetItemId,
+                        x.Amount,
+                        string.IsNullOrWhiteSpace(x.Notes) ? null : x.Notes.Trim()))
+                    .ToList())));
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent(eventId);
     }
@@ -203,35 +232,13 @@ public sealed class ClearTransactionAllocationsHandler(BudgetDbContext db, Audit
             transactionId,
             $"Cleared allocations for transaction {transaction.Description}.",
             TransactionAllocationFormatting.Format(allocations),
-            Payload: new
-            {
-                TransactionId = transaction.Id,
-                BudgetId = budgetId,
-                ClearedAllocations = allocations.Select(x => new
-                {
-                    BudgetItemId = x.BudgetItemId,
-                    x.Amount,
-                    x.Notes
-                }).ToList()
-            }));
+            Payload: new TransactionAllocationsClearedPayload(
+                transaction.Id,
+                budgetId,
+                allocations
+                    .Select(x => new TransactionAllocationPayload(x.BudgetItemId, x.Amount, x.Notes))
+                    .ToList())));
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent(eventId);
     }
-}
-
-file static class TransactionEventPayloads
-{
-    public static object TransactionPayload(FinancialTransaction transaction) => new
-    {
-        TransactionId = transaction.Id,
-        transaction.BudgetId,
-        transaction.TransactionDate,
-        transaction.Description,
-        transaction.Amount,
-        Direction = transaction.Direction,
-        transaction.SourceAccount,
-        transaction.ExternalReference,
-        transaction.Notes,
-        transaction.IsIgnored
-    };
 }

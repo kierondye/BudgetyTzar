@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using BudgetyTzar.Api.Contracts.Events;
 
 namespace BudgetyTzar.Api;
 
@@ -51,14 +52,5 @@ public sealed class BudgetAdjustment
             nameof(BudgetAdjustment),
             Id,
             $"Recorded {Type} adjustment {Amount} for budget item {budgetItemName}: {Reason}",
-            Payload: new
-            {
-                BudgetAdjustmentId = Id,
-                BudgetId = budgetId,
-                BudgetItemId = BudgetItemId,
-                Amount,
-                Direction = Type,
-                Date,
-                Notes
-            });
+            Payload: new BudgetAdjustmentRecordedPayload(Id, budgetId, BudgetItemId, Amount, Type, Date, Notes));
 }
