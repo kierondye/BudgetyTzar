@@ -205,36 +205,27 @@ public sealed class ReportingProjectionConsumerService(
         CancellationToken ct)
     {
         var leaseCutoff = now.AddSeconds(-Math.Max(1, processingLeaseSeconds));
+        var budgetId = ReadBudgetId(envelope);
         var projectionEvent = await db.ProcessedProjectionEvents
             .SingleOrDefaultAsync(x => x.EventId == envelope.EventId, ct);
         if (projectionEvent is not null)
         {
-            if (projectionEvent.Status == ProjectionProcessingStatus.Completed)
-            {
-                return false;
-            }
-
-            if (projectionEvent.Status == ProjectionProcessingStatus.Processing
-                && projectionEvent.ProcessingUpdatedAt >= leaseCutoff)
-            {
-                return false;
-            }
-
-            projectionEvent.EventType = envelope.EventType;
-            projectionEvent.OccurredAt = envelope.OccurredAt;
-            projectionEvent.Status = ProjectionProcessingStatus.Processing;
-            projectionEvent.ProcessingInstanceId = processingInstanceId;
-            projectionEvent.ProcessingStartedAt = now;
-            projectionEvent.ProcessingUpdatedAt = now;
-            projectionEvent.LastError = null;
-            await db.SaveChangesAsync(ct);
-            return true;
+            return await TryClaimExistingProjectionEvent(
+                db,
+                projectionEvent,
+                envelope,
+                budgetId,
+                processingInstanceId,
+                leaseCutoff,
+                now,
+                ct);
         }
 
         db.ProcessedProjectionEvents.Add(new ProcessedProjectionEvent
         {
             EventId = envelope.EventId,
             EventType = envelope.EventType,
+            BudgetId = budgetId,
             OccurredAt = envelope.OccurredAt,
             ProcessedAt = now,
             Status = ProjectionProcessingStatus.Processing,
@@ -242,6 +233,58 @@ public sealed class ReportingProjectionConsumerService(
             ProcessingStartedAt = now,
             ProcessingUpdatedAt = now
         });
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            return true;
+        }
+        catch (DbUpdateException)
+        {
+            db.ChangeTracker.Clear();
+            projectionEvent = await db.ProcessedProjectionEvents
+                .SingleOrDefaultAsync(x => x.EventId == envelope.EventId, ct);
+            return projectionEvent is not null
+                && await TryClaimExistingProjectionEvent(
+                    db,
+                    projectionEvent,
+                    envelope,
+                    budgetId,
+                    processingInstanceId,
+                    leaseCutoff,
+                    now,
+                    ct);
+        }
+    }
+
+    private static async Task<bool> TryClaimExistingProjectionEvent(
+        BudgetDbContext db,
+        ProcessedProjectionEvent projectionEvent,
+        EventEnvelope envelope,
+        Guid budgetId,
+        Guid processingInstanceId,
+        DateTimeOffset leaseCutoff,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
+        if (projectionEvent.Status == ProjectionProcessingStatus.Completed)
+        {
+            return false;
+        }
+
+        if (projectionEvent.Status == ProjectionProcessingStatus.Processing
+            && projectionEvent.ProcessingUpdatedAt >= leaseCutoff)
+        {
+            return false;
+        }
+
+        projectionEvent.EventType = envelope.EventType;
+        projectionEvent.BudgetId = budgetId;
+        projectionEvent.OccurredAt = envelope.OccurredAt;
+        projectionEvent.Status = ProjectionProcessingStatus.Processing;
+        projectionEvent.ProcessingInstanceId = processingInstanceId;
+        projectionEvent.ProcessingStartedAt = now;
+        projectionEvent.ProcessingUpdatedAt = now;
+        projectionEvent.LastError = null;
         await db.SaveChangesAsync(ct);
         return true;
     }
@@ -272,6 +315,17 @@ public sealed class ReportingProjectionConsumerService(
         {
             throw new PermanentProjectionException($"Event payload for '{envelope.EventType}' could not be deserialized.", ex);
         }
+    }
+
+    private static Guid ReadBudgetId(EventEnvelope envelope)
+    {
+        if (envelope.Payload["budgetId"] is { } node
+            && node.Deserialize<Guid?>(EventSerialization.Options) is { } budgetId)
+        {
+            return budgetId;
+        }
+
+        throw new PermanentProjectionException($"Event payload for '{envelope.EventType}' is missing required budgetId.");
     }
 
     private async Task<bool> TryProjectOrDeadLetter(

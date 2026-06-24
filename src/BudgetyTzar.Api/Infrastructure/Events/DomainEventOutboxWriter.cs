@@ -1,4 +1,3 @@
-using BudgetyTzar.Api.Application.Reporting;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
@@ -33,15 +32,6 @@ public sealed class DomainEventOutboxWriter(BudgetDbContext db, IOptions<EventTo
             AggregateType = domainEvent.EntityType,
             BudgetId = domainEvent.BudgetId,
             EnvelopeJson = JsonSerializer.Serialize(envelope, EventSerialization.Options)
-        });
-        db.ProcessedProjectionEvents.Add(new ProcessedProjectionEvent
-        {
-            EventId = eventId,
-            EventType = canonicalEventType,
-            BudgetId = domainEvent.BudgetId,
-            OccurredAt = occurredAt,
-            ProcessedAt = occurredAt,
-            Status = ProjectionProcessingStatus.Pending
         });
 
         return eventId;

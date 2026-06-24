@@ -48,7 +48,7 @@ public sealed class ProjectionReadinessApiTests
 
         var response = await client.GetAsync($"/api/budgets/{budget.Id}/snapshot?date=2026-06-10");
 
-        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
 
         using var verifyScope = app.Services.CreateScope();
         var db = verifyScope.ServiceProvider.GetRequiredService<BudgetDbContext>();
@@ -57,12 +57,32 @@ public sealed class ProjectionReadinessApiTests
     }
 
     [Fact]
-    public async Task ProjectionBackedSnapshotReturnsAcceptedWhenProjectionRowsAreMissing()
+    public async Task ProjectionBackedSnapshotReturnsAcceptedWhenProjectionRowIsPending()
     {
         await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+            var outbox = await db.OutboxMessages.SingleAsync(x => x.BudgetId == budget.Id);
+            var now = DateTimeOffset.UtcNow;
+            db.ProcessedProjectionEvents.Add(new ProcessedProjectionEvent
+            {
+                EventId = outbox.Id,
+                EventType = outbox.EventType,
+                BudgetId = budget.Id,
+                OccurredAt = outbox.CreatedAt,
+                ProcessedAt = now,
+                Status = ProjectionProcessingStatus.Processing,
+                ProcessingInstanceId = Guid.NewGuid(),
+                ProcessingStartedAt = now,
+                ProcessingUpdatedAt = now
+            });
+            await db.SaveChangesAsync();
+        }
 
         var response = await client.GetAsync($"/api/budgets/{budget.Id}/snapshot?date=2026-06-30");
         var pending = await response.Content.ReadFromJsonAsync<ProjectionPendingResponse>();
@@ -124,7 +144,7 @@ public sealed class ProjectionReadinessApiTests
     }
 
     [Fact]
-    public async Task ProjectionStatusTransitionsFromPendingToReady()
+    public async Task ProjectionStatusTransitionsFromUnknownToPendingToReady()
     {
         await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
         var client = app.CreateClient();
@@ -134,6 +154,30 @@ public sealed class ProjectionReadinessApiTests
         createResponse.EnsureSuccessStatusCode();
         var budget = (await createResponse.Content.ReadFromJsonAsync<Budget>())!;
         var eventId = Guid.Parse(Assert.Single(createResponse.Headers.GetValues(CommandResultHttpExtensions.EventIdHeaderName)));
+
+        var unknownBeforeConsumer = await client.GetFromJsonAsync<ProjectionStatusResponse>(
+            $"/api/budgets/{budget.Id}/projections/status?eventId={eventId}");
+        Assert.Equal("unknown", unknownBeforeConsumer!.Status);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+            var outbox = await db.OutboxMessages.SingleAsync(x => x.Id == eventId);
+            var staleAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+            db.ProcessedProjectionEvents.Add(new ProcessedProjectionEvent
+            {
+                EventId = outbox.Id,
+                EventType = outbox.EventType,
+                BudgetId = budget.Id,
+                OccurredAt = outbox.CreatedAt,
+                ProcessedAt = staleAt,
+                Status = ProjectionProcessingStatus.Processing,
+                ProcessingInstanceId = Guid.NewGuid(),
+                ProcessingStartedAt = staleAt,
+                ProcessingUpdatedAt = staleAt
+            });
+            await db.SaveChangesAsync();
+        }
 
         var pending = await client.GetFromJsonAsync<ProjectionStatusResponse>(
             $"/api/budgets/{budget.Id}/projections/status?eventId={eventId}");
@@ -182,6 +226,6 @@ public sealed class ProjectionReadinessApiTests
         var status = await client.GetFromJsonAsync<ProjectionStatusResponse>(
             $"/api/budgets/{budget.Id}/projections/status?eventId={eventId}");
 
-        Assert.Equal("pending", status!.Status);
+        Assert.Equal("unknown", status!.Status);
     }
 }

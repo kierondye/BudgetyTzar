@@ -89,9 +89,9 @@ public sealed class ProjectionProcessingTests
         var outbox = await db.OutboxMessages.AsNoTracking().Where(x => x.BudgetId == budget.Id).ToListAsync();
         Assert.All(outbox, x => Assert.Null(x.ProjectedAt));
 
-        var projectionEvents = await db.ProcessedProjectionEvents.AsNoTracking().Where(x => x.BudgetId == budget.Id).ToListAsync();
-        Assert.Equal(ProjectionProcessingStatus.Completed, projectionEvents.Single(x => x.EventId == consumedMessage.Id).Status);
-        Assert.All(projectionEvents.Where(x => x.EventId != consumedMessage.Id), x => Assert.Equal(ProjectionProcessingStatus.Pending, x.Status));
+        var projectionEvent = await db.ProcessedProjectionEvents.AsNoTracking().SingleAsync(x => x.BudgetId == budget.Id);
+        Assert.Equal(consumedMessage.Id, projectionEvent.EventId);
+        Assert.Equal(ProjectionProcessingStatus.Completed, projectionEvent.Status);
     }
 
     [Fact]
@@ -123,7 +123,7 @@ public sealed class ProjectionProcessingTests
     }
 
     [Fact]
-    public async Task CommandsCreatePendingProjectionProcessingRows()
+    public async Task CommandsDoNotCreateProjectionProcessingRows()
     {
         await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
         var client = app.CreateClient();
@@ -133,11 +133,10 @@ public sealed class ProjectionProcessingTests
 
         using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
-        var projectionEvent = await db.ProcessedProjectionEvents.AsNoTracking().SingleAsync(x => x.BudgetId == budget.Id);
+        var outbox = await db.OutboxMessages.AsNoTracking().SingleAsync(x => x.BudgetId == budget.Id);
 
-        Assert.Equal(ProjectionProcessingStatus.Pending, projectionEvent.Status);
-        Assert.Null(projectionEvent.CompletedAt);
-        Assert.Null(projectionEvent.ProcessingInstanceId);
+        Assert.Equal(budget.Id, outbox.BudgetId);
+        Assert.False(await db.ProcessedProjectionEvents.AnyAsync(x => x.BudgetId == budget.Id));
     }
 
     [Fact]
@@ -151,12 +150,19 @@ public sealed class ProjectionProcessingTests
         using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
         var message = await db.OutboxMessages.AsNoTracking().SingleAsync(x => x.BudgetId == budget.Id);
-        var processingEvent = await db.ProcessedProjectionEvents.SingleAsync(x => x.EventId == message.Id);
         var now = DateTimeOffset.UtcNow;
-        processingEvent.Status = ProjectionProcessingStatus.Processing;
-        processingEvent.ProcessingInstanceId = Guid.NewGuid();
-        processingEvent.ProcessingStartedAt = now;
-        processingEvent.ProcessingUpdatedAt = now;
+        db.ProcessedProjectionEvents.Add(new ProcessedProjectionEvent
+        {
+            EventId = message.Id,
+            EventType = message.EventType,
+            BudgetId = budget.Id,
+            OccurredAt = message.CreatedAt,
+            ProcessedAt = now,
+            Status = ProjectionProcessingStatus.Processing,
+            ProcessingInstanceId = Guid.NewGuid(),
+            ProcessingStartedAt = now,
+            ProcessingUpdatedAt = now
+        });
         await db.SaveChangesAsync();
         var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionConsumerService>();
 
@@ -180,12 +186,19 @@ public sealed class ProjectionProcessingTests
         using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
         var message = await db.OutboxMessages.AsNoTracking().SingleAsync(x => x.BudgetId == budget.Id);
-        var processingEvent = await db.ProcessedProjectionEvents.SingleAsync(x => x.EventId == message.Id);
         var staleAt = DateTimeOffset.UtcNow.AddMinutes(-5);
-        processingEvent.Status = ProjectionProcessingStatus.Processing;
-        processingEvent.ProcessingInstanceId = Guid.NewGuid();
-        processingEvent.ProcessingStartedAt = staleAt;
-        processingEvent.ProcessingUpdatedAt = staleAt;
+        db.ProcessedProjectionEvents.Add(new ProcessedProjectionEvent
+        {
+            EventId = message.Id,
+            EventType = message.EventType,
+            BudgetId = budget.Id,
+            OccurredAt = message.CreatedAt,
+            ProcessedAt = staleAt,
+            Status = ProjectionProcessingStatus.Processing,
+            ProcessingInstanceId = Guid.NewGuid(),
+            ProcessingStartedAt = staleAt,
+            ProcessingUpdatedAt = staleAt
+        });
         await db.SaveChangesAsync();
         var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionConsumerService>();
 

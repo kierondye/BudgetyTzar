@@ -158,15 +158,15 @@ public static partial class Endpoints
         HttpContext httpContext,
         CancellationToken ct)
     {
+        if (!await BudgetExists(db, budgetId, ct))
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
         while (!ct.IsCancellationRequested)
         {
             var status = await GetProjectionStatus(db, budgetId, eventId, ct);
-            if (status == "unknown")
-            {
-                httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
-                return;
-            }
-
             if (status == "ready")
             {
                 await WriteProjectionReadyEvent(httpContext, await CreateProjectionReadyNotification(db, budgetId, eventId, ct), ct);
