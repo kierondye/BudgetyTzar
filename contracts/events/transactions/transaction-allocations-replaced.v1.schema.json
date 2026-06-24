@@ -4,9 +4,8 @@
   "title": "Transaction Allocations Replaced",
   "type": "object",
   "additionalProperties": false,
-  "required": ["auditEventId", "transactionId", "budgetId", "transactionAmount", "allocations"],
+  "required": ["transactionId", "budgetId", "transactionAmount", "allocations"],
   "properties": {
-    "auditEventId": { "type": "string", "format": "uuid" },
     "transactionId": { "type": "string", "format": "uuid" },
     "budgetId": { "type": "string", "format": "uuid" },
     "transactionAmount": { "type": "number" },

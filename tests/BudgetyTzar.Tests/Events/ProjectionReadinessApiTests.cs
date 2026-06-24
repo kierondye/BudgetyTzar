@@ -94,7 +94,7 @@ public sealed class ProjectionReadinessApiTests
                 eventId,
                 "budgetytzar.budgeting.budget-created.v1",
                 DateTimeOffset.UtcNow,
-                ["snapshot", "auditTimeline"]));
+                ["snapshot"]));
             await Task.Delay(50);
         }
 
@@ -104,7 +104,7 @@ public sealed class ProjectionReadinessApiTests
     }
 
     [Fact]
-    public async Task ProjectionBackedAuditEndpointDoesNotRebuildFromOutboxAtReadTime()
+    public async Task ProjectionBackedAuditEndpointReadsDurableAuditEventsEvenWhenProjectionIsPending()
     {
         await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
         var client = app.CreateClient();
@@ -112,14 +112,13 @@ public sealed class ProjectionReadinessApiTests
         var budget = await BudgetApiTestClient.CreateBudget(client);
 
         var response = await client.GetAsync($"/api/budgets/{budget.Id}/audit-events");
-        var pending = await response.Content.ReadFromJsonAsync<ProjectionPendingResponse>();
+        var auditEvents = await response.Content.ReadFromJsonAsync<IReadOnlyList<AuditEventDto>>();
 
-        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-        Assert.Equal("pending", pending!.Status);
+        response.EnsureSuccessStatusCode();
+        Assert.Contains(auditEvents!, x => x.EventType == "BudgetCreated");
 
         using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
-        Assert.False(await db.BudgetAuditTimelines.AnyAsync(x => x.BudgetId == budget.Id));
         Assert.False(await db.OutboxMessages.AnyAsync(x => x.BudgetId == budget.Id && x.ProjectedAt != null));
     }
 

@@ -24,7 +24,6 @@ public sealed class ReportingProjectionConsumerService(
 
         db.BudgetSnapshotItemProjections.RemoveRange(db.BudgetSnapshotItemProjections);
         db.BudgetSnapshotProjections.RemoveRange(db.BudgetSnapshotProjections);
-        db.BudgetAuditTimelines.RemoveRange(db.BudgetAuditTimelines);
         db.ProcessedProjectionEvents.RemoveRange(db.ProcessedProjectionEvents);
         db.BudgetItemProjectionStates.RemoveRange(db.BudgetItemProjectionStates);
         db.BudgetAdjustmentProjectionStates.RemoveRange(db.BudgetAdjustmentProjectionStates);
@@ -57,7 +56,6 @@ public sealed class ReportingProjectionConsumerService(
 
         db.BudgetSnapshotItemProjections.RemoveRange(db.BudgetSnapshotItemProjections.Where(x => x.BudgetId == budgetId));
         db.BudgetSnapshotProjections.RemoveRange(db.BudgetSnapshotProjections.Where(x => x.BudgetId == budgetId));
-        db.BudgetAuditTimelines.RemoveRange(db.BudgetAuditTimelines.Where(x => x.BudgetId == budgetId));
         db.ProcessedProjectionEvents.RemoveRange(db.ProcessedProjectionEvents.Where(x => x.BudgetId == budgetId));
         db.BudgetItemProjectionStates.RemoveRange(db.BudgetItemProjectionStates.Where(x => x.BudgetId == budgetId));
         db.BudgetAdjustmentProjectionStates.RemoveRange(db.BudgetAdjustmentProjectionStates.Where(x => x.BudgetId == budgetId));

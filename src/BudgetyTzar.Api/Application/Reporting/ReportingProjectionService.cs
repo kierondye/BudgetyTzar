@@ -12,7 +12,7 @@ public sealed class ReportingProjectionService(
     BudgetDbContext db,
     ProjectionNotificationService notifications)
 {
-    private static readonly string[] UpdatedReadModels = ["snapshot", "auditTimeline"];
+    private static readonly string[] UpdatedReadModels = ["snapshot"];
 
     public Task ApplyBudgetCreated(EventEnvelope envelope, bool markOutboxProjected, CancellationToken ct) =>
         ApplyProjectionEnvelope(
@@ -70,7 +70,6 @@ public sealed class ReportingProjectionService(
 
         var budgetId = GetGuid(envelope.Payload, "budgetId");
         var affectedDate = await applyProjectionState(budgetId, ct);
-        await UpsertAuditTimeline(envelope, budgetId, ct);
         await db.SaveChangesAsync(ct);
 
         var projectedAt = DateTimeOffset.UtcNow;
@@ -314,31 +313,6 @@ public sealed class ReportingProjectionService(
             .Select(x => (DateOnly?)x.TransactionDate)
             .FirstOrDefaultAsync(ct);
         return transactionDate ?? DateOnly.FromDateTime(envelope.OccurredAt.UtcDateTime);
-    }
-
-    private async Task UpsertAuditTimeline(EventEnvelope envelope, Guid budgetId, CancellationToken ct)
-    {
-        var auditEventId = GetGuid(envelope.Payload, "auditEventId");
-        var existing = db.BudgetAuditTimelines.Local.FirstOrDefault(x => x.AuditEventId == auditEventId);
-        if (existing is null)
-        {
-            var audit = await db.AuditEvents
-                .AsNoTracking()
-                .SingleOrDefaultAsync(x => x.Id == auditEventId && x.BudgetId == budgetId, ct)
-                ?? throw new PermanentProjectionException($"No durable audit event exists for audit event id '{auditEventId}'.");
-
-            db.BudgetAuditTimelines.Add(new BudgetAuditTimelineProjection
-            {
-                AuditEventId = auditEventId,
-                BudgetId = audit.BudgetId,
-                OccurredAt = audit.OccurredAt,
-                EventType = audit.EventType,
-                EntityType = audit.EntityType,
-                EntityId = audit.EntityId,
-                Description = audit.Description,
-                Details = audit.Details
-            });
-        }
     }
 
     private async Task RecalculateSnapshots(Guid budgetId, DateOnly? fromDate, DateOnly eventDate, CancellationToken ct)

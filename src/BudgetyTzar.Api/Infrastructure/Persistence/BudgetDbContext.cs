@@ -15,7 +15,6 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<BudgetSnapshotProjection> BudgetSnapshotProjections => Set<BudgetSnapshotProjection>();
     public DbSet<BudgetSnapshotItemProjection> BudgetSnapshotItemProjections => Set<BudgetSnapshotItemProjection>();
-    public DbSet<BudgetAuditTimelineProjection> BudgetAuditTimelines => Set<BudgetAuditTimelineProjection>();
     public DbSet<ProcessedProjectionEvent> ProcessedProjectionEvents => Set<ProcessedProjectionEvent>();
     public DbSet<BudgetItemProjectionState> BudgetItemProjectionStates => Set<BudgetItemProjectionState>();
     public DbSet<BudgetAdjustmentProjectionState> BudgetAdjustmentProjectionStates => Set<BudgetAdjustmentProjectionState>();
@@ -138,17 +137,6 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
             entity.Property(x => x.ActualCredit).HasPrecision(18, 2);
             entity.Property(x => x.ActualDebit).HasPrecision(18, 2);
             entity.HasIndex(x => new { x.BudgetId, x.Date });
-        });
-
-        modelBuilder.Entity<BudgetAuditTimelineProjection>(entity =>
-        {
-            entity.ToTable("budget_audit_timeline");
-            entity.HasKey(x => x.AuditEventId);
-            entity.Property(x => x.EventType).HasMaxLength(160).IsRequired();
-            entity.Property(x => x.EntityType).HasMaxLength(80).IsRequired();
-            entity.Property(x => x.Description).HasMaxLength(500).IsRequired();
-            entity.Property(x => x.Details).HasMaxLength(4000);
-            entity.HasIndex(x => new { x.BudgetId, x.OccurredAt });
         });
 
         modelBuilder.Entity<ProcessedProjectionEvent>(entity =>

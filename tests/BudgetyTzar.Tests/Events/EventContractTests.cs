@@ -64,7 +64,6 @@ public sealed class EventContractTests
             """);
         var payload = JsonDocument.Parse("""
             {
-              "auditEventId": "44444444-4444-4444-4444-444444444444",
               "budgetReallocationId": "33333333-3333-3333-3333-333333333333",
               "budgetId": "55555555-5555-5555-5555-555555555555",
               "date": "2026-06-12",
@@ -74,7 +73,6 @@ public sealed class EventContractTests
             """);
         var manuallyCreatedPayload = JsonDocument.Parse("""
             {
-              "auditEventId": "44444444-4444-4444-4444-444444444444",
               "transactionId": "77777777-7777-7777-7777-777777777777",
               "budgetId": "55555555-5555-5555-5555-555555555555",
               "transactionDate": "2026-06-14",

@@ -63,50 +63,6 @@ namespace BudgetyTzar.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("budget_adjustment_projection_state", (string)null);
                 });
 
-            modelBuilder.Entity("BudgetyTzar.Api.Application.Reporting.BudgetAuditTimelineProjection", b =>
-                {
-                    b.Property<Guid>("AuditEventId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("BudgetId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("Details")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.Property<Guid>("EntityId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("EntityType")
-                        .IsRequired()
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)");
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("character varying(160)");
-
-                    b.Property<DateTimeOffset>("OccurredAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("AuditEventId");
-
-                    b.HasIndex("BudgetId", "OccurredAt");
-
-                    b.ToTable("budget_audit_timeline", (string)null);
-                });
-
             modelBuilder.Entity("BudgetyTzar.Api.Application.Reporting.BudgetItemProjectionState", b =>
                 {
                     b.Property<Guid>("BudgetItemId")

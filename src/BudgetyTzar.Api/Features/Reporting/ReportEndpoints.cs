@@ -53,42 +53,6 @@ public static partial class Endpoints
                 return Results.NotFound();
             }
 
-            if (projections.Value.UseProjectionBackedReports)
-            {
-                if (await GetPendingProjectionResponse(db, budgetId, waitForEventId, ct) is { } pending)
-                {
-                    return Results.Accepted(pending.StatusUrl, pending);
-                }
-
-                var projectedQuery = db.BudgetAuditTimelines
-                    .AsNoTracking()
-                    .Where(x => x.BudgetId == budgetId);
-                if (from.HasValue)
-                {
-                    projectedQuery = projectedQuery.Where(x => x.OccurredAt >= from.Value);
-                }
-
-                if (to.HasValue)
-                {
-                    projectedQuery = projectedQuery.Where(x => x.OccurredAt <= to.Value);
-                }
-
-                var projectedEvents = await projectedQuery.ToListAsync(ct);
-                return Results.Ok(projectedEvents
-                    .OrderByDescending(x => x.OccurredAt)
-                    .ThenByDescending(x => x.AuditEventId)
-                    .Select(x => new AuditEventDto(
-                        x.AuditEventId,
-                        x.BudgetId,
-                        x.OccurredAt,
-                        x.EventType,
-                        x.EntityType,
-                        x.EntityId,
-                        x.Description,
-                        x.Details))
-                    .ToList());
-            }
-
             var query = db.AuditEvents
                 .AsNoTracking()
                 .Where(x => x.BudgetId == budgetId);
@@ -307,7 +271,7 @@ public static partial class Endpoints
                 eventId,
                 projected.EventType,
                 projected.ProcessedAt,
-                ["snapshot", "auditTimeline"]);
+                ["snapshot"]);
         }
 
         var outbox = await db.OutboxMessages
@@ -321,7 +285,7 @@ public static partial class Endpoints
             eventId,
             outbox.EventType,
             outbox.ProjectedAt!.Value,
-            ["snapshot", "auditTimeline"]);
+            ["snapshot"]);
     }
 
     private static async Task WriteProjectionReadyEvent(

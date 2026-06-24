@@ -120,7 +120,7 @@ public sealed class BudgetSnapshotsTests
     }
 
     [Fact]
-    public async Task ProjectionRebuildFromOutboxSupportsProjectionBackedSnapshotsAndAuditTimeline()
+    public async Task ProjectionRebuildFromOutboxSupportsProjectionBackedSnapshots()
     {
         await using var app = new BudgetApiFactory(useProjectionBackedReports: true);
         var client = app.CreateClient();
@@ -152,7 +152,6 @@ public sealed class BudgetSnapshotsTests
 
         Assert.Equal(65m, item.Balance);
         Assert.Equal(-35m, snapshot.TotalBalance);
-        Assert.True(await db.BudgetAuditTimelines.AnyAsync(x => x.BudgetId == budget.Id && x.EventType == "TransactionAllocationsReplaced"));
 
         var apiSnapshot = await client.GetFromJsonAsync<BudgetSnapshot>(
             $"/api/budgets/{budget.Id}/snapshot?date=2026-06-30");

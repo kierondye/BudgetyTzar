@@ -35,7 +35,7 @@ public sealed class AuditAndOutboxTests
         Assert.Equal(budget.Id, envelope.Payload["budgetId"]!.GetValue<Guid>());
         Assert.Equal(budget.Name, envelope.Payload["name"]!.GetValue<string>());
         Assert.Equal(budget.Currency, envelope.Payload["currency"]!.GetValue<string>());
-        Assert.Equal(audit.Id, envelope.Payload["auditEventId"]!.GetValue<Guid>());
+        Assert.False(envelope.Payload.ContainsKey("auditEventId"));
         Assert.False(envelope.Payload.ContainsKey("auditEventType"));
         Assert.False(envelope.Payload.ContainsKey("auditDescription"));
         Assert.False(envelope.Payload.ContainsKey("auditDetails"));

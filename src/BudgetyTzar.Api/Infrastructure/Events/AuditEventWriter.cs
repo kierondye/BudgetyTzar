@@ -34,7 +34,7 @@ public sealed class AuditEventWriter(BudgetDbContext db, IOptions<EventTopicOpti
             domainEvent.EntityId,
             domainEvent.EntityType,
             1,
-            CreatePayload(domainEvent, audit.Id));
+            CreatePayload(domainEvent));
 
         db.OutboxMessages.Add(new OutboxMessage
         {
@@ -50,12 +50,11 @@ public sealed class AuditEventWriter(BudgetDbContext db, IOptions<EventTopicOpti
         return outboxId;
     }
 
-    private static JsonObject CreatePayload(DomainEvent domainEvent, Guid auditEventId)
+    private static JsonObject CreatePayload(DomainEvent domainEvent)
     {
         var payload = domainEvent.Payload is null
-            ? JsonSerializer.SerializeToNode(CanonicalEventPayload.From(domainEvent, auditEventId), EventSerialization.Options)!.AsObject()
+            ? JsonSerializer.SerializeToNode(CanonicalEventPayload.From(domainEvent), EventSerialization.Options)!.AsObject()
             : JsonSerializer.SerializeToNode(domainEvent.Payload, EventSerialization.Options)!.AsObject();
-        payload["auditEventId"] = auditEventId;
         payload["budgetId"] = domainEvent.BudgetId;
         return payload;
     }

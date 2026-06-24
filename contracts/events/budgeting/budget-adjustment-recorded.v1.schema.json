@@ -3,9 +3,8 @@
   "$id": "https://budgetytzar.local/contracts/events/budgeting/budget-adjustment-recorded.v1.schema.json",
   "title": "Budget Adjustment Recorded",
   "type": "object",
-  "required": ["auditEventId", "budgetAdjustmentId", "budgetId", "budgetItemId", "amount", "direction", "date"],
+  "required": ["budgetAdjustmentId", "budgetId", "budgetItemId", "amount", "direction", "date"],
   "properties": {
-    "auditEventId": { "type": "string", "format": "uuid" },
     "budgetAdjustmentId": { "type": "string", "format": "uuid" },
     "budgetId": { "type": "string", "format": "uuid" },
     "budgetItemId": { "type": "string", "format": "uuid" },

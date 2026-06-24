@@ -4,9 +4,8 @@
   "title": "Transaction Allocations Cleared",
   "type": "object",
   "additionalProperties": false,
-  "required": ["auditEventId", "transactionId", "budgetId", "clearedAllocations"],
+  "required": ["transactionId", "budgetId", "clearedAllocations"],
   "properties": {
-    "auditEventId": { "type": "string", "format": "uuid" },
     "transactionId": { "type": "string", "format": "uuid" },
     "budgetId": { "type": "string", "format": "uuid" },
     "clearedAllocations": {

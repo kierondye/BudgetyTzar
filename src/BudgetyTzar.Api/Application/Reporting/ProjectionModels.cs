@@ -27,19 +27,6 @@ public sealed class BudgetSnapshotItemProjection
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
-public sealed class BudgetAuditTimelineProjection
-{
-    public Guid AuditEventId { get; set; }
-    public Guid BudgetId { get; set; }
-    public DateTimeOffset OccurredAt { get; set; }
-    public required string EventType { get; set; }
-    public required string EntityType { get; set; }
-    public Guid EntityId { get; set; }
-    public required string Description { get; set; }
-    public string? Details { get; set; }
-    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
-}
-
 public sealed class ProcessedProjectionEvent
 {
     public Guid EventId { get; set; }

@@ -3,9 +3,8 @@
   "$id": "https://budgetytzar.local/contracts/events/budgeting/budget-created.v1.schema.json",
   "title": "Budget Created",
   "type": "object",
-  "required": ["auditEventId", "budgetId", "name", "currency"],
+  "required": ["budgetId", "name", "currency"],
   "properties": {
-    "auditEventId": { "type": "string", "format": "uuid" },
     "budgetId": { "type": "string", "format": "uuid" },
     "name": { "type": "string" },
     "currency": { "type": "string" }
