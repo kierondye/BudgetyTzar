@@ -49,4 +49,21 @@ Organize reporting read models and projections by reporting capability.
 
 ## Completion notes
 
-- Not started.
+- Started with a narrow snapshot read-model organization increment by moving `BudgetSnapshotProjection` and
+  `BudgetSnapshotItemProjection` out of the mixed `Application/Reporting/ProjectionModels.cs` file and into
+  `Features/Reporting/Snapshots/SnapshotProjectionModels.cs`.
+- Decision: keep the moved types in the existing `BudgetyTzar.Api.Application.Reporting` namespace so references,
+  tests, EF model type names, and migration metadata remain stable. The change is file/folder ownership only.
+- Decision: keep `BudgetDbContext` mappings unchanged and pinned to the existing `budget_snapshot` and
+  `budget_snapshot_item` table names; no migration or database schema change was introduced.
+- Decision: leave snapshot calculation, projection update behavior, projection readiness state, projection failures,
+  audit failures, and API responses unchanged. This increment only separates the snapshot read-model entity pair from
+  unrelated projection state types.
+- Deferred follow-on: move the remaining projection state models beside the snapshot projection behavior when the
+  ownership boundary is clear enough to keep projection mechanics separate from reporting read models.
+- Deferred follow-on: separate projection processing/failure state from reporting read models in a later Step 08 or
+  Step 09 increment, without changing retry, dead-letter, or readiness behavior.
+- Remaining Step 08 work: continue organizing snapshot read models and projection logic by capability while preserving
+  EF mappings, snapshot calculation results, rebuild behavior, and current reporting API responses.
+- Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped, matching the known baseline caveat.
+  `dotnet test` passed with 77 tests.
