@@ -31,6 +31,7 @@ public static partial class Endpoints
         MapReallocationEndpoints(budgets);
         MapAdjustmentEndpoints(budgets);
         MapReportEndpoints(budgets);
+        MapAuditEndpoints(budgets);
 
         return api;
     }

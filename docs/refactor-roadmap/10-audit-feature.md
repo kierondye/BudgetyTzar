@@ -111,3 +111,43 @@ Promote audit into its own feature focused on queryable audit history.
   persistence boundaries are now separated without changing runtime behavior.
 - Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped after matching the known baseline
   caveat. `dotnet test` passed with 77 tests.
+- Closed Step 10 with a boundary review increment.
+- Decision: treat Step 10 as complete for the current audit feature. Audit query ownership and audit-specific projection
+  behavior now live under `Features/Audit`, while audit consumer transport, schema validation entry point, retry timing,
+  dead-letter publishing, failure persistence, raw failure metadata parsing, and offset commits remain in
+  `Infrastructure/Events`.
+- Decision: intentionally leave `AuditEventDto`, `AuditEventProjectionService`, `AuditProjectionResult`, and
+  `AuditEventFailure` in their existing `BudgetyTzar.Api.Application.Reporting` namespace. Moving namespaces now would
+  add public-reference and EF model churn without improving the Step 10 runtime boundary.
+- Decision: intentionally leave `AuditEventFailure` in `Application/Reporting` as a deferred namespace/file ownership
+  concern because moving the EF entity identity would risk migration snapshot churn. Its persistence behavior is already
+  infrastructure-owned through `AuditFailureStore`.
+- Grouping rationale: this increment is documentation-only because the remaining code boundaries already match the
+  roadmap goal. Closing the step records the stopping point and avoids speculative namespace cleanup, generic dispatch,
+  or migration-affecting moves.
+- Preserved behavior: no runtime code changed. `/api/budgets/{budgetId}/audit-events`, filters, ordering, not-found
+  behavior, response JSON, audit append-only/idempotent projection behavior, event contracts, event schemas, envelopes,
+  Kafka topics, retry/dead-letter behavior, failure persistence values, EF mappings, migrations, and database schema
+  remain unchanged.
+- Deferred follow-on: namespace/file ownership cleanup for audit DTO/projection/failure types may be revisited only if a
+  future step explicitly accepts the public-reference and EF model identity considerations. No Step 10 work remains for
+  the current audit feature boundary.
+- Remaining Step 10 work: none known for the current API and projection surface.
+- Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped after matching the known baseline
+  caveat. `dotnet test` passed with 77 tests.
+- Added a final audit endpoint composition cleanup after review.
+- Decision: add `Features/Audit/AuditEndpoints.cs` and call `MapAuditEndpoints` from the budget endpoint root so the
+  audit-events endpoint is composed by the audit feature instead of the reporting endpoint group.
+- Decision: leave the endpoint route, handler, DTO, query, and budget-root grouping unchanged. This is composition
+  ownership only; reporting still owns snapshot/projection reporting endpoints.
+- Grouping rationale: the audit endpoint already lived under `Features/Audit`, but `MapReportEndpoints` still invoked
+  it. Moving the call to an audit-specific mapper completes the audit query ownership boundary without touching runtime
+  behavior or combining unrelated cleanup.
+- Preserved behavior: `/api/budgets/{budgetId}/audit-events`, `from`/`to` filters, unused `waitForEventId` parameter,
+  ordering, not-found behavior, response JSON, audit projection behavior, event contracts, event schemas, EF mappings,
+  migrations, and database schema remain unchanged.
+- Deferred follow-on: the unused `waitForEventId` query parameter remains in place because changing or removing it could
+  alter the API surface; revisit only as an explicit API cleanup.
+- Remaining Step 10 work: none known for the current API and projection surface.
+- Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped after matching the known baseline
+  caveat. `dotnet test` passed with 77 tests.
