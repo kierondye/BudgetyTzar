@@ -138,3 +138,19 @@ Organize reporting read models and projections by reporting capability.
 - Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped, matching the known baseline caveat.
   `dotnet test` initially failed in the existing Kafka projection consumer timeout; the focused rerun passed, and a
   final full `dotnet test` passed with 77 tests.
+- Continued with a sixth narrow snapshot query colocation increment by moving the snapshot endpoint mapping from
+  `Features/Reporting/GetBudgetSnapshot/GetBudgetSnapshot.cs` to `Features/Reporting/Snapshots/GetBudgetSnapshot.cs`.
+- Decision: treat `GetBudgetSnapshot` and `ProjectionPendingResponse` as part of the snapshot query capability because
+  they compose the snapshot read model response and the projection-pending response for projection-backed reports.
+- Decision: keep the endpoint on the existing `Endpoints` partial in the `BudgetyTzar.Api.Features` namespace so route
+  composition, Swagger metadata, tests, and public type references remain unchanged. The change is file/folder ownership
+  only.
+- Decision: leave projection status and projection-events endpoints outside `Snapshots` because they are projection
+  readiness/notification mechanics shared by reporting projection behavior, not the snapshot read model itself.
+- Deferred follow-on: projection readiness/notification ownership remains Step 09 boundary work; audit event listing
+  remains Step 10 work.
+- Remaining Step 08 work: snapshot read models, snapshot projection state, snapshot projection behavior, calculator,
+  and snapshot endpoint are now colocated under `Features/Reporting/Snapshots`; review for Step 08 closure or for any
+  final documentation-only cleanup.
+- Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped, matching the known baseline caveat.
+  `dotnet test` passed with 77 tests.
