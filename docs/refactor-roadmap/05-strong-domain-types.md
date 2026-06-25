@@ -47,4 +47,8 @@ Introduce explicit domain types where they improve clarity, correctness, or busi
 
 ## Completion notes
 
-- Not started. Prefer introducing these during the next touched command or domain cleanup slice.
+- Implemented a first narrow increment by adding a `Currency` value object and using it inside `Budget.Create`.
+- Decision: keep `Budget.Currency`, API DTOs, EF mappings, and event payloads string-based for now so HTTP contracts, event schemas, and database schema remain unchanged.
+- Decision: leave API-facing validation in `CreateBudgetValidator`/`MoneyRules` to preserve validation behavior and messages; the domain value object protects direct domain creation paths.
+- TODO: introduce identifier value objects such as `BudgetId`, `BudgetItemId`, and `TransactionId` only when an active slice can map them at the boundary without broad EF or contract churn.
+- TODO: continue moving decimal amount handling toward `MoneyAmount` during future touched command/domain slices.

@@ -13,7 +13,7 @@ public sealed class Budget
         new()
         {
             Name = name.Trim(),
-            Currency = currency
+            Currency = new Currency(currency).Value
         };
 
     public DomainEvent CreatedEvent() =>
