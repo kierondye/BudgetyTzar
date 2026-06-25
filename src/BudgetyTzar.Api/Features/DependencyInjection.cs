@@ -1,6 +1,5 @@
 using BudgetyTzar.Api.Application.Budgeting;
 using BudgetyTzar.Api.Application.Reporting;
-using BudgetyTzar.Api.Application.Transactions;
 using FluentValidation;
 
 namespace BudgetyTzar.Api.Features;

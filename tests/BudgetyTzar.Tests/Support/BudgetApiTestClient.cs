@@ -1,7 +1,6 @@
 using System.Net.Http.Json;
 using BudgetyTzar.Api;
 using BudgetyTzar.Api.Application.Reporting;
-using BudgetyTzar.Api.Application.Transactions;
 using BudgetyTzar.Api.Features;
 
 namespace BudgetyTzar.Tests;

@@ -1,66 +1,8 @@
-using BudgetyTzar.Api.Application.Transactions;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 
 namespace BudgetyTzar.Api.Features;
-
-public sealed record CreateTransactionRequest(
-    DateOnly TransactionDate,
-    string Description,
-    decimal Amount,
-    TransactionDirection Direction,
-    string? SourceAccount,
-    string? ExternalReference,
-    string? Notes);
-public sealed record UpdateTransactionRequest(
-    DateOnly TransactionDate,
-    string Description,
-    decimal Amount,
-    TransactionDirection Direction,
-    string? SourceAccount,
-    string? ExternalReference,
-    string? Notes);
-public sealed record ReplaceTransactionAllocationsRequest(IReadOnlyList<TransactionAllocationItem> Allocations);
-public sealed class CreateTransactionValidator : AbstractValidator<CreateTransactionRequest>
-{
-    public CreateTransactionValidator()
-    {
-        RuleFor(x => x.Description).NotEmpty().MaximumLength(240);
-        RuleFor(x => x.Amount).PositiveAmount();
-        RuleFor(x => x.Direction).IsInEnum();
-        RuleFor(x => x.SourceAccount).MaximumLength(120);
-        RuleFor(x => x.ExternalReference).MaximumLength(160);
-        RuleFor(x => x.Notes).MaximumLength(500);
-    }
-}
-
-public sealed class UpdateTransactionValidator : AbstractValidator<UpdateTransactionRequest>
-{
-    public UpdateTransactionValidator()
-    {
-        RuleFor(x => x.Description).NotEmpty().MaximumLength(240);
-        RuleFor(x => x.Amount).PositiveAmount();
-        RuleFor(x => x.Direction).IsInEnum();
-        RuleFor(x => x.SourceAccount).MaximumLength(120);
-        RuleFor(x => x.ExternalReference).MaximumLength(160);
-        RuleFor(x => x.Notes).MaximumLength(500);
-    }
-}
-
-public sealed class ReplaceTransactionAllocationsValidator : AbstractValidator<ReplaceTransactionAllocationsRequest>
-{
-    public ReplaceTransactionAllocationsValidator()
-    {
-        RuleFor(x => x.Allocations).NotNull();
-        RuleForEach(x => x.Allocations).ChildRules(item =>
-        {
-            item.RuleFor(x => x.BudgetItemId).NotEmpty();
-            item.RuleFor(x => x.Amount).PositiveAmount();
-            item.RuleFor(x => x.Notes).MaximumLength(500);
-        });
-    }
-}
 
 public static partial class Endpoints
 {
