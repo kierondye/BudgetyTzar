@@ -67,3 +67,23 @@ Organize reporting read models and projections by reporting capability.
   EF mappings, snapshot calculation results, rebuild behavior, and current reporting API responses.
 - Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped, matching the known baseline caveat.
   `dotnet test` passed with 77 tests.
+- Continued with a second narrow snapshot read-model organization increment by moving `BudgetItemProjectionState`,
+  `BudgetAdjustmentProjectionState`, `TransactionProjectionState`, and `TransactionAllocationProjectionState` out of
+  `Application/Reporting/ProjectionModels.cs` and into
+  `Features/Reporting/Snapshots/SnapshotProjectionStateModels.cs`.
+- Decision: treat these four classes as snapshot projection state, not domain models. They are maintained from
+  budgeting and transaction events and feed snapshot recalculation, so they belong beside the snapshot projection
+  read-model pair moved in the previous increment.
+- Decision: keep the moved types in the existing `BudgetyTzar.Api.Application.Reporting` namespace so references, EF
+  model type names, tests, and migration metadata remain stable. The change is file/folder ownership only.
+- Decision: keep `BudgetDbContext` mappings unchanged and pinned to the existing `budget_item_projection_state`,
+  `budget_adjustment_projection_state`, `transaction_projection_state`, and
+  `transaction_allocation_projection_state` table names; no migration or database schema change was introduced.
+- Decision: leave `ProcessedProjectionEvent`, `ProjectionEventFailure`, and `AuditEventFailure` in the existing mixed
+  file for now because they describe processing/readiness/failure mechanics rather than snapshot read-model state.
+- Deferred follow-on: separate projection processing and failure state in a later Step 08 or Step 09 increment once the
+  infrastructure/projection-runner boundary is being addressed.
+- Remaining Step 08 work: continue moving snapshot projection behavior toward `Features/Reporting/Snapshots` while
+  keeping Kafka consumer mechanics in infrastructure and preserving rebuild, readiness, and snapshot API behavior.
+- Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped, matching the known baseline caveat.
+  `dotnet test` passed with 77 tests.
