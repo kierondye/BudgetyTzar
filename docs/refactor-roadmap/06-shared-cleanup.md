@@ -53,8 +53,14 @@ Keep shared code minimal and move feature-specific concepts back to their owning
 - Decision: keep both moved record types in the existing `BudgetyTzar.Api` namespace for now so public type names, JSON
   shapes, request bodies, and tests remain unchanged. This creates a small namespace/file-location mismatch that can be
   revisited if public API namespace cleanup is planned.
-- Decision: leave `CommandResult`, HTTP result mapping, validation helpers, and budget lookup in place
+- Decision: leave `CommandResult`, HTTP result mapping, and budget lookup in place
   until a future focused cleanup can move or justify each one without changing API contracts.
-- Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped after roughly 90 seconds; focused tests
-  passed with 18 tests; full `dotnet test` passed with 77 tests.
-- TODO: review `BudgetLookup` and `MoneyRules` in later step 06 increments.
+- Validation: manual follow-up validation passed with `dotnet build BudgetyTzar.sln` and `dotnet test`.
+- Moved `MoneyRules` from `Features/Shared` to `Features/Validation` because the amount and currency rules are
+  feature-boundary validation plumbing used across budgeting and transaction command validators. Method names,
+  validation behavior, and validation messages remain unchanged.
+- Decision: leave `BudgetLookup` in `Features/Shared` for now because it is used by budgeting, transaction query, and
+  reporting endpoints; ownership is not clear enough for a narrow move without duplicating logic or introducing a new
+  abstraction.
+- Validation: `dotnet build BudgetyTzar.sln` passed with 0 warnings and 0 errors; `dotnet test` passed with 77 tests.
+- TODO: review `BudgetLookup` in a later step 06 increment.
