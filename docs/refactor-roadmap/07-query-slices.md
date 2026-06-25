@@ -113,3 +113,16 @@ Separate read/query behavior by capability and keep it beside the read model or 
 - Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped. The first `dotnet test`
   compile caught a missing `Application.Reporting` using in the new slice; after fixing it, `dotnet test` passed with
   77 tests.
+- Implemented a third reporting query increment by moving the budget snapshot endpoint into
+  `Features/Reporting/GetBudgetSnapshot`.
+- Decision: keep snapshot retrieval as a private mapping method on the existing `Endpoints` partial and move the
+  `ProjectionPendingResponse` plus pending-projection helper with it, preserving the route, `date` and `waitForEventId`
+  query parameters, `202 Accepted` pending response, `200 OK` snapshot response, `404` fallback, and existing
+  projection-backed report behavior.
+- Decision: keep the concrete calls to `LedgerSnapshotCalculator`, `ProcessedProjectionEvents`, `BudgetExists`, and
+  `GetProjectionStatus`; no repository, mediator, read-model abstraction, generic query framework, or `BudgetLookup`
+  ownership change was introduced.
+- Deferred follow-on: projection-events remains in `ReportEndpoints` as the final Step 07 reporting endpoint because it
+  owns SSE streaming mechanics rather than a simple request/response query.
+- Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped. `dotnet test` passed with
+  77 tests.
