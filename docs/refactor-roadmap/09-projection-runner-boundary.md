@@ -146,3 +146,25 @@ Separate projection infrastructure mechanics from feature projection behavior.
   or changing runtime semantics.
 - Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped after matching the known baseline
   caveat. `dotnet test` passed with 77 tests.
+- Closed Step 09 with a boundary review increment.
+- Decision: treat Step 09 as complete for the current reporting projection runner. Feature-owned projection dispatch and
+  typed payload deserialization now live beside the snapshot projection behavior, while infrastructure owns Kafka
+  transport, envelope validation, retry/dead-letter flow, processing leases/checkpoints, failure persistence, rebuild
+  persistence, and readiness notifications.
+- Decision: intentionally leave retry delay calculation, Kafka consumer/producer construction, dead-letter payload
+  construction, and high-level projection orchestration in `ReportingProjectionConsumerService`. These are cohesive
+  projection-runner concerns, and extracting them now would add indirection without improving feature/infrastructure
+  ownership.
+- Decision: keep processing/failure/readiness entity namespaces and EF mappings unchanged. Moving `ProcessedProjectionEvent`
+  or `ProjectionEventFailure` namespaces would create migration/model churn without a Step 09 behavior benefit.
+- Grouping rationale: this increment is documentation-only because the remaining code in the consumer is infrastructure
+  orchestration rather than feature projection behavior. Closing the step records the stopping point and avoids
+  speculative helper extraction.
+- Preserved behavior: no runtime code changed. API responses, event contracts, event schemas, Kafka topics, dead-letter
+  message semantics, database schema, EF mappings, projection idempotency, rebuild behavior, failure semantics, and
+  readiness notifications remain unchanged.
+- Deferred follow-on: audit projection runner boundaries remain Step 10 work. Any future split of Kafka runner
+  construction or retry timing should be driven by a concrete operational need, not by Step 09.
+- Remaining Step 09 work: none known for the current reporting projection runner.
+- Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped after matching the known baseline
+  caveat. `dotnet test` passed with 77 tests.
