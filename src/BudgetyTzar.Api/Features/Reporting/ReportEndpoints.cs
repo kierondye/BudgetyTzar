@@ -1,5 +1,3 @@
-using BudgetyTzar.Api.Application.Reporting;
-
 namespace BudgetyTzar.Api.Features;
 
 public static partial class Endpoints
