@@ -28,6 +28,7 @@ public static class DependencyInjection
         services.AddScoped<ProjectionProcessingStore>();
         services.AddScoped<ProjectionFailureStore>();
         services.AddScoped<ProjectionRebuildStore>();
+        services.AddScoped<AuditFailureStore>();
         services.AddSingleton<EventSchemaValidator>();
         services.AddSingleton<ReportingProjectionConsumerService>();
         services.AddSingleton<AuditEventConsumerService>();

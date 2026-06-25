@@ -91,3 +91,23 @@ Promote audit into its own feature focused on queryable audit history.
   behavior are now colocated under `Features/Audit`.
 - Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped after matching the known baseline
   caveat. `dotnet test` passed with 77 tests.
+- Continued with an audit failure persistence boundary increment by extracting `AuditFailureStore` from
+  `AuditEventConsumerService`.
+- Decision: keep `AuditFailureStore` in `Infrastructure/Events` because `AuditEventFailure` upserts, raw-event metadata
+  parsing, dead-letter key fallback, and error truncation are operational persistence mechanics owned by the audit
+  consumer infrastructure.
+- Decision: leave Kafka consumer/producer construction, topic subscription, retry timing, dead-letter payload
+  construction/publishing, schema validation entry point, and offset commits in `AuditEventConsumerService`.
+- Grouping rationale: failure-row lookup, insert/update behavior, metadata extraction, event-id fallback, retry/status
+  updates, and error truncation are one tightly coupled persistence concern. Moving them together follows the existing
+  `ProjectionFailureStore` pattern without mixing in audit feature behavior or changing consumer semantics.
+- Preserved behavior: validation/audit-projection/dead-letter-publish failure categories, pending/dead-lettered/retryable
+  statuses, retry counts, first/last failure timestamps, raw event JSON, dead-letter key fallback, dead-letter payload
+  shape, Kafka topics, offset commit behavior, audit API responses, event contracts, event schemas, EF mappings,
+  migrations, and database schema remain unchanged.
+- Deferred follow-on: `AuditEventFailure` remains in the existing application reporting namespace to avoid EF model and
+  migration churn. Revisit only if a future audit ownership cleanup can preserve model identity and table mappings.
+- Remaining Step 10 work: review for closure. Audit query ownership, audit projection behavior, and audit failure
+  persistence boundaries are now separated without changing runtime behavior.
+- Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped after matching the known baseline
+  caveat. `dotnet test` passed with 77 tests.
