@@ -3,12 +3,12 @@ using BudgetyTzar.Api.Application.Reporting;
 using BudgetyTzar.Api.Features;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using Confluent.Kafka;
-using DotNet.Testcontainers.Builders;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace BudgetyTzar.Tests;
 
+[Collection(KafkaTestCollection.Name)]
 public sealed class KafkaProjectionConsumerTests
 {
     [Fact]
@@ -16,22 +16,8 @@ public sealed class KafkaProjectionConsumerTests
     {
         var kafkaPort = ProjectionTestHelpers.GetFreeTcpPort();
         var bootstrapServers = $"127.0.0.1:{kafkaPort}";
-        await using var kafka = new ContainerBuilder("docker.redpanda.com/redpandadata/redpanda:v24.3.7")
-            .WithPortBinding(kafkaPort, 19092)
-            .WithCommand(
-                "redpanda",
-                "start",
-                "--mode", "dev-container",
-                "--smp", "1",
-                "--memory", "512M",
-                "--overprovisioned",
-                "--node-id", "0",
-                "--check=false",
-                "--kafka-addr", "internal://0.0.0.0:9092,external://0.0.0.0:19092",
-                "--advertise-kafka-addr", $"internal://127.0.0.1:9092,external://127.0.0.1:{kafkaPort}")
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(19092))
-            .Build();
-        await kafka.StartAsync();
+        await using var kafka = await ProjectionTestHelpers.StartRedpandaAsync(kafkaPort);
+        await ProjectionTestHelpers.CreateKafkaTopicsAsync(bootstrapServers);
 
         await using var app = new KafkaBudgetApiFactory(bootstrapServers);
         var client = app.CreateClient();
@@ -79,22 +65,8 @@ public sealed class KafkaProjectionConsumerTests
     {
         var kafkaPort = ProjectionTestHelpers.GetFreeTcpPort();
         var bootstrapServers = $"127.0.0.1:{kafkaPort}";
-        await using var kafka = new ContainerBuilder("docker.redpanda.com/redpandadata/redpanda:v24.3.7")
-            .WithPortBinding(kafkaPort, 19092)
-            .WithCommand(
-                "redpanda",
-                "start",
-                "--mode", "dev-container",
-                "--smp", "1",
-                "--memory", "512M",
-                "--overprovisioned",
-                "--node-id", "0",
-                "--check=false",
-                "--kafka-addr", "internal://0.0.0.0:9092,external://0.0.0.0:19092",
-                "--advertise-kafka-addr", $"internal://127.0.0.1:9092,external://127.0.0.1:{kafkaPort}")
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(19092))
-            .Build();
-        await kafka.StartAsync();
+        await using var kafka = await ProjectionTestHelpers.StartRedpandaAsync(kafkaPort);
+        await ProjectionTestHelpers.CreateKafkaTopicsAsync(bootstrapServers);
 
         await using var app = new KafkaBudgetApiFactory(bootstrapServers);
         var client = app.CreateClient();
@@ -136,13 +108,33 @@ public sealed class KafkaProjectionConsumerTests
             producer.Flush(TimeSpan.FromSeconds(10));
         }
 
-        await ProjectionTestHelpers.WaitUntil(async () =>
-        {
-            using var scope = app.Services.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
-            return await db.ProjectionEventFailures.AnyAsync(x => x.Status == ProjectionFailureStatus.DeadLettered)
-                && await db.AuditEventFailures.AnyAsync(x => x.Status == AuditFailureStatus.DeadLettered)
-                && await db.BudgetSnapshotItemProjections.AnyAsync(x => x.BudgetId == budget.Id && x.BudgetItemId == salary.Id && x.Balance == -100m);
-        });
+        await ProjectionTestHelpers.WaitUntil(
+            async () =>
+            {
+                using var scope = app.Services.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+                return await db.ProjectionEventFailures.AnyAsync(x => x.Status == ProjectionFailureStatus.DeadLettered)
+                    && await db.AuditEventFailures.AnyAsync(x => x.Status == AuditFailureStatus.DeadLettered)
+                    && await db.BudgetSnapshotItemProjections.AnyAsync(x => x.BudgetId == budget.Id && x.BudgetItemId == salary.Id && x.Balance == -100m);
+            },
+            async () =>
+            {
+                using var scope = app.Services.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+                var projectionFailures = await db.ProjectionEventFailures
+                    .Select(x => new { x.Status, x.Category, x.LastError })
+                    .ToListAsync();
+                var auditFailures = await db.AuditEventFailures
+                    .Select(x => new { x.Status, x.Category, x.LastError })
+                    .ToListAsync();
+                var snapshotItems = await db.BudgetSnapshotItemProjections
+                    .Where(x => x.BudgetId == budget.Id && x.BudgetItemId == salary.Id)
+                    .Select(x => new { x.Balance })
+                    .ToListAsync();
+
+                return $"Projection failures: {string.Join(", ", projectionFailures.Select(x => $"{x.Status}/{x.Category}/{x.LastError}"))}; "
+                    + $"audit failures: {string.Join(", ", auditFailures.Select(x => $"{x.Status}/{x.Category}/{x.LastError}"))}; "
+                    + $"snapshot balances: {string.Join(", ", snapshotItems.Select(x => x.Balance))}.";
+            });
     }
 }

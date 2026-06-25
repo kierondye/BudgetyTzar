@@ -17,6 +17,7 @@ internal sealed class KafkaBudgetApiFactory(string bootstrapServers) : WebApplic
     {
         builder.UseSetting("Database:MigrateOnStartup", "false");
         builder.UseSetting("Kafka:BootstrapServers", bootstrapServers);
+        builder.UseSetting("Kafka:TopicManagement:AutoCreateTopics", "false");
         builder.UseSetting("Outbox:PublisherEnabled", "false");
         builder.UseSetting("Audit:ConsumerEnabled", "true");
         builder.UseSetting("Audit:MaxRetryAttempts", "1");

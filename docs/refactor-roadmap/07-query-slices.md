@@ -46,3 +46,27 @@ Separate read/query behavior by capability and keep it beside the read model or 
 ## Completion notes
 
 - Transaction query slices have been implemented. Budgeting and reporting query slices remain.
+- Implemented a narrow budgeting query increment by moving the top-level budget list and budget detail endpoints into
+  `Features/Budgeting/ListBudgets` and `Features/Budgeting/GetBudget`.
+- Decision: keep the query slices as private mapping methods on the existing `Endpoints` partial in the
+  `BudgetyTzar.Api.Features` namespace, matching the completed transaction query-slice pattern and preserving endpoint
+  composition, route metadata, response bodies, and tests.
+- Decision: keep the EF queries concrete inside the query slice files; no mediator, repository, or read-model
+  abstraction was introduced.
+- Deferred follow-on: budget-item list queries and reporting queries remain in their current endpoint files for future
+  focused increments of this roadmap step.
+- Deferred follow-on: `BudgetLookup` remains in `Features/Shared` until query/reporting ownership is clearer.
+- Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped, matching the known baseline caveat.
+  `dotnet test` first passed compilation but had one Kafka projection consumer timeout; rerunning that test class passed,
+  and a second full `dotnet test` passed with 77 tests.
+- Implemented a second narrow budgeting query increment by moving the budget-item list endpoint into
+  `Features/Budgeting/ListBudgetItems`.
+- Decision: keep the budget-item query as a private mapping method on the existing `Endpoints` partial, matching the
+  transaction and budget query slice pattern while preserving route metadata and response shape.
+- Decision: keep the concrete EF no-tracking query and existing `BudgetExists` check unchanged; no repository, mediator,
+  read-model abstraction, or shared lookup ownership change was introduced.
+- Deferred follow-on: budget adjustment list and budget reallocation list queries remain as the final budgeting query
+  slices before reporting query work starts.
+- Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped. `dotnet test` first passed
+  compilation but had the same Kafka projection consumer timeout; rerunning that test class passed, and a second full
+  `dotnet test` passed with 77 tests.

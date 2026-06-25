@@ -1,6 +1,4 @@
-using BudgetyTzar.Api.Infrastructure.Persistence;
 using FluentValidation;
-using Microsoft.EntityFrameworkCore;
 
 namespace BudgetyTzar.Api.Features;
 
@@ -10,14 +8,8 @@ public static partial class Endpoints
     {
         var budgets = api.MapGroup("/budgets").WithTags("Budgets");
 
-        budgets.MapGet("/", async (BudgetDbContext db, CancellationToken ct) =>
-            await db.Budgets.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct));
-
-        budgets.MapGet("/{budgetId:guid}", async (Guid budgetId, BudgetDbContext db, CancellationToken ct) =>
-            await db.Budgets.AsNoTracking().FirstOrDefaultAsync(x => x.Id == budgetId, ct) is { } budget
-                ? Results.Ok(budget)
-                : Results.NotFound());
-
+        MapListBudgetsEndpoint(budgets);
+        MapGetBudgetEndpoint(budgets);
         budgets.MapPost("/", async (
             CreateBudgetRequest request,
             IValidator<CreateBudgetRequest> validator,
