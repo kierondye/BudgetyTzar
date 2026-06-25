@@ -69,3 +69,25 @@ Promote audit into its own feature focused on queryable audit history.
 - Remaining Step 10 work: audit projection ownership and audit consumer/failure boundary review remain.
 - Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped after matching the known baseline
   caveat. `dotnet test` passed with 77 tests.
+- Continued with an audit projection ownership increment by moving `AuditEventProjectionService` from
+  `Application/Reporting` to `Features/Audit/Projection`.
+- Decision: treat `AuditEventProjectionService` as audit feature code because it owns audit-specific canonical event
+  type mapping, description/detail generation, idempotent append-only audit row creation, and the audit projection
+  result returned after applying an envelope.
+- Decision: keep `AuditEventProjectionService` and `AuditProjectionResult` in the existing
+  `BudgetyTzar.Api.Application.Reporting` namespace so DI registration, infrastructure consumer references, tests, and
+  public type references remain stable. This is a file/folder ownership move only.
+- Decision: leave `EventSchemaValidator`, `AuditEventConsumerService`, retry timing, dead-letter publishing, failure
+  marking, raw event metadata parsing, Kafka consumer/producer construction, and offset commit behavior in
+  infrastructure.
+- Grouping rationale: the service and its result record are a tightly coupled audit projection unit. Moving them
+  together advances audit feature ownership without mixing in the separate infrastructure failure-persistence boundary.
+- Preserved behavior: audit events remain append-only and idempotent, audit descriptions/details remain compatible,
+  `/api/budgets/{budgetId}/audit-events` remains unchanged, event contracts, event schemas, envelope validation,
+  dead-letter behavior, failure persistence, EF mappings, migrations, and database schema remain unchanged.
+- Deferred follow-on: audit failure persistence still lives inside `AuditEventConsumerService`; extract it only as a
+  separate infrastructure boundary increment if Step 10 continues into consumer failure handling.
+- Remaining Step 10 work: audit consumer/failure boundary review remains. Audit query ownership and audit projection
+  behavior are now colocated under `Features/Audit`.
+- Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped after matching the known baseline
+  caveat. `dotnet test` passed with 77 tests.
