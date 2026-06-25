@@ -79,3 +79,14 @@ Separate read/query behavior by capability and keep it beside the read model or 
 - Deferred follow-on: budget reallocation list remains as the last budgeting query slice before reporting query work.
 - Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped. `dotnet test` passed with
   77 tests.
+- Implemented the final budgeting query increment by moving the budget reallocation list endpoint into
+  `Features/Budgeting/ListBudgetReallocations`.
+- Decision: keep the reallocation list as a private mapping method on the existing `Endpoints` partial, preserving the
+  route, Swagger metadata, not-found behavior, budget filtering, date/created ordering, grouped adjustment loading, DTO
+  shape, and empty adjustment fallback.
+- Decision: keep the concrete EF no-tracking queries and existing `BudgetExists` check unchanged; no repository,
+  mediator, read-model abstraction, generic query framework, or `BudgetLookup` ownership change was introduced.
+- Budgeting query slicing is complete for the current endpoint set. Reporting queries remain for future Step 07
+  increments.
+- Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped. `dotnet test` passed with
+  77 tests.
