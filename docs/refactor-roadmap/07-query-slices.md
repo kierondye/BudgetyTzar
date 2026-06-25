@@ -90,3 +90,14 @@ Separate read/query behavior by capability and keep it beside the read model or 
   increments.
 - Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped. `dotnet test` passed with
   77 tests.
+- Implemented a narrow reporting query increment by moving the projection status endpoint into
+  `Features/Reporting/GetProjectionStatus`.
+- Decision: keep projection status as a private mapping method on the existing `Endpoints` partial and move the shared
+  `GetProjectionStatus` helper with it, preserving the route, query parameter, `ProjectionStatusResponse` shape, and
+  existing `unknown`/`ready`/`pending` status semantics used by snapshot and projection event endpoints.
+- Decision: keep the concrete EF no-tracking lookup against `ProcessedProjectionEvents`; no repository, mediator,
+  read-model abstraction, generic query framework, or `BudgetLookup` ownership change was introduced.
+- Deferred follow-on: snapshot, audit-events, and projection-events reporting endpoints remain in `ReportEndpoints` for
+  future focused query-slice increments.
+- Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped. `dotnet test` passed with
+  77 tests.

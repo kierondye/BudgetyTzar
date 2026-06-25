@@ -8,7 +8,6 @@ using System.Threading.Channels;
 
 namespace BudgetyTzar.Api.Features;
 
-public sealed record ProjectionStatusResponse(Guid BudgetId, Guid EventId, string Status);
 public sealed record ProjectionPendingResponse(
     Guid BudgetId,
     Guid EventId,
@@ -84,16 +83,7 @@ public static partial class Endpoints
             return Results.Ok(events);
         });
 
-        budgets.MapGet("/{budgetId:guid}/projections/status", async (
-            Guid budgetId,
-            Guid eventId,
-            BudgetDbContext db,
-            CancellationToken ct) =>
-        {
-            var status = await GetProjectionStatus(db, budgetId, eventId, ct);
-            return Results.Ok(new ProjectionStatusResponse(budgetId, eventId, status));
-        });
-
+        MapGetProjectionStatusEndpoint(budgets);
         budgets.MapGet("/{budgetId:guid}/projection-events", async (
             Guid budgetId,
             Guid? eventId,
@@ -229,26 +219,6 @@ public static partial class Endpoints
             status,
             statusUrl,
             $"/api/budgets/{budgetId}/projection-events?eventId={eventId.Value}");
-    }
-
-    private static async Task<string> GetProjectionStatus(BudgetDbContext db, Guid budgetId, Guid eventId, CancellationToken ct)
-    {
-        var projectionEvent = await db.ProcessedProjectionEvents
-            .AsNoTracking()
-            .Where(x => x.EventId == eventId)
-            .Select(x => new { x.BudgetId, x.Status })
-            .FirstOrDefaultAsync(ct);
-        if (projectionEvent is null || projectionEvent.BudgetId != budgetId)
-        {
-            return "unknown";
-        }
-
-        if (projectionEvent.Status == ProjectionProcessingStatus.Completed)
-        {
-            return "ready";
-        }
-
-        return "pending";
     }
 
     private static async Task<ProjectionReadyNotification> CreateProjectionReadyNotification(
