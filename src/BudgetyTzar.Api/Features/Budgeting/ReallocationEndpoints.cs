@@ -1,33 +1,8 @@
-using BudgetyTzar.Api.Application.Budgeting;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 
 namespace BudgetyTzar.Api.Features;
-
-public sealed record CreateBudgetItemReallocationRequest(DateOnly Date, string? Notes, IReadOnlyList<BudgetReallocationAdjustmentItem> Adjustments);
-public sealed record BudgetReallocationDto(
-    Guid Id,
-    Guid BudgetId,
-    DateOnly Date,
-    string? Notes,
-    IReadOnlyList<BudgetReallocationAdjustmentItem> Adjustments,
-    DateTimeOffset CreatedAt);
-public sealed class CreateBudgetItemReallocationValidator : AbstractValidator<CreateBudgetItemReallocationRequest>
-{
-    public CreateBudgetItemReallocationValidator()
-    {
-        RuleFor(x => x.Notes).MaximumLength(500);
-        RuleFor(x => x.Adjustments).NotNull().Must(x => x.Count >= 2)
-            .WithMessage("A reallocation must contain at least two adjustments.");
-        RuleForEach(x => x.Adjustments).ChildRules(item =>
-        {
-            item.RuleFor(x => x.BudgetItemId).NotEmpty();
-            item.RuleFor(x => x.Amount).PositiveAmount();
-            item.RuleFor(x => x.Direction).IsInEnum();
-        });
-    }
-}
 
 public static partial class Endpoints
 {

@@ -1,30 +1,8 @@
-using BudgetyTzar.Api.Application.Budgeting;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 
 namespace BudgetyTzar.Api.Features;
-
-public sealed record CreateBudgetItemAdjustmentRequest(decimal Amount, BudgetAdjustmentType Direction, DateOnly Date, string? Notes);
-public sealed record BudgetAdjustmentDto(
-    Guid Id,
-    Guid BudgetId,
-    Guid BudgetItemId,
-    Guid? ReallocationId,
-    DateOnly Date,
-    decimal Amount,
-    BudgetAdjustmentType Direction,
-    string? Notes,
-    DateTimeOffset CreatedAt);
-public sealed class CreateBudgetItemAdjustmentValidator : AbstractValidator<CreateBudgetItemAdjustmentRequest>
-{
-    public CreateBudgetItemAdjustmentValidator()
-    {
-        RuleFor(x => x.Amount).PositiveAmount();
-        RuleFor(x => x.Direction).IsInEnum();
-        RuleFor(x => x.Notes).MaximumLength(500);
-    }
-}
 
 public static partial class Endpoints
 {
