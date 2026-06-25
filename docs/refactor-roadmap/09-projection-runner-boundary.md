@@ -98,3 +98,28 @@ Separate projection infrastructure mechanics from feature projection behavior.
   runtime semantics.
 - Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped after matching the known baseline
   caveat. `dotnet test` passed with 77 tests.
+- Continued with a projection failure persistence boundary increment by extracting `ProjectionFailureStore` from
+  `ReportingProjectionConsumerService`.
+- Decision: keep `ProjectionFailureStore` in `Infrastructure/Events` because `ProjectionEventFailure` upserts,
+  raw-event metadata parsing, failure-row retry/status updates, and error truncation are operational persistence
+  mechanics owned by projection-runner infrastructure.
+- Decision: leave dead-letter payload construction and Kafka publishing in `ReportingProjectionConsumerService`; those
+  are transport/message semantics rather than persistence concerns.
+- Decision: keep `ProjectionEventFailure`, `ProjectionFailureCategory`, and `ProjectionFailureStatus` in their existing
+  namespace and keep EF mappings unchanged, preserving model identity, table names, migrations, indexes, and stored
+  failure values.
+- Grouping rationale: failure upsert behavior, metadata extraction, event-id key fallback, and truncation are tightly
+  coupled around durable projection failure records. Moving them together completes the prior deferred infrastructure
+  persistence extraction without touching retry policy or dead-letter publication behavior.
+- Preserved behavior: validation/projection/dead-letter-publish failure categories, pending/dead-lettered/retryable
+  statuses, retry counts, first/last failure timestamps, raw event JSON, dead-letter key fallback, dead-letter payload
+  shape, Kafka topics, API responses, event contracts, EF mappings, database schema, projection idempotency, rebuild
+  behavior, and readiness notifications remain unchanged.
+- Deferred follow-on: `ReportingProjectionConsumerService` still owns retry delay calculation and outbox replay loading.
+  Those remain infrastructure orchestration details; extract only if the consumer boundary needs further tightening
+  without changing runtime semantics.
+- Remaining Step 09 work: reassess whether the projection runner boundary is now sufficiently clear, with feature-owned
+  dispatch separated from infrastructure-owned transport, processing lifecycle, and failure persistence.
+- Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped after matching the known baseline
+  caveat. The first `dotnet test` compile caught a missing EF Core using in the consumer after extraction; after fixing
+  it, `dotnet test` passed with 77 tests.
