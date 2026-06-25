@@ -45,7 +45,8 @@ Keep shared code minimal and move feature-specific concepts back to their owning
 
 ## Completion notes
 
-- Partially started: transaction allocation formatting now lives with transaction allocations. More shared cleanup remains.
+- Complete for the current shared-cleanup pass.
+- Transaction allocation formatting now lives with transaction allocations.
 - Removed the transaction allocation status helper from `Features/Shared`; transaction list filtering now uses
   `FinancialTransaction.GetAllocationStatus`, keeping that transaction-specific rule in the transaction domain model.
 - Moved `TransactionAllocationItem` beside the transaction allocation capability and `BudgetReallocationAdjustmentItem`
@@ -59,8 +60,6 @@ Keep shared code minimal and move feature-specific concepts back to their owning
 - Moved `MoneyRules` from `Features/Shared` to `Features/Validation` because the amount and currency rules are
   feature-boundary validation plumbing used across budgeting and transaction command validators. Method names,
   validation behavior, and validation messages remain unchanged.
-- Decision: leave `BudgetLookup` in `Features/Shared` for now because it is used by budgeting, transaction query, and
-  reporting endpoints; ownership is not clear enough for a narrow move without duplicating logic or introducing a new
-  abstraction.
+- Deferred follow-on: `BudgetLookup` remains in `Features/Shared` because it currently spans budgeting, transaction
+  query, and reporting use cases. Revisit it when those query/reporting slices are reorganized and ownership is clearer.
 - Validation: `dotnet build BudgetyTzar.sln` passed with 0 warnings and 0 errors; `dotnet test` passed with 77 tests.
-- TODO: review `BudgetLookup` in a later step 06 increment.
