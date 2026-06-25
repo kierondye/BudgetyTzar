@@ -38,51 +38,7 @@ public static partial class Endpoints
                 : Results.NotFound();
         });
 
-        budgets.MapGet("/{budgetId:guid}/audit-events", async (
-            Guid budgetId,
-            DateTimeOffset? from,
-            DateTimeOffset? to,
-            Guid? waitForEventId,
-            BudgetDbContext db,
-            IOptions<ProjectionOptions> projections,
-            CancellationToken ct) =>
-        {
-            if (!await BudgetExists(db, budgetId, ct))
-            {
-                return Results.NotFound();
-            }
-
-            var query = db.AuditEvents
-                .AsNoTracking()
-                .Where(x => x.BudgetId == budgetId);
-            if (from.HasValue)
-            {
-                query = query.Where(x => x.OccurredAt >= from.Value);
-            }
-
-            if (to.HasValue)
-            {
-                query = query.Where(x => x.OccurredAt <= to.Value);
-            }
-
-            var auditEvents = await query.ToListAsync(ct);
-            var events = auditEvents
-                .OrderByDescending(x => x.OccurredAt)
-                .ThenByDescending(x => x.Id)
-                .Select(x => new AuditEventDto(
-                    x.Id,
-                    x.BudgetId,
-                    x.OccurredAt,
-                    x.EventType,
-                    x.EntityType,
-                    x.EntityId,
-                    x.Description,
-                    x.Details))
-                .ToList();
-
-            return Results.Ok(events);
-        });
-
+        MapListAuditEventsEndpoint(budgets);
         MapGetProjectionStatusEndpoint(budgets);
         budgets.MapGet("/{budgetId:guid}/projection-events", async (
             Guid budgetId,

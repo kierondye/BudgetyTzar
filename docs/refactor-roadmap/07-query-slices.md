@@ -101,3 +101,15 @@ Separate read/query behavior by capability and keep it beside the read model or 
   future focused query-slice increments.
 - Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped. `dotnet test` passed with
   77 tests.
+- Implemented a second reporting query increment by moving the audit-events endpoint into
+  `Features/Reporting/ListAuditEvents`.
+- Decision: keep audit event listing as a private mapping method on the existing `Endpoints` partial, preserving the
+  route, `from`/`to` filters, not-found behavior, concrete EF no-tracking query, ordering, and `AuditEventDto` response
+  shape.
+- Decision: leave audit feature ownership and `BudgetLookup` deferred; this increment only relocated the existing
+  reporting query without changing its boundary.
+- Deferred follow-on: snapshot and projection-events reporting endpoints remain in `ReportEndpoints` for future focused
+  query-slice increments.
+- Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped. The first `dotnet test`
+  compile caught a missing `Application.Reporting` using in the new slice; after fixing it, `dotnet test` passed with
+  77 tests.
