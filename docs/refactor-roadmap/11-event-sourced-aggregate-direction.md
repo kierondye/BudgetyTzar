@@ -50,4 +50,27 @@ Move gradually toward aggregates making decisions and emitting domain events as 
 
 ## Completion notes
 
-- Not started as a dedicated step. Some existing aggregate methods already emit domain events.
+- Previously not started as a dedicated step. Some existing aggregate methods already emitted domain events.
+- Started with a narrow reallocation aggregate increment by moving the reallocation adjustment count and zero-sum
+  balancing rules from `RecordReallocationHandler` into `BudgetReallocation`.
+- Decision: add a concrete `BudgetReallocationAdjustment` domain input record and keep the handler responsible for
+  mapping API request items into that domain shape. This avoids introducing mediator, repository, aggregate base, or
+  event-sourcing framework abstractions.
+- Decision: let `BudgetReallocation` validate the grouped adjustment invariant and create linked `BudgetAdjustment`
+  rows for persistence, while the handler continues to own budget existence checks, budget-item lookup, archived-item
+  eligibility, EF persistence, outbox writing, and HTTP result mapping.
+- Preserved behavior: `/api/budgets/{budgetId}/reallocations`, request/response JSON, validation messages, event names,
+  event payload records, JSON schemas, outbox behavior, EF mappings, migrations, database schema, projections, and
+  snapshot results remain unchanged.
+- Validation before implementation: baseline `dotnet test` compiled and ran 77 tests; the known flaky Kafka projection
+  consumer timeout occurred in `ReportingProjectionConsumerProjectsEventsConsumedFromKafka` with 76 tests passing.
+- Validation during implementation: focused `dotnet test --filter "FullyQualifiedName~BudgetReallocation"` passed with
+  4 tests.
+- Final validation: `dotnet build BudgetyTzar.sln` passed with 0 warnings and 0 errors; `dotnet test` passed with
+  80 tests.
+- Deferred follow-on: net planned spending validation in the budget adjustment handler is another candidate for a future
+  Step 11 increment, but it was left unchanged to keep this increment focused on reallocations.
+- Deferred follow-on: broader event-store loading/saving, identifier value objects, and cleanup of existing feature
+  DTO/domain coupling remain out of scope for this increment.
+- Remaining Step 11 work: continue moving obvious command-handler business rules into the owning aggregate or value
+  object one slice at a time while preserving current persistence and contracts.

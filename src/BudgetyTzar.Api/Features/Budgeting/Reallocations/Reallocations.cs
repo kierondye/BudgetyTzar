@@ -1,6 +1,5 @@
 using BudgetyTzar.Api.Application.Budgeting;
 using BudgetyTzar.Api.Application.Common;
-using BudgetyTzar.Api.Contracts.Events;
 using BudgetyTzar.Api.Infrastructure.Events;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using FluentValidation;
@@ -51,21 +50,15 @@ public sealed class RecordReallocationHandler(
             return CommandResult<BudgetReallocation>.NotFound();
         }
 
-        if (adjustments.Count < 2)
+        var reallocationAdjustments = adjustments
+            .Select(x => new BudgetReallocationAdjustment(x.BudgetItemId, x.Amount, x.Direction))
+            .ToList();
+        var validationError = BudgetReallocation.ValidateAdjustments(reallocationAdjustments);
+        if (validationError is not null)
         {
             return CommandResult<BudgetReallocation>.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(adjustments)] = ["A reallocation must contain at least two adjustments."]
-            });
-        }
-
-        var creditTotal = adjustments.Where(x => x.Direction == BudgetAdjustmentType.Credit).Sum(x => x.Amount);
-        var debitTotal = adjustments.Where(x => x.Direction == BudgetAdjustmentType.Debit).Sum(x => x.Amount);
-        if (creditTotal != debitTotal)
-        {
-            return CommandResult<BudgetReallocation>.ValidationProblem(new Dictionary<string, string[]>
-            {
-                [nameof(adjustments)] = ["Reallocation credits must equal reallocation debits."]
+                [nameof(adjustments)] = [validationError]
             });
         }
 
@@ -82,15 +75,11 @@ public sealed class RecordReallocationHandler(
         }
 
         var reallocation = BudgetReallocation.Create(budgetId, date, notes);
+        var linkedAdjustments = reallocation.CreateLinkedAdjustments(reallocationAdjustments);
 
         db.BudgetReallocations.Add(reallocation);
-        db.BudgetAdjustments.AddRange(adjustments.Select(x =>
-            BudgetAdjustment.Create(budgetId, x.BudgetItemId, x.Amount, x.Direction, date, notes, reallocation.Id)));
-        var eventId = events.Add(reallocation.RecordedEvent(
-            budgetId,
-            adjustments
-                .Select(x => new BudgetReallocationAdjustmentPayload(x.BudgetItemId, x.Amount, x.Direction))
-                .ToList()));
+        db.BudgetAdjustments.AddRange(linkedAdjustments);
+        var eventId = events.Add(reallocation.RecordedEvent(reallocationAdjustments));
         await db.SaveChangesAsync(ct);
         return CommandResult<BudgetReallocation>.Created(reallocation, eventId);
     }
