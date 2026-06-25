@@ -22,6 +22,7 @@ public sealed class ReportingProjectionConsumerService(
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var processingStore = scope.ServiceProvider.GetRequiredService<ProjectionProcessingStore>();
         var dispatcher = scope.ServiceProvider.GetRequiredService<ReportingProjectionDispatcher>();
         var notifications = scope.ServiceProvider.GetRequiredService<ProjectionNotificationService>();
         var schemaValidator = scope.ServiceProvider.GetRequiredService<EventSchemaValidator>();
@@ -38,7 +39,7 @@ public sealed class ReportingProjectionConsumerService(
         var envelopes = await LoadOutboxEnvelopes(db, schemaValidator, null, ct);
         foreach (var envelope in envelopes)
         {
-            await ProjectValidatedEnvelope(db, dispatcher, notifications, envelope, processingInstanceId, projectionOptions.Value.ProcessingLeaseSeconds, ct);
+            await ProjectValidatedEnvelope(processingStore, dispatcher, notifications, envelope, processingInstanceId, projectionOptions.Value.ProcessingLeaseSeconds, ct);
         }
     }
 
@@ -46,17 +47,18 @@ public sealed class ReportingProjectionConsumerService(
     {
         using var scope = scopeFactory.CreateScope();
         var schemaValidator = scope.ServiceProvider.GetRequiredService<EventSchemaValidator>();
-        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var processingStore = scope.ServiceProvider.GetRequiredService<ProjectionProcessingStore>();
         var dispatcher = scope.ServiceProvider.GetRequiredService<ReportingProjectionDispatcher>();
         var notifications = scope.ServiceProvider.GetRequiredService<ProjectionNotificationService>();
         var envelope = schemaValidator.ValidateAndDeserialize(envelopeJson);
-        return await ProjectValidatedEnvelope(db, dispatcher, notifications, envelope, processingInstanceId, projectionOptions.Value.ProcessingLeaseSeconds, ct);
+        return await ProjectValidatedEnvelope(processingStore, dispatcher, notifications, envelope, processingInstanceId, projectionOptions.Value.ProcessingLeaseSeconds, ct);
     }
 
     public async Task RebuildBudget(Guid budgetId, CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var processingStore = scope.ServiceProvider.GetRequiredService<ProjectionProcessingStore>();
         var dispatcher = scope.ServiceProvider.GetRequiredService<ReportingProjectionDispatcher>();
         var notifications = scope.ServiceProvider.GetRequiredService<ProjectionNotificationService>();
         var schemaValidator = scope.ServiceProvider.GetRequiredService<EventSchemaValidator>();
@@ -73,7 +75,7 @@ public sealed class ReportingProjectionConsumerService(
         var envelopes = await LoadOutboxEnvelopes(db, schemaValidator, budgetId, ct);
         foreach (var envelope in envelopes)
         {
-            await ProjectValidatedEnvelope(db, dispatcher, notifications, envelope, processingInstanceId, projectionOptions.Value.ProcessingLeaseSeconds, ct);
+            await ProjectValidatedEnvelope(processingStore, dispatcher, notifications, envelope, processingInstanceId, projectionOptions.Value.ProcessingLeaseSeconds, ct);
         }
     }
 
@@ -130,7 +132,7 @@ public sealed class ReportingProjectionConsumerService(
     }
 
     private static async Task<bool> ProjectValidatedEnvelope(
-        BudgetDbContext db,
+        ProjectionProcessingStore processingStore,
         ReportingProjectionDispatcher dispatcher,
         ProjectionNotificationService notifications,
         EventEnvelope envelope,
@@ -139,11 +141,9 @@ public sealed class ReportingProjectionConsumerService(
         CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
-        if (!await TryClaimProjectionEvent(db, envelope, processingInstanceId, processingLeaseSeconds, now, ct))
+        if (!await processingStore.TryClaim(envelope, processingInstanceId, processingLeaseSeconds, now, ct))
         {
-            return await db.ProcessedProjectionEvents
-                .AsNoTracking()
-                .AnyAsync(x => x.EventId == envelope.EventId && x.Status == ProjectionProcessingStatus.Completed, ct);
+            return await processingStore.IsCompleted(envelope.EventId, ct);
         }
 
         ProjectionApplyResult result;
@@ -153,142 +153,14 @@ public sealed class ReportingProjectionConsumerService(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            await MarkProjectionFailed(db, envelope.EventId, ex, ct);
+            await processingStore.MarkFailed(envelope.EventId, ex, ct);
             throw;
         }
 
         var projectedAt = DateTimeOffset.UtcNow;
-        var projectionEvent = await db.ProcessedProjectionEvents.SingleAsync(x => x.EventId == envelope.EventId, ct);
-        projectionEvent.EventType = envelope.EventType;
-        projectionEvent.BudgetId = result.BudgetId;
-        projectionEvent.OccurredAt = envelope.OccurredAt;
-        projectionEvent.ProcessedAt = projectedAt;
-        projectionEvent.Status = ProjectionProcessingStatus.Completed;
-        projectionEvent.ProcessingUpdatedAt = projectedAt;
-        projectionEvent.CompletedAt = projectedAt;
-        projectionEvent.LastError = null;
-        await db.SaveChangesAsync(ct);
+        await processingStore.MarkCompleted(envelope, result, projectedAt, ct);
         notifications.Publish(new ProjectionReadyNotification(result.BudgetId, envelope.EventId, envelope.EventType, projectedAt, UpdatedReadModels));
         return true;
-    }
-
-    private static async Task<bool> TryClaimProjectionEvent(
-        BudgetDbContext db,
-        EventEnvelope envelope,
-        Guid processingInstanceId,
-        int processingLeaseSeconds,
-        DateTimeOffset now,
-        CancellationToken ct)
-    {
-        var leaseCutoff = now.AddSeconds(-Math.Max(1, processingLeaseSeconds));
-        var budgetId = ReadBudgetId(envelope);
-        var projectionEvent = await db.ProcessedProjectionEvents
-            .SingleOrDefaultAsync(x => x.EventId == envelope.EventId, ct);
-        if (projectionEvent is not null)
-        {
-            return await TryClaimExistingProjectionEvent(
-                db,
-                projectionEvent,
-                envelope,
-                budgetId,
-                processingInstanceId,
-                leaseCutoff,
-                now,
-                ct);
-        }
-
-        db.ProcessedProjectionEvents.Add(new ProcessedProjectionEvent
-        {
-            EventId = envelope.EventId,
-            EventType = envelope.EventType,
-            BudgetId = budgetId,
-            OccurredAt = envelope.OccurredAt,
-            ProcessedAt = now,
-            Status = ProjectionProcessingStatus.Processing,
-            ProcessingInstanceId = processingInstanceId,
-            ProcessingStartedAt = now,
-            ProcessingUpdatedAt = now
-        });
-        try
-        {
-            await db.SaveChangesAsync(ct);
-            return true;
-        }
-        catch (DbUpdateException)
-        {
-            db.ChangeTracker.Clear();
-            projectionEvent = await db.ProcessedProjectionEvents
-                .SingleOrDefaultAsync(x => x.EventId == envelope.EventId, ct);
-            return projectionEvent is not null
-                && await TryClaimExistingProjectionEvent(
-                    db,
-                    projectionEvent,
-                    envelope,
-                    budgetId,
-                    processingInstanceId,
-                    leaseCutoff,
-                    now,
-                    ct);
-        }
-    }
-
-    private static async Task<bool> TryClaimExistingProjectionEvent(
-        BudgetDbContext db,
-        ProcessedProjectionEvent projectionEvent,
-        EventEnvelope envelope,
-        Guid budgetId,
-        Guid processingInstanceId,
-        DateTimeOffset leaseCutoff,
-        DateTimeOffset now,
-        CancellationToken ct)
-    {
-        if (projectionEvent.Status == ProjectionProcessingStatus.Completed)
-        {
-            return false;
-        }
-
-        if (projectionEvent.Status == ProjectionProcessingStatus.Processing
-            && projectionEvent.ProcessingUpdatedAt >= leaseCutoff)
-        {
-            return false;
-        }
-
-        projectionEvent.EventType = envelope.EventType;
-        projectionEvent.BudgetId = budgetId;
-        projectionEvent.OccurredAt = envelope.OccurredAt;
-        projectionEvent.Status = ProjectionProcessingStatus.Processing;
-        projectionEvent.ProcessingInstanceId = processingInstanceId;
-        projectionEvent.ProcessingStartedAt = now;
-        projectionEvent.ProcessingUpdatedAt = now;
-        projectionEvent.LastError = null;
-        await db.SaveChangesAsync(ct);
-        return true;
-    }
-
-    private static async Task MarkProjectionFailed(BudgetDbContext db, Guid eventId, Exception exception, CancellationToken ct)
-    {
-        var now = DateTimeOffset.UtcNow;
-        var projectionEvent = await db.ProcessedProjectionEvents.SingleOrDefaultAsync(x => x.EventId == eventId, ct);
-        if (projectionEvent is null)
-        {
-            return;
-        }
-
-        projectionEvent.Status = ProjectionProcessingStatus.Failed;
-        projectionEvent.ProcessingUpdatedAt = now;
-        projectionEvent.LastError = Truncate(exception.Message, 4000);
-        await db.SaveChangesAsync(ct);
-    }
-
-    private static Guid ReadBudgetId(EventEnvelope envelope)
-    {
-        if (envelope.Payload["budgetId"] is { } node
-            && node.Deserialize<Guid?>(EventSerialization.Options) is { } budgetId)
-        {
-            return budgetId;
-        }
-
-        throw new PermanentProjectionException($"Event payload for '{envelope.EventType}' is missing required budgetId.");
     }
 
     private async Task<bool> TryProjectOrDeadLetter(

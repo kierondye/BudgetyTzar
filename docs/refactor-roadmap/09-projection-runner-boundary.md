@@ -74,3 +74,27 @@ Separate projection infrastructure mechanics from feature projection behavior.
 - Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped after matching the known baseline
   caveat. The first `dotnet test` compiled but hit the existing transient Kafka/audit SQLite active-statement failure;
   the focused failing Kafka projection test passed on rerun, and a final full `dotnet test` passed with 77 tests.
+- Continued with a processing lifecycle boundary increment by extracting `ProjectionProcessingStore` from
+  `ReportingProjectionConsumerService`.
+- Decision: keep `ProjectionProcessingStore` in `Infrastructure/Events` because claiming projection events, enforcing
+  processing leases, observing completed duplicates, marking completion, and marking failed processing rows are
+  checkpoint/persistence mechanics owned by the projection runner infrastructure.
+- Decision: leave `ReportingProjectionConsumerService` as the orchestration boundary for Kafka consumption, outbox
+  rebuild flow, retry/dead-letter behavior, and readiness notifications. It now coordinates the processing store and the
+  feature-owned `ReportingProjectionDispatcher` without directly mutating `ProcessedProjectionEvent` rows.
+- Decision: keep `ProcessedProjectionEvent` and `ProjectionProcessingStatus` in their existing namespace and keep
+  `BudgetDbContext` mappings unchanged, preserving EF model identity, table names, migrations, and readiness query
+  behavior.
+- Grouping rationale: claim, duplicate-completed check, completion marking, and failure marking are one tightly coupled
+  processing-row lifecycle. Moving them together avoids a half-extracted lease/checkpoint boundary while still leaving
+  unrelated dead-letter failure persistence for a separate review.
+- Preserved behavior: projection idempotency, active-claim skipping, stale claim reclamation, failed-row marking,
+  completed-row fields, outbox rebuild behavior, projection readiness notifications, API responses, event contracts,
+  Kafka topics, dead-letter message semantics, EF mappings, and database schema remain unchanged.
+- Deferred follow-on: `ProjectionEventFailure` persistence and dead-letter metadata parsing still live inside
+  `ReportingProjectionConsumerService`; this is the next likely infrastructure-only extraction if Step 09 continues.
+- Remaining Step 09 work: consider extracting projection failure/dead-letter persistence as a concrete infrastructure
+  helper, then reassess whether the consumer boundary is small enough without introducing generic frameworks or changing
+  runtime semantics.
+- Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped after matching the known baseline
+  caveat. `dotnet test` passed with 77 tests.

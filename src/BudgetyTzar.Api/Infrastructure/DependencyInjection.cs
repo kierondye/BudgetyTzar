@@ -25,6 +25,7 @@ public static class DependencyInjection
         });
 
         services.AddScoped<DomainEventOutboxWriter>();
+        services.AddScoped<ProjectionProcessingStore>();
         services.AddSingleton<EventSchemaValidator>();
         services.AddSingleton<ReportingProjectionConsumerService>();
         services.AddSingleton<AuditEventConsumerService>();
