@@ -50,4 +50,27 @@ Separate projection infrastructure mechanics from feature projection behavior.
 
 ## Completion notes
 
-- Not started.
+- Started with a narrow reporting projection dispatch boundary increment by moving the reporting event-type switch and
+  typed payload deserialization out of `Infrastructure/Events/ReportingProjectionConsumerService` and into
+  `Features/Reporting/Snapshots/ReportingProjectionDispatcher`.
+- Decision: keep Kafka consumption, envelope validation, retry/dead-letter handling, projection processing leases,
+  failure persistence, outbox rebuild orchestration, and projection readiness notifications in infrastructure. The
+  infrastructure consumer now calls a feature-owned dispatcher after the envelope has been validated and claimed.
+- Decision: keep `ReportingProjectionDispatcher` in the existing `BudgetyTzar.Api.Application.Reporting` namespace so
+  feature DI, tests, and type references remain stable. No mediator, generic dispatch framework, repository, or
+  event-sourcing framework was introduced.
+- Decision: keep `ReportingProjectionService` unchanged as the concrete snapshot projection handler that receives typed
+  budgeting and transaction payload records and maintains the snapshot read models.
+- Preserved behavior: event type names, payload records, JSON schemas, envelope shape, Kafka topics, dead-letter payload
+  shape, projection idempotency, readiness notifications, failure marking, EF mappings, database schema, rebuild
+  behavior, and reporting API responses remain unchanged.
+- Deferred follow-on: projection processing state (`ProcessedProjectionEvent`) and projection failure state
+  (`ProjectionEventFailure`) still live in `Application/Reporting`; a later Step 09 increment should decide whether
+  those processing mechanics move closer to infrastructure without changing table mappings or retry semantics.
+- Deferred follow-on: audit projection/query ownership remains Step 10 work. Projection readiness/status and SSE
+  endpoint ownership remains deferred unless a later Step 09 increment naturally touches it.
+- Remaining Step 09 work: continue identifying infrastructure-only methods inside the projection consumer and extract
+  processing/checkpoint/failure mechanics only where the boundary can be tightened without changing behavior.
+- Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped after matching the known baseline
+  caveat. The first `dotnet test` compiled but hit the existing transient Kafka/audit SQLite active-statement failure;
+  the focused failing Kafka projection test passed on rerun, and a final full `dotnet test` passed with 77 tests.

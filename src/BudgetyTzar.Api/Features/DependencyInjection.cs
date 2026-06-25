@@ -40,6 +40,7 @@ public static class DependencyInjection
     private static IServiceCollection AddReportingFeature(this IServiceCollection services)
     {
         services.AddScoped<ReportingProjectionService>();
+        services.AddScoped<ReportingProjectionDispatcher>();
         return services;
     }
 
