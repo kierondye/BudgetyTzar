@@ -48,6 +48,13 @@ Keep shared code minimal and move feature-specific concepts back to their owning
 - Partially started: transaction allocation formatting now lives with transaction allocations. More shared cleanup remains.
 - Removed the transaction allocation status helper from `Features/Shared`; transaction list filtering now uses
   `FinancialTransaction.GetAllocationStatus`, keeping that transaction-specific rule in the transaction domain model.
-- Decision: leave `CommandResult`, HTTP result mapping, validation helpers, shared DTO records, and budget lookup in place
+- Moved `TransactionAllocationItem` beside the transaction allocation capability and `BudgetReallocationAdjustmentItem`
+  beside the reallocation capability. Removed `Features/Shared/SharedDtos.cs`.
+- Decision: keep both moved record types in the existing `BudgetyTzar.Api` namespace for now so public type names, JSON
+  shapes, request bodies, and tests remain unchanged. This creates a small namespace/file-location mismatch that can be
+  revisited if public API namespace cleanup is planned.
+- Decision: leave `CommandResult`, HTTP result mapping, validation helpers, and budget lookup in place
   until a future focused cleanup can move or justify each one without changing API contracts.
-- TODO: review `BudgetLookup`, `MoneyRules`, and shared DTO records in later step 06 increments.
+- Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped after roughly 90 seconds; focused tests
+  passed with 18 tests; full `dotnet test` passed with 77 tests.
+- TODO: review `BudgetLookup` and `MoneyRules` in later step 06 increments.
