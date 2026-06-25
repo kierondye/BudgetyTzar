@@ -103,3 +103,21 @@ Organize reporting read models and projections by reporting capability.
   preserving projection-backed report behavior, current API responses, rebuild behavior, and readiness semantics.
 - Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped, matching the known baseline caveat.
   `dotnet test` passed with 77 tests.
+- Continued with a fourth narrow snapshot read-model increment by moving the API-facing `BudgetSnapshot` and
+  `BudgetSnapshotItem` response records from `Application/Reporting/LedgerSnapshotCalculator.cs` to
+  `Features/Reporting/Snapshots/BudgetSnapshotResponseModels.cs`.
+- Decision: treat these records as the snapshot response read model served by the snapshot query and reused by the
+  snapshot projection recalculation code. Keeping them beside the snapshot feature makes the remaining calculator file
+  easier to split later without changing behavior.
+- Decision: keep the moved records in the existing `BudgetyTzar.Api.Application.Reporting` namespace so tests,
+  endpoint serialization, projection code, and public type references remain unchanged. The change is file/folder
+  ownership only.
+- Decision: leave `LedgerSnapshotCalculator` in `Application/Reporting` for now because moving the concrete fallback
+  calculator is a separate behavior-adjacent increment and should be reviewed independently.
+- Deferred follow-on: move or split `AuditEventDto` separately because it belongs to audit event listing rather than the
+  snapshot read-model capability, and broader audit ownership is tracked by Step 10.
+- Remaining Step 08 work: move or split the concrete snapshot fallback/projected calculator beside the snapshot
+  capability while preserving current snapshot results and projection-backed report behavior.
+- Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped, matching the known baseline caveat.
+  `dotnet test` initially failed in the existing Kafka/audit dead-letter test with a transient SQLite active-statement
+  error; the focused rerun passed, and a final full `dotnet test` passed with 77 tests.
