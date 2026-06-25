@@ -87,3 +87,19 @@ Organize reporting read models and projections by reporting capability.
   keeping Kafka consumer mechanics in infrastructure and preserving rebuild, readiness, and snapshot API behavior.
 - Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped, matching the known baseline caveat.
   `dotnet test` passed with 77 tests.
+- Continued with a third narrow snapshot projection increment by moving `ReportingProjectionService` and
+  `ProjectionApplyResult` from `Application/Reporting` to `Features/Reporting/Snapshots`.
+- Decision: treat `ReportingProjectionService` as the concrete snapshot projection behavior because it applies typed
+  budgeting and transaction event payloads, maintains the snapshot projection state tables, and recalculates the
+  `budget_snapshot` and `budget_snapshot_item` read models.
+- Decision: keep the moved service in the existing `BudgetyTzar.Api.Application.Reporting` namespace so DI registration,
+  tests, infrastructure consumers, and public type references remain unchanged. The change is file/folder ownership only.
+- Decision: leave Kafka consumer mechanics, projection processing state, projection failure state, and audit failure
+  state outside the snapshot feature for now. This keeps Step 08 focused on concrete read-model/projection ownership and
+  avoids pulling Step 09 infrastructure boundary work forward.
+- Deferred follow-on: move or split `LedgerSnapshotCalculator` only in a future focused increment because it currently
+  contains both API-facing snapshot response records and fallback calculation/query behavior.
+- Remaining Step 08 work: continue organizing snapshot calculation/query code beside the snapshot capability while
+  preserving projection-backed report behavior, current API responses, rebuild behavior, and readiness semantics.
+- Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped, matching the known baseline caveat.
+  `dotnet test` passed with 77 tests.
