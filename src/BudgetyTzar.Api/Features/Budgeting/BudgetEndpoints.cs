@@ -1,19 +1,8 @@
-using BudgetyTzar.Api.Application.Budgeting;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 
 namespace BudgetyTzar.Api.Features;
-
-public sealed record CreateBudgetRequest(string Name, string Currency);
-public sealed class CreateBudgetValidator : AbstractValidator<CreateBudgetRequest>
-{
-    public CreateBudgetValidator()
-    {
-        RuleFor(x => x.Name).NotEmpty().MaximumLength(120);
-        RuleFor(x => x.Currency).Currency();
-    }
-}
 
 public static partial class Endpoints
 {

@@ -1,19 +1,8 @@
-using BudgetyTzar.Api.Application.Budgeting;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 
 namespace BudgetyTzar.Api.Features;
-
-public sealed record CreateBudgetItemRequest(string Name);
-public sealed record BudgetItemDto(Guid Id, Guid BudgetId, string Name, bool IsArchived, DateTimeOffset? ArchivedAt, DateTimeOffset CreatedAt);
-public sealed class CreateBudgetItemValidator : AbstractValidator<CreateBudgetItemRequest>
-{
-    public CreateBudgetItemValidator()
-    {
-        RuleFor(x => x.Name).NotEmpty().MaximumLength(120);
-    }
-}
 
 public static partial class Endpoints
 {

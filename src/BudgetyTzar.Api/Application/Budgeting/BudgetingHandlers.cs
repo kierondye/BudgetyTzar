@@ -6,60 +6,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BudgetyTzar.Api.Application.Budgeting;
 
-public sealed class CreateBudgetHandler(BudgetDbContext db, DomainEventOutboxWriter events)
-{
-    public async Task<CommandResult<Budget>> Handle(string name, string currency, CancellationToken ct)
-    {
-        var budget = Budget.Create(name, currency);
-        db.Budgets.Add(budget);
-        var eventId = events.Add(budget.CreatedEvent());
-        await db.SaveChangesAsync(ct);
-        return CommandResult<Budget>.Created(budget, eventId);
-    }
-}
-
-public sealed class CreateBudgetItemHandler(BudgetDbContext db, DomainEventOutboxWriter events)
-{
-    public async Task<CommandResult<BudgetItem>> Handle(Guid budgetId, string name, CancellationToken ct)
-    {
-        if (!await db.Budgets.AnyAsync(x => x.Id == budgetId, ct))
-        {
-            return CommandResult<BudgetItem>.NotFound();
-        }
-
-        var trimmedName = name.Trim();
-        if (await db.BudgetItems.AnyAsync(x => x.BudgetId == budgetId && x.Name == trimmedName, ct))
-        {
-            return CommandResult<BudgetItem>.ValidationProblem(new Dictionary<string, string[]>
-            {
-                [nameof(name)] = ["A budget item with this name already exists in this budget."]
-            });
-        }
-
-        var item = BudgetItem.Create(budgetId, trimmedName);
-        db.BudgetItems.Add(item);
-        var eventId = events.Add(item.CreatedEvent());
-        await db.SaveChangesAsync(ct);
-        return CommandResult<BudgetItem>.Created(item, eventId);
-    }
-}
-
-public sealed class ArchiveBudgetItemHandler(BudgetDbContext db, DomainEventOutboxWriter events)
-{
-    public async Task<CommandResult> Handle(Guid budgetId, Guid itemId, CancellationToken ct)
-    {
-        var item = await db.BudgetItems.FirstOrDefaultAsync(x => x.Id == itemId && x.BudgetId == budgetId, ct);
-        if (item is null)
-        {
-            return CommandResult.NotFound();
-        }
-
-        var eventId = events.Add(item.Archive(DateTimeOffset.UtcNow));
-        await db.SaveChangesAsync(ct);
-        return CommandResult.NoContent(eventId);
-    }
-}
-
 public sealed class RecordAdjustmentHandler(BudgetDbContext db, DomainEventOutboxWriter events, BudgetItemEligibilityService eligibility)
 {
     public async Task<CommandResult<BudgetAdjustment>> HandleCanonical(
