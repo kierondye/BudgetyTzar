@@ -121,3 +121,20 @@ Organize reporting read models and projections by reporting capability.
 - Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped, matching the known baseline caveat.
   `dotnet test` initially failed in the existing Kafka/audit dead-letter test with a transient SQLite active-statement
   error; the focused rerun passed, and a final full `dotnet test` passed with 77 tests.
+- Continued with a fifth narrow snapshot calculation increment by moving `LedgerSnapshotCalculator` from
+  `Application/Reporting` to `Features/Reporting/Snapshots`.
+- Decision: treat `LedgerSnapshotCalculator` as concrete snapshot query/calculation behavior because it either
+  calculates the snapshot directly from ledger tables or reads the projection-backed `budget_snapshot` read model for
+  the snapshot endpoint.
+- Decision: keep the moved calculator in the existing `BudgetyTzar.Api.Application.Reporting` namespace so endpoint
+  references, tests, and public type references remain unchanged. The change is file/folder ownership only.
+- Decision: move `AuditEventDto` into its own `Application/Reporting/AuditEventDto.cs` file without moving it to an
+  audit feature. This keeps the snapshot calculator move coherent while preserving Step 10 as the place for broader
+  audit ownership decisions.
+- Deferred follow-on: audit event DTO/query ownership remains Step 10 work; projection processing/failure state remains
+  Step 09 boundary work.
+- Remaining Step 08 work: review whether any snapshot-specific query composition remains outside
+  `Features/Reporting/Snapshots`, then close Step 08 or leave only explicitly deferred non-snapshot concerns.
+- Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped, matching the known baseline caveat.
+  `dotnet test` initially failed in the existing Kafka projection consumer timeout; the focused rerun passed, and a
+  final full `dotnet test` passed with 77 tests.
