@@ -123,3 +123,26 @@ Separate projection infrastructure mechanics from feature projection behavior.
 - Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped after matching the known baseline
   caveat. The first `dotnet test` compile caught a missing EF Core using in the consumer after extraction; after fixing
   it, `dotnet test` passed with 77 tests.
+- Continued with an outbox rebuild persistence boundary increment by extracting `ProjectionRebuildStore` from
+  `ReportingProjectionConsumerService`.
+- Decision: keep `ProjectionRebuildStore` in `Infrastructure/Events` because clearing projection/read-model state and
+  loading ordered, schema-validated outbox envelopes are rebuild persistence mechanics owned by projection-runner
+  infrastructure.
+- Decision: leave rebuild orchestration in `ReportingProjectionConsumerService`; it still decides when to perform full
+  or budget-scoped rebuilds and replays each validated envelope through the same processing store, feature dispatcher,
+  and readiness notification path.
+- Grouping rationale: full reset, budget-scoped reset, and outbox replay loading are one coherent rebuild concern. Moving
+  them together removes the last direct EF projection-state manipulation from the consumer without changing replay
+  ordering, filtering, or validation.
+- Preserved behavior: the same projection/read-model tables are cleared, the same budget-scoped filters are used, the
+  same `BudgetId != null` outbox filter is used, outbox envelopes are still ordered by `CreatedAt`, schema validation
+  still occurs before replay, and projection idempotency, rebuild behavior, readiness notifications, API responses,
+  event contracts, Kafka topics, EF mappings, and database schema remain unchanged.
+- Deferred follow-on: `ReportingProjectionConsumerService` still owns retry delay calculation, Kafka consumer/producer
+  construction, dead-letter payload construction, and high-level projection orchestration. These are infrastructure
+  runner concerns; avoid extracting them unless a future review finds the consumer boundary still too broad.
+- Remaining Step 09 work: review for closure. Feature projection dispatch is separated from infrastructure-owned
+  transport, processing lifecycle, failure persistence, and rebuild persistence without introducing generic frameworks
+  or changing runtime semantics.
+- Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped after matching the known baseline
+  caveat. `dotnet test` passed with 77 tests.

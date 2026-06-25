@@ -1,8 +1,6 @@
 using BudgetyTzar.Api.Application.Reporting;
-using BudgetyTzar.Api.Infrastructure.Persistence;
 using Confluent.Kafka;
 using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace BudgetyTzar.Api.Infrastructure.Events;
@@ -21,22 +19,13 @@ public sealed class ReportingProjectionConsumerService(
     public async Task RebuildFromOutbox(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var rebuildStore = scope.ServiceProvider.GetRequiredService<ProjectionRebuildStore>();
         var processingStore = scope.ServiceProvider.GetRequiredService<ProjectionProcessingStore>();
         var dispatcher = scope.ServiceProvider.GetRequiredService<ReportingProjectionDispatcher>();
         var notifications = scope.ServiceProvider.GetRequiredService<ProjectionNotificationService>();
-        var schemaValidator = scope.ServiceProvider.GetRequiredService<EventSchemaValidator>();
 
-        db.BudgetSnapshotItemProjections.RemoveRange(db.BudgetSnapshotItemProjections);
-        db.BudgetSnapshotProjections.RemoveRange(db.BudgetSnapshotProjections);
-        db.ProcessedProjectionEvents.RemoveRange(db.ProcessedProjectionEvents);
-        db.BudgetItemProjectionStates.RemoveRange(db.BudgetItemProjectionStates);
-        db.BudgetAdjustmentProjectionStates.RemoveRange(db.BudgetAdjustmentProjectionStates);
-        db.TransactionAllocationProjectionStates.RemoveRange(db.TransactionAllocationProjectionStates);
-        db.TransactionProjectionStates.RemoveRange(db.TransactionProjectionStates);
-        await db.SaveChangesAsync(ct);
-
-        var envelopes = await LoadOutboxEnvelopes(db, schemaValidator, null, ct);
+        await rebuildStore.ResetAll(ct);
+        var envelopes = await rebuildStore.LoadOutboxEnvelopes(null, ct);
         foreach (var envelope in envelopes)
         {
             await ProjectValidatedEnvelope(processingStore, dispatcher, notifications, envelope, processingInstanceId, projectionOptions.Value.ProcessingLeaseSeconds, ct);
@@ -57,22 +46,13 @@ public sealed class ReportingProjectionConsumerService(
     public async Task RebuildBudget(Guid budgetId, CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+        var rebuildStore = scope.ServiceProvider.GetRequiredService<ProjectionRebuildStore>();
         var processingStore = scope.ServiceProvider.GetRequiredService<ProjectionProcessingStore>();
         var dispatcher = scope.ServiceProvider.GetRequiredService<ReportingProjectionDispatcher>();
         var notifications = scope.ServiceProvider.GetRequiredService<ProjectionNotificationService>();
-        var schemaValidator = scope.ServiceProvider.GetRequiredService<EventSchemaValidator>();
 
-        db.BudgetSnapshotItemProjections.RemoveRange(db.BudgetSnapshotItemProjections.Where(x => x.BudgetId == budgetId));
-        db.BudgetSnapshotProjections.RemoveRange(db.BudgetSnapshotProjections.Where(x => x.BudgetId == budgetId));
-        db.ProcessedProjectionEvents.RemoveRange(db.ProcessedProjectionEvents.Where(x => x.BudgetId == budgetId));
-        db.BudgetItemProjectionStates.RemoveRange(db.BudgetItemProjectionStates.Where(x => x.BudgetId == budgetId));
-        db.BudgetAdjustmentProjectionStates.RemoveRange(db.BudgetAdjustmentProjectionStates.Where(x => x.BudgetId == budgetId));
-        db.TransactionAllocationProjectionStates.RemoveRange(db.TransactionAllocationProjectionStates.Where(x => x.BudgetId == budgetId));
-        db.TransactionProjectionStates.RemoveRange(db.TransactionProjectionStates.Where(x => x.BudgetId == budgetId));
-        await db.SaveChangesAsync(ct);
-
-        var envelopes = await LoadOutboxEnvelopes(db, schemaValidator, budgetId, ct);
+        await rebuildStore.ResetBudget(budgetId, ct);
+        var envelopes = await rebuildStore.LoadOutboxEnvelopes(budgetId, ct);
         foreach (var envelope in envelopes)
         {
             await ProjectValidatedEnvelope(processingStore, dispatcher, notifications, envelope, processingInstanceId, projectionOptions.Value.ProcessingLeaseSeconds, ct);
@@ -267,30 +247,6 @@ public sealed class ReportingProjectionConsumerService(
         var maxDelay = Math.Max(initialDelay, projectionOptions.Value.MaxRetryDelayMilliseconds);
         var delay = Math.Min(maxDelay, initialDelay * (int)Math.Pow(2, attempt - 1));
         await Task.Delay(delay, ct);
-    }
-
-    private static async Task<IReadOnlyList<EventEnvelope>> LoadOutboxEnvelopes(
-        BudgetDbContext db,
-        EventSchemaValidator schemaValidator,
-        Guid? budgetId,
-        CancellationToken ct)
-    {
-        var query = db.OutboxMessages
-            .AsNoTracking()
-            .Where(x => x.BudgetId != null);
-        if (budgetId.HasValue)
-        {
-            query = query.Where(x => x.BudgetId == budgetId.Value);
-        }
-
-        var messages = await query
-            .Select(x => new { x.CreatedAt, x.EnvelopeJson })
-            .ToListAsync(ct);
-
-        return messages
-            .OrderBy(x => x.CreatedAt)
-            .Select(x => schemaValidator.ValidateAndDeserialize(x.EnvelopeJson))
-            .ToList();
     }
 
 }
