@@ -60,7 +60,7 @@ public static partial class Endpoints
                 .ToDictionaryAsync(x => x.TransactionId, x => x.Amount, ct);
 
             var filtered = transactions
-                .Where(x => GetAllocationStatus(x, allocationTotals.GetValueOrDefault(x.Id)) == parsedAllocationStatus.Value)
+                .Where(x => x.GetAllocationStatus(allocationTotals.GetValueOrDefault(x.Id)) == parsedAllocationStatus.Value)
                 .ToList();
             return Results.Ok(filtered);
         });

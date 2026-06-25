@@ -46,3 +46,8 @@ Keep shared code minimal and move feature-specific concepts back to their owning
 ## Completion notes
 
 - Partially started: transaction allocation formatting now lives with transaction allocations. More shared cleanup remains.
+- Removed the transaction allocation status helper from `Features/Shared`; transaction list filtering now uses
+  `FinancialTransaction.GetAllocationStatus`, keeping that transaction-specific rule in the transaction domain model.
+- Decision: leave `CommandResult`, HTTP result mapping, validation helpers, shared DTO records, and budget lookup in place
+  until a future focused cleanup can move or justify each one without changing API contracts.
+- TODO: review `BudgetLookup`, `MoneyRules`, and shared DTO records in later step 06 increments.
