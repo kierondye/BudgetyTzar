@@ -70,3 +70,12 @@ Separate read/query behavior by capability and keep it beside the read model or 
 - Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped. `dotnet test` first passed
   compilation but had the same Kafka projection consumer timeout; rerunning that test class passed, and a second full
   `dotnet test` passed with 77 tests.
+- Implemented a third narrow budgeting query increment by moving the budget adjustment list endpoint into
+  `Features/Budgeting/ListBudgetAdjustments`.
+- Decision: keep the adjustment list as a private mapping method on the existing `Endpoints` partial, preserving the
+  route, Swagger metadata, not-found behavior, DTO shape, ordering, and legacy `Guid.Empty` budget-id normalization.
+- Decision: keep the concrete EF no-tracking query and budget-item ownership check unchanged; no repository, mediator,
+  read-model abstraction, or `BudgetLookup` ownership change was introduced.
+- Deferred follow-on: budget reallocation list remains as the last budgeting query slice before reporting query work.
+- Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped. `dotnet test` passed with
+  77 tests.
