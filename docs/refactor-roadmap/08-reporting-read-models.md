@@ -154,3 +154,20 @@ Organize reporting read models and projections by reporting capability.
   final documentation-only cleanup.
 - Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped, matching the known baseline caveat.
   `dotnet test` passed with 77 tests.
+- Continued with a mechanical responsibility-splitting batch by deleting the remaining mixed
+  `Application/Reporting/ProjectionModels.cs` file and moving its contents into
+  `ProcessedProjectionEvent.cs`, `ProjectionEventFailure.cs`, and `AuditEventFailure.cs`.
+- Decision: keep the moved types in the existing `BudgetyTzar.Api.Application.Reporting` namespace so EF model type
+  names, migrations, tests, infrastructure consumers, and endpoint references remain unchanged.
+- Decision: group the moved types by persistence responsibility: projection processing/readiness state,
+  reporting-projection failure state, and audit-projection failure state. This completes the Step 08 cleanup of the
+  former global projection model file without moving Kafka consumer mechanics into feature code.
+- Decision: keep `ProcessedProjectionEvent`, `ProjectionEventFailure`, and `AuditEventFailure` in `Application/Reporting`
+  for now. Their broader ownership touches projection-runner and audit boundaries, which are tracked by Steps 09 and 10.
+- Deferred follow-on: Step 09 should decide whether projection processing and reporting failure state move closer to
+  infrastructure event processing; Step 10 should decide audit failure/read-model ownership.
+- Remaining Step 08 work: snapshot-specific read models, projection state, projection behavior, fallback/projected
+  calculator, and snapshot endpoint are colocated under `Features/Reporting/Snapshots`. Step 08 has no known
+  behaviour-changing work remaining; only closure review remains.
+- Validation: `dotnet build BudgetyTzar.sln` hung with no output and was stopped, matching the known baseline caveat.
+  `dotnet test` passed with 77 tests.
