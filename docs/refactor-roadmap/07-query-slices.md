@@ -126,3 +126,14 @@ Separate read/query behavior by capability and keep it beside the read model or 
   owns SSE streaming mechanics rather than a simple request/response query.
 - Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped. `dotnet test` passed with
   77 tests.
+- Implemented the final reporting query increment by moving the projection-events endpoint into
+  `Features/Reporting/GetProjectionEvents`.
+- Decision: keep projection-events as a private mapping method on the existing `Endpoints` partial and move its SSE
+  helpers with it, preserving the route, `eventId` query parameter, SSE headers/content type, one-shot wait behavior,
+  missing-budget 404 behavior, projection-ready event name, serialized notification payload, and flush behavior.
+- Decision: keep the concrete `ProjectionNotificationService`, `BudgetDbContext`, `GetProjectionStatus`, and
+  `ProcessedProjectionEvents` usage unchanged; no repository, mediator, read-model abstraction, generic query framework,
+  or `BudgetLookup` ownership change was introduced.
+- Reporting query slicing is complete for the current endpoint set. Step 07 is complete for the current API surface.
+- Validation: `dotnet build BudgetyTzar.sln` again hung with no output and was stopped. `dotnet test` passed with
+  77 tests.
