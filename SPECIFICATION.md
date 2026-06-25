@@ -538,7 +538,31 @@ Consumes:
 - Budgeting events.
 - Transaction events.
 
-### 9.5 Web Application
+### 9.5 Audit Service
+
+Responsibilities:
+
+- Durable audit records.
+- Audit timelines.
+- Audit event projection.
+- Audit event failure tracking.
+
+Owns:
+
+- Audit records.
+- Audit projections.
+- Audit event processing state.
+
+Publishes:
+
+- Audit events, if useful.
+
+Consumes:
+
+- Budgeting events.
+- Transaction events.
+
+### 9.6 Web Application
 
 Responsibilities:
 

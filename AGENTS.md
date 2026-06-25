@@ -6,11 +6,11 @@ BudgetyTzar is a .NET 9 solution centered on `BudgetyTzar.sln`. The HTTP API liv
 
 Tests live in `tests/BudgetyTzar.Tests`, grouped by domain area with shared infrastructure in `Support`. Event JSON schemas are in `contracts/events`. Bruno API scenarios are in `bruno`, and operational scripts are in `scripts`.
 
-## Architecture & Module Boundaries
+## Architecture, Bounded Contexts, and Services
 
 The application follows vertical slice architecture, coined by Jimmy Bogard. `SPECIFICATION.md` is the source of application requirements; align behavior, API shape, and event contracts with it.
 
-There are four modules: budgets, transactions, reporting, and audits. Each module should own its own database and database context; modules must not share data directly. Communicate across boundaries with events. Budgets and transactions are event producers with read/write endpoints. Reporting and audits are event consumers with read-only APIs.
+The bounded contexts and services described in `SPECIFICATION.md` define ownership and integration boundaries. Adhere strictly to those boundaries, and follow the data storage requirements in the specification.
 
 ## Build, Test, and Development Commands
 
