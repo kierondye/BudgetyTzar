@@ -232,3 +232,30 @@ Remove or relocate procedural services and helpers where ownership is clear.
   `KafkaProjectionConsumerTests.ReportingProjectionConsumerDeadLettersPoisonEventAndContinuesWithLaterEvents` SQLite
   dead-letter transient. The focused rerun of that failing test hit the same transient, and the final full
   `dotnet test` passed with 94 tests.
+- Closed Step 12 with an ownership boundary review.
+- Decision: treat Step 12 as complete for the current codebase. The remaining named services/helpers have clear
+  ownership and no further non-speculative relocation is justified.
+- Decision: keep `CommandResult` and `CommandResultHttpExtensions` in `Features/Shared` because they are one cohesive
+  command-response concern used across budgeting and transaction command endpoints. Keeping them together preserves a
+  deliberately small shared surface instead of creating artificial per-feature copies or abstractions.
+- Decision: keep feature-owned services and helpers in their feature areas: budget-item eligibility under budgeting,
+  endpoint request validation under feature validation, reporting projection/notification behavior under reporting, and
+  audit projection behavior under audit.
+- Decision: keep infrastructure-owned mechanics in infrastructure: Kafka consumers, hosted services, outbox writer and
+  publisher, schema validation, projection/audit processing stores, projection/audit failure persistence entities, and
+  serialization helpers.
+- Grouping rationale: this increment is documentation-only because the review found no remaining helper/service move
+  that would improve ownership without creating churn. Closing the step records the stopping point and avoids moving
+  cohesive plumbing for its own sake.
+- Preserved behavior: no runtime code changed. API routes, response shapes, status codes, validation messages, Swagger
+  metadata, SSE/projection readiness behavior, event contracts, schemas, envelopes, outbox behavior, service lifetimes,
+  projections, audit behavior, snapshots, EF mappings, migrations, and database schema remain unchanged.
+- Deferred follow-on: none known for Step 12. Future helper/service moves should be driven by a concrete feature,
+  behavior change, or ownership problem discovered in later roadmap work.
+- Remaining Step 12 work: none known.
+- Validation: `dotnet build BudgetyTzar.sln` hung silently and was stopped after matching the known roadmap caveat.
+  The first `dotnet test` compiled but failed on the known
+  `KafkaProjectionConsumerTests.ReportingProjectionConsumerDeadLettersPoisonEventAndContinuesWithLaterEvents` SQLite
+  active-statement dead-letter transient; the focused rerun passed. The next full `dotnet test` failed on the known
+  `KafkaProjectionConsumerTests.ReportingProjectionConsumerProjectsEventsConsumedFromKafka` timeout; the focused rerun
+  passed, and the final full `dotnet test` passed with 94 tests.
