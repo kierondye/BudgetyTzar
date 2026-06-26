@@ -1,7 +1,7 @@
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
-namespace BudgetyTzar.Api.Application.Budgeting;
+namespace BudgetyTzar.Api.Features;
 
 public sealed class BudgetItemEligibilityService(BudgetDbContext db)
 {

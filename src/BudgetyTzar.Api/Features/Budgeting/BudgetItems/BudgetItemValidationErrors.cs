@@ -1,4 +1,4 @@
-namespace BudgetyTzar.Api.Application.Budgeting;
+namespace BudgetyTzar.Api.Features;
 
 internal static class BudgetItemValidationErrors
 {

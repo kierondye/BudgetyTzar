@@ -110,3 +110,31 @@ Remove or relocate procedural services and helpers where ownership is clear.
   ownership concern at a time.
 - Validation: `dotnet build BudgetyTzar.sln` hung silently and was stopped after matching the known roadmap caveat.
   `dotnet test` passed with 94 tests.
+- Continued with a budget-item eligibility ownership cleanup by moving `BudgetItemEligibilityService` and
+  `BudgetItemValidationErrors` from `Application/Budgeting` to `Features/Budgeting/BudgetItems`.
+- Decision: treat budget-item eligibility lookup and archived-item validation error construction as budgeting feature
+  helpers. Transaction allocation still calls the helper, but the protected concept is budgeting-owned: whether a
+  budget item exists in the budget and can accept activity on a command date.
+- Decision: keep `BudgetItem.CanAcceptActivityOn` as the domain rule owner, keep the eligibility service as concrete
+  feature command orchestration support, and keep EF query/persistence plumbing unchanged through `BudgetDbContext`.
+- Decision: preserve the existing scoped service lifetime, method names, no-tracking lookup behavior, error dictionary
+  key, and validation message. No repository, mediator, generic service framework, or cross-feature abstraction was
+  introduced.
+- Grouping rationale: the service and validation-error helper are one archived-budget-item eligibility concern used by
+  adjustment, reallocation, and transaction allocation command paths. Moving them together avoids leaving half of the
+  same command helper concern in `Application/Budgeting`.
+- Preserved behavior: adjustment, reallocation, and transaction allocation routes, status codes, response bodies,
+  Swagger metadata, archived-item validation message, event contracts, outbox behavior, projections, audit behavior,
+  snapshots, EF mappings, migrations, and database schema remain unchanged.
+- Deferred follow-on: `BudgetLookup` and `EndpointValidation` remain shared endpoint helpers pending separate review.
+  Projection/audit processing and failure persistence entities remain in `Application/Reporting` to avoid EF model
+  identity and migration snapshot churn.
+- Remaining Step 12 work: review the remaining shared endpoint helpers and reporting/audit persistence entity ownership
+  boundaries without broadening into persistence redesign.
+- Validation: `dotnet build BudgetyTzar.sln` hung silently and was stopped after matching the known roadmap caveat.
+  `dotnet test` compiled but failed on the known
+  `KafkaProjectionConsumerTests.ReportingProjectionConsumerDeadLettersPoisonEventAndContinuesWithLaterEvents`
+  SQLite active-statement dead-letter transient; the focused rerun of that failing test hit the same transient, and the
+  final full `dotnet test` again failed only on that same test. Focused touched-path validation passed with
+  `dotnet test --filter "FullyQualifiedName~BudgetAdjustmentsTests|FullyQualifiedName~BudgetReallocationsTests|FullyQualifiedName~TransactionAllocationsTests|FullyQualifiedName~BudgetItemTests"`
+  (13 tests).
