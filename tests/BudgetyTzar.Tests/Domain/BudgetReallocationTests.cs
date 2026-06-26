@@ -1,4 +1,5 @@
 using BudgetyTzar.Api;
+using BudgetyTzar.Api.Contracts.Events;
 
 namespace BudgetyTzar.Tests;
 
@@ -49,5 +50,26 @@ public sealed class BudgetReallocationTests
         });
         Assert.Contains(adjustments, x => x.BudgetItemId == firstItemId && x.Amount == 30m && x.Type == BudgetAdjustmentType.Credit);
         Assert.Contains(adjustments, x => x.BudgetItemId == secondItemId && x.Amount == 30m && x.Type == BudgetAdjustmentType.Debit);
+    }
+
+    [Fact]
+    public void ReallocationRecordedEventUsesReallocationBudgetId()
+    {
+        var budgetId = Guid.NewGuid();
+        var budgetItemId = Guid.NewGuid();
+        var reallocation = BudgetReallocation.Create(budgetId, new DateOnly(2026, 6, 5), "Move budget");
+
+        var domainEvent = reallocation.RecordedEvent([
+            new BudgetReallocationAdjustment(budgetItemId, 30m, BudgetAdjustmentType.Credit),
+            new BudgetReallocationAdjustment(Guid.NewGuid(), 30m, BudgetAdjustmentType.Debit)
+        ]);
+
+        Assert.Equal("BudgetReallocationRecorded", domainEvent.EventType);
+        Assert.Equal(budgetId, domainEvent.BudgetId);
+        Assert.Equal(reallocation.Id, domainEvent.EntityId);
+        var payload = Assert.IsType<BudgetReallocationRecordedPayload>(domainEvent.Payload);
+        Assert.Equal(budgetId, payload.BudgetId);
+        Assert.Equal(reallocation.Id, payload.BudgetReallocationId);
+        Assert.Contains(payload.Adjustments, x => x.BudgetItemId == budgetItemId);
     }
 }

@@ -54,19 +54,18 @@ public sealed class BudgetReallocation
     }
 
     public DomainEvent RecordedEvent(IReadOnlyList<BudgetReallocationAdjustment> adjustments) =>
-        BuildRecordedEvent(BudgetId, adjustments
-            .Select(x => new BudgetReallocationAdjustmentPayload(x.BudgetItemId, x.Amount, x.Direction))
-            .ToList());
-
-    public DomainEvent RecordedEvent(Guid budgetId, IReadOnlyList<BudgetReallocationAdjustmentPayload> adjustments) =>
-        BuildRecordedEvent(budgetId, adjustments);
-
-    private DomainEvent BuildRecordedEvent(Guid budgetId, IReadOnlyList<BudgetReallocationAdjustmentPayload> adjustments) =>
         new(
             "BudgetReallocationRecorded",
-            budgetId,
+            BudgetId,
             nameof(BudgetReallocation),
             Id,
             $"Recorded budget reallocation {Id}: {Reason}",
-            Payload: new BudgetReallocationRecordedPayload(Id, budgetId, Date, Notes, adjustments));
+            Payload: new BudgetReallocationRecordedPayload(
+                Id,
+                BudgetId,
+                Date,
+                Notes,
+                adjustments
+                    .Select(x => new BudgetReallocationAdjustmentPayload(x.BudgetItemId, x.Amount, x.Direction))
+                    .ToList()));
 }

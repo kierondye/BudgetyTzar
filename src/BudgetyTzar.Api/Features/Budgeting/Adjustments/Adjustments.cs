@@ -75,7 +75,7 @@ public sealed class RecordAdjustmentHandler(
         }
 
         db.BudgetAdjustments.Add(adjustment);
-        var eventId = events.Add(adjustment.RecordedEvent(budgetId, item.Name));
+        var eventId = events.Add(adjustment.RecordedEvent(item.Name));
         await db.SaveChangesAsync(ct);
         return CommandResult<BudgetAdjustment>.Created(adjustment, eventId);
     }

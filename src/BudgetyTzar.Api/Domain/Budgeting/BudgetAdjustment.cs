@@ -48,12 +48,12 @@ public sealed class BudgetAdjustment
     public decimal SignedPlannedAmount() =>
         Type == BudgetAdjustmentType.Credit ? Amount : -Amount;
 
-    public DomainEvent RecordedEvent(Guid budgetId, string budgetItemName) =>
+    public DomainEvent RecordedEvent(string budgetItemName) =>
         new(
             "BudgetAdjustmentRecorded",
-            budgetId,
+            BudgetId,
             nameof(BudgetAdjustment),
             Id,
             $"Recorded {Type} adjustment {Amount} for budget item {budgetItemName}: {Reason}",
-            Payload: new BudgetAdjustmentRecordedPayload(Id, budgetId, BudgetItemId, Amount, Type, Date, Notes));
+            Payload: new BudgetAdjustmentRecordedPayload(Id, BudgetId, BudgetItemId, Amount, Type, Date, Notes));
 }

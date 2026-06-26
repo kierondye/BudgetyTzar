@@ -220,3 +220,44 @@ Move gradually toward aggregates making decisions and emitting domain events as 
   it depends on persisted budget-item state and cross-command use by adjustments and transaction allocations.
 - Remaining Step 11 work: review whether Step 11 has any remaining non-speculative aggregate moves; otherwise close the
   step with a boundary review.
+- Closed Step 11 with an aggregate-direction boundary review.
+- Decision: treat Step 11 as complete for the current command surface. Natural aggregate event creation and obvious
+  command-handler business decisions have been moved into `Budget`, `BudgetItem`, `BudgetAdjustment`,
+  `BudgetReallocation`, and `FinancialTransaction` where ownership is clear.
+- Decision: intentionally leave request validation, route/status/response mapping, EF loading and saving, outbox writing,
+  budget item archived eligibility lookup, and read/query validation outside aggregates. These are application,
+  persistence, cross-aggregate eligibility, or read-side concerns rather than aggregate decision logic.
+- Decision: do not introduce event-store loading/saving, repositories, mediator layers, aggregate base classes, generic
+  domain-event dispatch, or event-sourcing frameworks. The roadmap goal for this step was directional aggregate
+  ownership, not a persistence model replacement.
+- Grouping rationale: this increment is documentation-only because the scan found no remaining non-speculative code move
+  that would improve Step 11 boundaries without pulling in deferred work or changing behavior.
+- Preserved behavior: no runtime code changed. API routes, request/response JSON, status codes, Swagger metadata,
+  validation messages, event names, event payload records, JSON schemas, envelope/outbox behavior, EF mappings,
+  migrations, database schema, projections, and audit behavior remain unchanged.
+- Validation: `dotnet build BudgetyTzar.sln` passed with 0 warnings and 0 errors. The first full `dotnet test` run had
+  the known transient Kafka/SQLite projection-consumer timeout with 91 passed and 1 failed; the focused failing Kafka
+  test rerun hit the same transient; the final full `dotnet test` passed with 92 tests.
+- Deferred follow-on: event-stream rehydration, richer aggregate state, identifier value objects, and any event-store
+  persistence direction remain future roadmap work and should be introduced only through dedicated, behavior-preserving
+  increments.
+- Deferred follow-on: if archived budget item eligibility is revisited, keep budgeting ownership explicit because the
+  rule spans budget adjustments and transaction allocations and depends on persisted budget-item archive state.
+- Completed a final budgeting event-method cleanup after closure review.
+- Decision: `BudgetAdjustment.RecordedEvent` and `BudgetReallocation.RecordedEvent` now use their own `BudgetId` state
+  instead of accepting a caller-supplied budget identifier. This aligns budgeting event methods with the transaction
+  aggregate event methods introduced during Step 11.
+- Decision: removed the unused `BudgetReallocation.RecordedEvent(Guid, IReadOnlyList<BudgetReallocationAdjustmentPayload>)`
+  overload so the public aggregate API accepts domain-shaped reallocation adjustments rather than contract payloads.
+- Grouping rationale: these changes are one consistency cleanup around aggregate-owned budgeting event output. They
+  reduce the chance of mismatched event aggregate IDs without changing event names, payload shape, persistence, or API
+  behavior.
+- Preserved behavior: budget adjustment and budget reallocation routes, request/response JSON, status codes, Swagger
+  metadata, validation messages, event names, event payload records, JSON schemas, envelope/outbox behavior, EF mappings,
+  migrations, database schema, projections, and audit behavior remain unchanged.
+- Validation during implementation: focused
+  `dotnet test --filter "FullyQualifiedName~BudgetAdjustmentTests|FullyQualifiedName~BudgetReallocationTests|FullyQualifiedName~BudgetAdjustmentsTests|FullyQualifiedName~BudgetReallocationsTests|FullyQualifiedName~EventContractTests"`
+  passed with 12 tests.
+- Final validation: `dotnet build BudgetyTzar.sln` passed with 0 warnings and 0 errors; `dotnet test` passed with
+  94 tests.
+- Remaining Step 11 work: none known for the current command surface.
