@@ -64,6 +64,34 @@ public sealed class FinancialTransactionTests
     }
 
     [Fact]
+    public void TransactionRejectsDuplicateBudgetItemAllocations()
+    {
+        var transaction = FinancialTransaction.Create(
+            Guid.NewGuid(),
+            new DateOnly(2026, 6, 10),
+            "Groceries",
+            25m,
+            TransactionDirection.Debit,
+            null,
+            null,
+            null);
+        var budgetItemId = Guid.NewGuid();
+
+        var validationError = transaction.ValidateReplacementAllocations([
+            new TransactionAllocationItem(budgetItemId, 10m),
+            new TransactionAllocationItem(budgetItemId, 5m)
+        ]);
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            transaction.ReplaceAllocations([
+                new TransactionAllocationItem(budgetItemId, 10m),
+                new TransactionAllocationItem(budgetItemId, 5m)
+            ]));
+
+        Assert.Equal(FinancialTransaction.DuplicateBudgetItemAllocationMessage, validationError);
+        Assert.Equal(FinancialTransaction.DuplicateBudgetItemAllocationMessage, exception.Message);
+    }
+
+    [Fact]
     public void TransactionCanCreateSplitAllocationsWithinAmount()
     {
         var transaction = FinancialTransaction.Create(
@@ -107,6 +135,82 @@ public sealed class FinancialTransactionTests
         ]));
 
         Assert.Equal("Weekly shop", allocation.Notes);
+    }
+
+    [Fact]
+    public void TransactionAllocationReplacementProducesReplacedEvent()
+    {
+        var budgetId = Guid.NewGuid();
+        var transaction = FinancialTransaction.Create(
+            budgetId,
+            new DateOnly(2026, 6, 10),
+            "Split shop",
+            50m,
+            TransactionDirection.Debit,
+            null,
+            null,
+            null);
+        var existingItemId = Guid.NewGuid();
+        var newItemId = Guid.NewGuid();
+        var existing = new[]
+        {
+            TransactionAllocation.Create(transaction.Id, existingItemId, 20m, "Old note")
+        };
+        var replacements = new[]
+        {
+            new TransactionAllocationItem(newItemId, 30m, "  Weekly shop  ")
+        };
+
+        var domainEvent = transaction.AllocationsReplacedEvent(existing, replacements);
+
+        Assert.Equal("TransactionAllocationsReplaced", domainEvent.EventType);
+        Assert.Equal(budgetId, domainEvent.BudgetId);
+        Assert.Equal(transaction.Id, domainEvent.EntityId);
+        Assert.Equal("Allocated transaction Split shop.", domainEvent.Description);
+        Assert.Equal($"Previous={existingItemId}:20 (Old note); New={newItemId}:30 (Weekly shop)", domainEvent.Details);
+        var payload = Assert.IsType<TransactionAllocationsReplacedPayload>(domainEvent.Payload);
+        Assert.Equal(transaction.Id, payload.TransactionId);
+        Assert.Equal(budgetId, payload.BudgetId);
+        Assert.Equal(50m, payload.TransactionAmount);
+        var allocation = Assert.Single(payload.Allocations);
+        Assert.Equal(newItemId, allocation.BudgetItemId);
+        Assert.Equal(30m, allocation.Amount);
+        Assert.Equal("Weekly shop", allocation.Notes);
+    }
+
+    [Fact]
+    public void TransactionAllocationClearingProducesClearedEvent()
+    {
+        var budgetId = Guid.NewGuid();
+        var transaction = FinancialTransaction.Create(
+            budgetId,
+            new DateOnly(2026, 6, 10),
+            "Split shop",
+            50m,
+            TransactionDirection.Debit,
+            null,
+            null,
+            null);
+        var existingItemId = Guid.NewGuid();
+        var existing = new[]
+        {
+            TransactionAllocation.Create(transaction.Id, existingItemId, 20m, "Old note")
+        };
+
+        var domainEvent = transaction.AllocationsClearedEvent(existing);
+
+        Assert.Equal("TransactionAllocationsCleared", domainEvent.EventType);
+        Assert.Equal(budgetId, domainEvent.BudgetId);
+        Assert.Equal(transaction.Id, domainEvent.EntityId);
+        Assert.Equal("Cleared allocations for transaction Split shop.", domainEvent.Description);
+        Assert.Equal($"{existingItemId}:20 (Old note)", domainEvent.Details);
+        var payload = Assert.IsType<TransactionAllocationsClearedPayload>(domainEvent.Payload);
+        Assert.Equal(transaction.Id, payload.TransactionId);
+        Assert.Equal(budgetId, payload.BudgetId);
+        var allocation = Assert.Single(payload.ClearedAllocations);
+        Assert.Equal(existingItemId, allocation.BudgetItemId);
+        Assert.Equal(20m, allocation.Amount);
+        Assert.Equal("Old note", allocation.Notes);
     }
 
     [Fact]

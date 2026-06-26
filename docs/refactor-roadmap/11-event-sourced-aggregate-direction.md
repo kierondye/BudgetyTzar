@@ -168,3 +168,32 @@ Move gradually toward aggregates making decisions and emitting domain events as 
   existing-allocation formatting, and event output can move without changing response shape or audit details.
 - Remaining Step 11 work: continue moving command-path business decisions and natural domain-event creation into
   aggregates one coherent command path at a time.
+- Continued with a transaction allocation aggregate increment by moving replacement allocation validation and
+  allocation event construction into `FinancialTransaction`.
+- Decision: treat duplicate budget-item allocations and total allocated amount as transaction aggregate invariants.
+  `FinancialTransaction.ValidateReplacementAllocations` now exposes the same validation messages for HTTP command
+  results, while `ReplaceAllocations` keeps a defensive exception path with the same text.
+- Decision: move `TransactionAllocationsReplaced` and `TransactionAllocationsCleared` event construction, including
+  payload mapping and audit/detail formatting, into `FinancialTransaction`. This keeps allocation event output beside
+  the aggregate state and follows the transaction create/edit/ignore pattern.
+- Decision: keep allocation handlers responsible for loading transactions and existing allocations, budget-item
+  existence checks, archived-item eligibility, EF remove/add/save orchestration, outbox writing, and HTTP response
+  mapping.
+- Grouping rationale: replacement validation, replacement row creation, allocation event payloads, and allocation detail
+  formatting are one transaction-allocation command-path concern. Moving them together avoids leaving half of the same
+  allocation behavior split between the feature handler and aggregate.
+- Preserved behavior: allocation replace and clear routes, request/response JSON, status codes, Swagger metadata,
+  validation messages, event names, event payload records, JSON schemas, envelope/outbox behavior, EF mappings,
+  migrations, database schema, projections, and audit details remain unchanged.
+- Validation during implementation: focused
+  `dotnet test --filter "FullyQualifiedName~FinancialTransactionTests|FullyQualifiedName~TransactionAllocationsTests|FullyQualifiedName~EventContractTests|FullyQualifiedName~AuditAndOutboxTests"`
+  passed with 27 tests.
+- Final validation: `dotnet build BudgetyTzar.sln` passed with 0 warnings and 0 errors. The first full `dotnet test`
+  run had the known transient Kafka/SQLite projection-consumer timeout with 89 passed and 1 failed; the focused failing
+  Kafka test passed on rerun; the final full `dotnet test` passed with 90 tests.
+- Deferred follow-on: budget-item archived eligibility remains outside the transaction aggregate because it depends on
+  budgeting-owned item state and retrospective activity rules.
+- Deferred follow-on: moving allocation inputs away from the feature request record shape can be revisited later only if
+  it reduces coupling without changing API or event behavior.
+- Remaining Step 11 work: review whether any command handlers still construct natural aggregate events or hold
+  aggregate-owned business decisions; otherwise consider a Step 11 closure review.

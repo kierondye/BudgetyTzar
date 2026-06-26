@@ -1,6 +1,5 @@
 using BudgetyTzar.Api.Application.Budgeting;
 using BudgetyTzar.Api.Application.Common;
-using BudgetyTzar.Api.Contracts.Events;
 using BudgetyTzar.Api.Infrastructure.Events;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using FluentValidation;
@@ -38,11 +37,12 @@ public sealed class ReplaceTransactionAllocationsHandler(
         }
 
         var requestedItemIds = allocations.Select(x => x.BudgetItemId).ToArray();
-        if (requestedItemIds.Distinct().Count() != requestedItemIds.Length)
+        var validationError = transaction.ValidateReplacementAllocations(allocations);
+        if (validationError is not null)
         {
             return CommandResult.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(allocations)] = ["A budget item can only be allocated once per transaction."]
+                [nameof(allocations)] = [validationError]
             });
         }
 
@@ -57,37 +57,12 @@ public sealed class ReplaceTransactionAllocationsHandler(
             return CommandResult.ValidationProblem(BudgetItemValidationErrors.ArchivedBudgetItemErrors());
         }
 
-        var totalAllocated = allocations.Sum(x => x.Amount);
-        if (totalAllocated > transaction.Amount)
-        {
-            return CommandResult.ValidationProblem(new Dictionary<string, string[]>
-            {
-                [nameof(allocations)] = ["Total allocated amount cannot exceed the transaction amount."]
-            });
-        }
-
         var existing = await db.TransactionAllocations
             .Where(x => x.TransactionId == transactionId)
             .ToListAsync(ct);
         db.TransactionAllocations.RemoveRange(existing);
         db.TransactionAllocations.AddRange(transaction.ReplaceAllocations(allocations));
-        var eventId = events.Add(new DomainEvent(
-            "TransactionAllocationsReplaced",
-            budgetId,
-            nameof(FinancialTransaction),
-            transactionId,
-            $"Allocated transaction {transaction.Description}.",
-            $"Previous={TransactionAllocationFormatting.Format(existing)}; New={TransactionAllocationFormatting.Format(allocations)}",
-            Payload: new TransactionAllocationsReplacedPayload(
-                transaction.Id,
-                budgetId,
-                transaction.Amount,
-                allocations
-                    .Select(x => new TransactionAllocationPayload(
-                        x.BudgetItemId,
-                        x.Amount,
-                        string.IsNullOrWhiteSpace(x.Notes) ? null : x.Notes.Trim()))
-                    .ToList())));
+        var eventId = events.Add(transaction.AllocationsReplacedEvent(existing, allocations));
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent(eventId);
     }
@@ -107,34 +82,8 @@ public sealed class ClearTransactionAllocationsHandler(BudgetDbContext db, Domai
             .Where(x => x.TransactionId == transactionId)
             .ToListAsync(ct);
         db.TransactionAllocations.RemoveRange(allocations);
-        var eventId = events.Add(new DomainEvent(
-            "TransactionAllocationsCleared",
-            budgetId,
-            nameof(FinancialTransaction),
-            transactionId,
-            $"Cleared allocations for transaction {transaction.Description}.",
-            TransactionAllocationFormatting.Format(allocations),
-            Payload: new TransactionAllocationsClearedPayload(
-                transaction.Id,
-                budgetId,
-                allocations
-                    .Select(x => new TransactionAllocationPayload(x.BudgetItemId, x.Amount, x.Notes))
-                    .ToList())));
+        var eventId = events.Add(transaction.AllocationsClearedEvent(allocations));
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent(eventId);
     }
-}
-
-internal static class TransactionAllocationFormatting
-{
-    public static string Format(IEnumerable<TransactionAllocation> allocations) =>
-        string.Join("; ", allocations.Select(x => Format(x.BudgetItemId, x.Amount, x.Notes)));
-
-    public static string Format(IEnumerable<TransactionAllocationItem> allocations) =>
-        string.Join("; ", allocations.Select(x => Format(x.BudgetItemId, x.Amount, x.Notes)));
-
-    private static string Format(Guid budgetItemId, decimal amount, string? notes) =>
-        string.IsNullOrWhiteSpace(notes)
-            ? $"{budgetItemId}:{amount}"
-            : $"{budgetItemId}:{amount} ({notes.Trim()})";
 }

@@ -21,6 +21,8 @@ public enum TransactionAllocationStatus
 public sealed class FinancialTransaction
 {
     public const string AmountBelowAllocatedTotalMessage = "Transaction amount cannot be less than the current allocated total.";
+    public const string DuplicateBudgetItemAllocationMessage = "A budget item can only be allocated once per transaction.";
+    public const string AllocationsExceedTransactionAmountMessage = "Total allocated amount cannot exceed the transaction amount.";
 
     public Guid Id { get; init; } = Guid.NewGuid();
     public Guid BudgetId { get; set; }
@@ -148,18 +150,66 @@ public sealed class FinancialTransaction
                 IsIgnored));
     }
 
+    public string? ValidateReplacementAllocations(IReadOnlyCollection<TransactionAllocationItem> allocations)
+    {
+        var requestedItemIds = allocations.Select(x => x.BudgetItemId).ToArray();
+        if (requestedItemIds.Distinct().Count() != requestedItemIds.Length)
+        {
+            return DuplicateBudgetItemAllocationMessage;
+        }
+
+        var totalAllocated = allocations.Sum(x => x.Amount);
+        return totalAllocated > Amount ? AllocationsExceedTransactionAmountMessage : null;
+    }
+
     public IReadOnlyList<TransactionAllocation> ReplaceAllocations(IReadOnlyCollection<TransactionAllocationItem> allocations)
     {
-        var totalAllocated = allocations.Sum(x => x.Amount);
-        if (totalAllocated > Amount)
+        var validationError = ValidateReplacementAllocations(allocations);
+        if (validationError is not null)
         {
-            throw new InvalidOperationException("Total allocated amount cannot exceed the transaction amount.");
+            throw new InvalidOperationException(validationError);
         }
 
         return allocations
             .Select(x => TransactionAllocation.Create(Id, x.BudgetItemId, x.Amount, x.Notes))
             .ToList();
     }
+
+    public DomainEvent AllocationsReplacedEvent(
+        IReadOnlyCollection<TransactionAllocation> existingAllocations,
+        IReadOnlyCollection<TransactionAllocationItem> replacementAllocations) =>
+        new(
+            "TransactionAllocationsReplaced",
+            BudgetId,
+            nameof(FinancialTransaction),
+            Id,
+            $"Allocated transaction {Description}.",
+            $"Previous={FormatAllocations(existingAllocations)}; New={FormatAllocations(replacementAllocations)}",
+            Payload: new TransactionAllocationsReplacedPayload(
+                Id,
+                BudgetId,
+                Amount,
+                replacementAllocations
+                    .Select(x => new TransactionAllocationPayload(
+                        x.BudgetItemId,
+                        x.Amount,
+                        string.IsNullOrWhiteSpace(x.Notes) ? null : x.Notes.Trim()))
+                    .ToList()));
+
+    public DomainEvent AllocationsClearedEvent(IReadOnlyCollection<TransactionAllocation> existingAllocations) =>
+        new(
+            "TransactionAllocationsCleared",
+            BudgetId,
+            nameof(FinancialTransaction),
+            Id,
+            $"Cleared allocations for transaction {Description}.",
+            FormatAllocations(existingAllocations),
+            Payload: new TransactionAllocationsClearedPayload(
+                Id,
+                BudgetId,
+                existingAllocations
+                    .Select(x => new TransactionAllocationPayload(x.BudgetItemId, x.Amount, x.Notes))
+                    .ToList()));
 
     public TransactionAllocationStatus GetAllocationStatus(decimal allocatedAmount)
     {
@@ -172,4 +222,15 @@ public sealed class FinancialTransaction
             ? TransactionAllocationStatus.PartiallyAllocated
             : TransactionAllocationStatus.FullyAllocated;
     }
+
+    private static string FormatAllocations(IEnumerable<TransactionAllocation> allocations) =>
+        string.Join("; ", allocations.Select(x => FormatAllocation(x.BudgetItemId, x.Amount, x.Notes)));
+
+    private static string FormatAllocations(IEnumerable<TransactionAllocationItem> allocations) =>
+        string.Join("; ", allocations.Select(x => FormatAllocation(x.BudgetItemId, x.Amount, x.Notes)));
+
+    private static string FormatAllocation(Guid budgetItemId, decimal amount, string? notes) =>
+        string.IsNullOrWhiteSpace(notes)
+            ? $"{budgetItemId}:{amount}"
+            : $"{budgetItemId}:{amount} ({notes.Trim()})";
 }
