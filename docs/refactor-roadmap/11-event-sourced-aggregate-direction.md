@@ -99,3 +99,29 @@ Move gradually toward aggregates making decisions and emitting domain events as 
   increment only addressed the budget adjustment planning invariant.
 - Remaining Step 11 work: continue reviewing command handlers for business rules that can move into the owning
   aggregate, value object, or concrete domain service without changing persistence, contracts, or projection behavior.
+- Continued with a transaction edit aggregate increment by moving the "transaction amount cannot be less than current
+  allocated total" invariant and `TransactionEdited` event creation from `UpdateTransactionHandler` into
+  `FinancialTransaction`.
+- Decision: keep `UpdateTransactionHandler` responsible for loading the transaction, querying the current allocation
+  total, request primitive mapping, EF persistence, outbox writing, and HTTP result mapping. The handler now asks the
+  aggregate for edit validation and writes the domain event returned by the aggregate edit operation.
+- Decision: keep the validation message as `FinancialTransaction.AmountBelowAllocatedTotalMessage` so the same text is
+  used by the handler's validation response and the aggregate's defensive exception path.
+- Grouping rationale: edit validation, mutation, and edited event construction are one transaction aggregate concern.
+  Moving them together avoids leaving previous/current transaction event details in the handler while the aggregate owns
+  the edited state.
+- Preserved behavior: `/api/budgets/{budgetId}/transactions/{transactionId}`, request/response JSON, status codes,
+  Swagger metadata, validation messages, event names, event payload records, JSON schemas, outbox behavior, EF mappings,
+  migrations, database schema, projections, and audit behavior remain unchanged.
+- Validation during implementation: focused
+  `dotnet test --filter "FullyQualifiedName~FinancialTransactionTests|FullyQualifiedName~TransactionEditingTests"`
+  passed with 7 tests.
+- Final validation: `dotnet build BudgetyTzar.sln` passed with 0 warnings and 0 errors; `dotnet test` passed with
+  85 tests.
+- Deferred follow-on: transaction creation and ignore event creation still happen outside aggregate methods. Revisit
+  them only as focused command-path increments so API and event behavior remain stable.
+- Deferred follow-on: transaction allocation replacement still has duplicate-item and archived-item eligibility checks
+  in the handler; only allocation total validation currently lives in `FinancialTransaction`. Split or move those rules
+  only if ownership is clear without changing validation response shape.
+- Remaining Step 11 work: continue moving command-path business decisions and natural domain-event creation into
+  aggregates one coherent command path at a time.

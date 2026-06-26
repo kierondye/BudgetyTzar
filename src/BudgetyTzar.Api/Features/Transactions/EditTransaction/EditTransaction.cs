@@ -1,5 +1,4 @@
 using BudgetyTzar.Api.Application.Common;
-using BudgetyTzar.Api.Contracts.Events;
 using BudgetyTzar.Api.Infrastructure.Events;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using FluentValidation;
@@ -53,38 +52,17 @@ public sealed class UpdateTransactionHandler(BudgetDbContext db, DomainEventOutb
             .AsNoTracking()
             .Where(x => x.TransactionId == transactionId)
             .SumAsync(x => x.Amount, ct);
-        if (amount < allocatedTotal)
+        var validationError = transaction.ValidateEdit(amount, allocatedTotal);
+        if (validationError is not null)
         {
             return CommandResult.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(amount)] = ["Transaction amount cannot be less than the current allocated total."]
+                [nameof(amount)] = [validationError]
             });
         }
 
-        var previousDescription = transaction.Description;
-        var previousAmount = transaction.Amount;
-        var previousDirection = transaction.Direction;
-
-        transaction.Edit(transactionDate, description, amount, direction, sourceAccount, externalReference, notes);
-
-        var eventId = events.Add(new DomainEvent(
-            "TransactionEdited",
-            budgetId,
-            nameof(FinancialTransaction),
-            transaction.Id,
-            $"Edited transaction {transaction.Description}.",
-            $"Previous={previousDescription}, {previousAmount} {previousDirection}; New={transaction.Description}, {transaction.Amount} {transaction.Direction}",
-            Payload: new TransactionEditedPayload(
-                transaction.Id,
-                transaction.BudgetId,
-                transaction.TransactionDate,
-                transaction.Description,
-                transaction.Amount,
-                transaction.Direction,
-                transaction.SourceAccount,
-                transaction.ExternalReference,
-                transaction.Notes,
-                transaction.IsIgnored)));
+        var editedEvent = transaction.Edit(transactionDate, description, amount, direction, sourceAccount, externalReference, notes, allocatedTotal);
+        var eventId = events.Add(editedEvent);
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent(eventId);
     }

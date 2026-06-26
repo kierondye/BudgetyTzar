@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using BudgetyTzar.Api.Contracts.Events;
 
 namespace BudgetyTzar.Api;
 
@@ -19,6 +20,8 @@ public enum TransactionAllocationStatus
 
 public sealed class FinancialTransaction
 {
+    public const string AmountBelowAllocatedTotalMessage = "Transaction amount cannot be less than the current allocated total.";
+
     public Guid Id { get; init; } = Guid.NewGuid();
     public Guid BudgetId { get; set; }
     public DateOnly TransactionDate { get; set; }
@@ -52,15 +55,29 @@ public sealed class FinancialTransaction
             Notes = notes
         };
 
-    public void Edit(
+    public string? ValidateEdit(decimal amount, decimal allocatedTotal) =>
+        amount < allocatedTotal ? AmountBelowAllocatedTotalMessage : null;
+
+    public DomainEvent Edit(
         DateOnly transactionDate,
         string description,
         decimal amount,
         TransactionDirection direction,
         string? sourceAccount,
         string? externalReference,
-        string? notes)
+        string? notes,
+        decimal allocatedTotal)
     {
+        var validationError = ValidateEdit(amount, allocatedTotal);
+        if (validationError is not null)
+        {
+            throw new InvalidOperationException(validationError);
+        }
+
+        var previousDescription = Description;
+        var previousAmount = Amount;
+        var previousDirection = Direction;
+
         TransactionDate = transactionDate;
         Description = description.Trim();
         Amount = MoneyAmount.Positive(amount).Value;
@@ -68,6 +85,25 @@ public sealed class FinancialTransaction
         SourceAccount = sourceAccount;
         ExternalReference = externalReference;
         Notes = notes;
+
+        return new DomainEvent(
+            "TransactionEdited",
+            BudgetId,
+            nameof(FinancialTransaction),
+            Id,
+            $"Edited transaction {Description}.",
+            $"Previous={previousDescription}, {previousAmount} {previousDirection}; New={Description}, {Amount} {Direction}",
+            Payload: new TransactionEditedPayload(
+                Id,
+                BudgetId,
+                TransactionDate,
+                Description,
+                Amount,
+                Direction,
+                SourceAccount,
+                ExternalReference,
+                Notes,
+                IsIgnored));
     }
 
     public void Ignore() => IsIgnored = true;
