@@ -162,3 +162,24 @@ Remove or relocate procedural services and helpers where ownership is clear.
   `KafkaProjectionConsumerTests.ReportingProjectionConsumerDeadLettersPoisonEventAndContinuesWithLaterEvents` SQLite
   dead-letter transient. The focused rerun of that failing test passed, and the final full `dotnet test` passed with
   94 tests.
+- Continued with an audit-runner persistence ownership cleanup by moving `AuditEventFailure`,
+  `AuditFailureCategory`, and `AuditFailureStatus` from `Application/Reporting` to `Infrastructure/Events`.
+- Decision: treat audit failure rows as infrastructure event consumer persistence state. The audit feature owns audit
+  projection/query behavior, while infrastructure owns consumer transport, retry/dead-letter flow, failure persistence,
+  raw-event metadata, and operational storage.
+- Decision: keep the moved types in the existing `BudgetyTzar.Api.Application.Reporting` namespace so EF model identity,
+  migration snapshots, tests, infrastructure store references, and consumer references remain unchanged. This is
+  file/folder ownership only.
+- Grouping rationale: `AuditEventFailure` is the audit counterpart to the projection failure entity moved in the
+  previous increment. Moving it separately keeps audit-runner persistence distinct from reporting projection-runner
+  persistence while completing the remaining `Application/Reporting` cleanup.
+- Preserved behavior: audit failure categories/statuses and stored string values, retry/dead-letter persistence,
+  dead-letter payload behavior, audit projection/query behavior, event contracts, Kafka topics, outbox behavior, EF
+  mappings, migrations, database schema, projections, snapshots, and API responses remain unchanged.
+- Deferred follow-on: `BudgetLookup` and `EndpointValidation` remain shared endpoint helpers pending separate review.
+  `Application` no longer contains files after this increment; keep it absent unless a future application-layer concept
+  has clear ownership.
+- Remaining Step 12 work: review the remaining shared endpoint helpers and decide whether Step 12 can close without
+  broadening into speculative cleanup.
+- Validation: `dotnet build BudgetyTzar.sln` hung silently and was stopped after matching the known roadmap caveat.
+  `dotnet test` passed with 94 tests.
