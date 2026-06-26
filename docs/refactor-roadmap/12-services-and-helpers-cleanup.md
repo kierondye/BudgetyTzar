@@ -259,3 +259,18 @@ Remove or relocate procedural services and helpers where ownership is clear.
   active-statement dead-letter transient; the focused rerun passed. The next full `dotnet test` failed on the known
   `KafkaProjectionConsumerTests.ReportingProjectionConsumerProjectsEventsConsumedFromKafka` timeout; the focused rerun
   passed, and the final full `dotnet test` passed with 94 tests.
+- Completed a final infrastructure failure metadata cleanup after closure review.
+- Decision: extracted the duplicated raw-event metadata parsing and error truncation shared by `ProjectionFailureStore`
+  and `AuditFailureStore` into `Infrastructure/Events/FailureEventMetadata.cs`.
+- Decision: keep `ProjectionFailureStore.TryReadEventId` and `AuditFailureStore.TryReadEventId` as store-specific
+  facades so existing consumer call sites and dead-letter key fallback behavior remain unchanged.
+- Grouping rationale: projection and audit failure stores both persist operational failure rows from raw Kafka events
+  and had identical metadata extraction/truncation code. Extracting that concrete infrastructure helper removes
+  duplication without introducing a generic store abstraction or mixing feature/domain concerns.
+- Preserved behavior: event-id, event-type, and budget-id metadata extraction; invalid JSON fallback to null metadata;
+  4000-character error truncation; failure upsert semantics; dead-letter key fallback; retry/dead-letter persistence;
+  API behavior; event contracts; EF mappings; migrations; and database schema remain unchanged.
+- Deferred follow-on: none known for Step 12.
+- Remaining Step 12 work: none known; Step 12 remains complete.
+- Validation: `dotnet build BudgetyTzar.sln` hung silently and was stopped after matching the known roadmap caveat.
+  `dotnet test` passed with 94 tests.

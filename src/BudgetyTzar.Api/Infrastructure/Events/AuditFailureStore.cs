@@ -1,4 +1,3 @@
-using System.Text.Json;
 using BudgetyTzar.Api.Application.Reporting;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using Confluent.Kafka;
@@ -17,7 +16,7 @@ public sealed class AuditFailureStore(BudgetDbContext db)
         Exception exception,
         CancellationToken ct)
     {
-        var metadata = TryReadMetadata(result.Message.Value);
+        var metadata = FailureEventMetadataReader.Read(result.Message.Value);
         var now = DateTimeOffset.UtcNow;
         var existing = await db.AuditEventFailures
             .FirstOrDefaultAsync(x => x.Topic == result.Topic && x.Partition == result.Partition.Value && x.Offset == result.Offset.Value, ct);
@@ -36,7 +35,7 @@ public sealed class AuditFailureStore(BudgetDbContext db)
                 Category = category,
                 Status = status,
                 RetryCount = retryCount,
-                LastError = Truncate(exception.Message, 4000),
+                LastError = FailureEventMetadataReader.Truncate(exception.Message, 4000),
                 RawEventJson = result.Message.Value,
                 FirstFailedAt = now,
                 LastFailedAt = now
@@ -50,7 +49,7 @@ public sealed class AuditFailureStore(BudgetDbContext db)
             existing.Category = category;
             existing.Status = status;
             existing.RetryCount = retryCount;
-            existing.LastError = Truncate(exception.Message, 4000);
+            existing.LastError = FailureEventMetadataReader.Truncate(exception.Message, 4000);
             existing.RawEventJson = result.Message.Value;
             existing.LastFailedAt = now;
         }
@@ -58,36 +57,5 @@ public sealed class AuditFailureStore(BudgetDbContext db)
         await db.SaveChangesAsync(ct);
     }
 
-    public static Guid? TryReadEventId(string eventJson) => TryReadMetadata(eventJson).EventId;
-
-    private static (Guid? EventId, string? EventType, Guid? BudgetId) TryReadMetadata(string eventJson)
-    {
-        try
-        {
-            using var document = JsonDocument.Parse(eventJson);
-            var root = document.RootElement;
-            var eventId = root.TryGetProperty("eventId", out var eventIdElement) && eventIdElement.TryGetGuid(out var parsedEventId)
-                ? parsedEventId
-                : (Guid?)null;
-            var eventType = root.TryGetProperty("eventType", out var eventTypeElement)
-                ? eventTypeElement.GetString()
-                : null;
-            Guid? budgetId = null;
-            if (root.TryGetProperty("payload", out var payload)
-                && payload.TryGetProperty("budgetId", out var budgetIdElement)
-                && budgetIdElement.TryGetGuid(out var parsedBudgetId))
-            {
-                budgetId = parsedBudgetId;
-            }
-
-            return (eventId, eventType, budgetId);
-        }
-        catch (JsonException)
-        {
-            return (null, null, null);
-        }
-    }
-
-    private static string Truncate(string value, int maxLength) =>
-        value.Length <= maxLength ? value : value[..maxLength];
+    public static Guid? TryReadEventId(string eventJson) => FailureEventMetadataReader.TryReadEventId(eventJson);
 }
