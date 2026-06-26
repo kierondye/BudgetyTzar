@@ -28,21 +28,26 @@ public sealed class CreateBudgetItemHandler(BudgetDbContext db, DomainEventOutbo
 {
     public async Task<CommandResult<BudgetItem>> Handle(Guid budgetId, string name, CancellationToken ct)
     {
-        if (!await db.Budgets.AnyAsync(x => x.Id == budgetId, ct))
+        var budget = await db.Budgets.SingleOrDefaultAsync(x => x.Id == budgetId, ct);
+        if (budget is null)
         {
             return CommandResult<BudgetItem>.NotFound();
         }
 
-        var trimmedName = name.Trim();
-        if (await db.BudgetItems.AnyAsync(x => x.BudgetId == budgetId && x.Name == trimmedName, ct))
+        var existingItems = await db.BudgetItems
+            .AsNoTracking()
+            .Where(x => x.BudgetId == budgetId)
+            .ToListAsync(ct);
+        var validationError = budget.ValidateBudgetItemName(existingItems, name);
+        if (validationError is not null)
         {
             return CommandResult<BudgetItem>.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(name)] = ["A budget item with this name already exists in this budget."]
+                [nameof(name)] = [validationError]
             });
         }
 
-        var item = BudgetItem.Create(budgetId, trimmedName);
+        var item = budget.CreateBudgetItem(existingItems, name);
         db.BudgetItems.Add(item);
         var eventId = events.Add(item.CreatedEvent());
         await db.SaveChangesAsync(ct);

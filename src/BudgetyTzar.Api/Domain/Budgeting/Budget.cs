@@ -5,6 +5,7 @@ namespace BudgetyTzar.Api;
 public sealed class Budget
 {
     public const string NetPlannedSpendingExceededMessage = "Net planned spending must not exceed net planned income.";
+    public const string DuplicateBudgetItemNameMessage = "A budget item with this name already exists in this budget.";
 
     public Guid Id { get; init; } = Guid.NewGuid();
     public required string Name { get; set; }
@@ -25,6 +26,23 @@ public sealed class Budget
             .Sum(x => x.SignedPlannedAmount());
 
         return netPlannedAmount + pendingAdjustment.SignedPlannedAmount() >= 0;
+    }
+
+    public string? ValidateBudgetItemName(IReadOnlyCollection<BudgetItem> existingItems, string name)
+    {
+        var trimmedName = name.Trim();
+        return existingItems.Any(x => x.Name == trimmedName) ? DuplicateBudgetItemNameMessage : null;
+    }
+
+    public BudgetItem CreateBudgetItem(IReadOnlyCollection<BudgetItem> existingItems, string name)
+    {
+        var validationError = ValidateBudgetItemName(existingItems, name);
+        if (validationError is not null)
+        {
+            throw new InvalidOperationException(validationError);
+        }
+
+        return BudgetItem.Create(Id, name);
     }
 
     public DomainEvent CreatedEvent() =>

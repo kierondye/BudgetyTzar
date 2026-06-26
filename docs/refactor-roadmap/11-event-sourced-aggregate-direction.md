@@ -197,3 +197,26 @@ Move gradually toward aggregates making decisions and emitting domain events as 
   it reduces coupling without changing API or event behavior.
 - Remaining Step 11 work: review whether any command handlers still construct natural aggregate events or hold
   aggregate-owned business decisions; otherwise consider a Step 11 closure review.
+- Continued with a budget item creation aggregate increment by moving the duplicate budget-item name invariant from
+  `CreateBudgetItemHandler` into `Budget`.
+- Decision: treat budget item name uniqueness as a budget aggregate rule. `Budget.ValidateBudgetItemName` exposes the
+  same validation message for HTTP command results, while `Budget.CreateBudgetItem` keeps a defensive exception path and
+  creates the trimmed `BudgetItem` through the aggregate.
+- Decision: keep `CreateBudgetItemHandler` responsible for loading the budget, querying existing persisted items, EF
+  persistence, outbox writing, and HTTP response mapping. The database unique index remains an infrastructure backstop
+  and was not changed.
+- Grouping rationale: duplicate-name validation and budget-item creation are one budget item creation command-path
+  concern. Moving them together avoids leaving the aggregate rule in the handler while still keeping persistence lookup
+  outside the domain model.
+- Preserved behavior: `POST /api/budgets/{budgetId}/budget-items`, request/response JSON, status codes, Swagger
+  metadata, validation message, event name, event payload record, JSON schema, envelope/outbox behavior, EF mappings,
+  migrations, database unique index, projections, and audit behavior remain unchanged.
+- Validation during implementation: focused
+  `dotnet test --filter "FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetItemsTests|FullyQualifiedName~PostgresCompatibilityTests.UniqueBudgetItemNameConstraintBehavesAgainstPostgreSql"`
+  passed with 8 tests.
+- Final validation: `dotnet build BudgetyTzar.sln` passed with 0 warnings and 0 errors; `dotnet test` passed with
+  92 tests.
+- Deferred follow-on: budget-item archived eligibility stays with `BudgetItem` plus application-level lookup because
+  it depends on persisted budget-item state and cross-command use by adjustments and transaction allocations.
+- Remaining Step 11 work: review whether Step 11 has any remaining non-speculative aggregate moves; otherwise close the
+  step with a boundary review.
