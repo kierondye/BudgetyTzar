@@ -7,6 +7,41 @@ namespace BudgetyTzar.Tests;
 public sealed class FinancialTransactionTests
 {
     [Fact]
+    public void TransactionCreateProducesCreatedEvent()
+    {
+        var budgetId = Guid.NewGuid();
+        var transaction = FinancialTransaction.Create(
+            budgetId,
+            new DateOnly(2026, 6, 10),
+            " Manual transaction ",
+            25m,
+            TransactionDirection.Debit,
+            "Current account",
+            "MANUAL-1",
+            "Entered by hand");
+
+        var domainEvent = transaction.CreatedEvent();
+
+        Assert.Equal("Manual transaction", transaction.Description);
+        Assert.False(transaction.IsIgnored);
+        Assert.Equal("TransactionManuallyCreated", domainEvent.EventType);
+        Assert.Equal(budgetId, domainEvent.BudgetId);
+        Assert.Equal(transaction.Id, domainEvent.EntityId);
+        Assert.Equal("Created transaction Manual transaction for 25 Debit.", domainEvent.Description);
+        var payload = Assert.IsType<TransactionManuallyCreatedPayload>(domainEvent.Payload);
+        Assert.Equal(transaction.Id, payload.TransactionId);
+        Assert.Equal(budgetId, payload.BudgetId);
+        Assert.Equal(new DateOnly(2026, 6, 10), payload.TransactionDate);
+        Assert.Equal("Manual transaction", payload.Description);
+        Assert.Equal(25m, payload.Amount);
+        Assert.Equal(TransactionDirection.Debit, payload.Direction);
+        Assert.Equal("Current account", payload.SourceAccount);
+        Assert.Equal("MANUAL-1", payload.ExternalReference);
+        Assert.Equal("Entered by hand", payload.Notes);
+        Assert.False(payload.IsIgnored);
+    }
+
+    [Fact]
     public void TransactionRejectsAllocationsAboveTransactionAmount()
     {
         var transaction = FinancialTransaction.Create(

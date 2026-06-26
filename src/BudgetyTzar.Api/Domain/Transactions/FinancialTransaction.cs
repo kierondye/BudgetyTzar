@@ -55,6 +55,25 @@ public sealed class FinancialTransaction
             Notes = notes
         };
 
+    public DomainEvent CreatedEvent() =>
+        new(
+            "TransactionManuallyCreated",
+            BudgetId,
+            nameof(FinancialTransaction),
+            Id,
+            $"Created transaction {Description} for {Amount} {Direction}.",
+            Payload: new TransactionManuallyCreatedPayload(
+                Id,
+                BudgetId,
+                TransactionDate,
+                Description,
+                Amount,
+                Direction,
+                SourceAccount,
+                ExternalReference,
+                Notes,
+                IsIgnored));
+
     public string? ValidateEdit(decimal amount, decimal allocatedTotal) =>
         amount < allocatedTotal ? AmountBelowAllocatedTotalMessage : null;
 

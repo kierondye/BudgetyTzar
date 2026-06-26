@@ -147,3 +147,24 @@ Move gradually toward aggregates making decisions and emitting domain events as 
   eligibility, existing allocation details, and payload formatting need careful ownership decisions.
 - Remaining Step 11 work: continue moving command-path business decisions and natural domain-event creation into
   aggregates one coherent command path at a time.
+- Continued with a transaction manual creation aggregate increment by moving `TransactionManuallyCreated` event
+  construction from `CreateTransactionHandler` into `FinancialTransaction.CreatedEvent`.
+- Decision: keep `CreateTransactionHandler` responsible for budget existence lookup, request primitive mapping, EF
+  persistence, outbox writing, and HTTP response mapping. The aggregate now owns the domain event that describes the
+  transaction it created.
+- Grouping rationale: this is a focused transaction-creation command-path increment. It follows the edit and ignore
+  event-output pattern without mixing in transaction allocation behavior, which has separate validation and payload
+  formatting concerns.
+- Preserved behavior: `POST /api/budgets/{budgetId}/transactions`, request/response JSON, status codes, Swagger
+  metadata, validation messages, event name, event payload record, JSON schema, envelope/outbox behavior, EF mappings,
+  migrations, database schema, projections, and audit behavior remain unchanged.
+- Validation during implementation: focused
+  `dotnet test --filter "FullyQualifiedName~FinancialTransactionTests|FullyQualifiedName~EventContractTests|FullyQualifiedName~AuditAndOutboxTests"`
+  passed with 15 tests.
+- Final validation: `dotnet build BudgetyTzar.sln` passed with 0 warnings and 0 errors; `dotnet test` passed with
+  87 tests.
+- Deferred follow-on: transaction allocation replacement and clearing remain the main transaction command paths with
+  feature-owned event construction. Review them as a single allocation-focused increment only if their validation,
+  existing-allocation formatting, and event output can move without changing response shape or audit details.
+- Remaining Step 11 work: continue moving command-path business decisions and natural domain-event creation into
+  aggregates one coherent command path at a time.

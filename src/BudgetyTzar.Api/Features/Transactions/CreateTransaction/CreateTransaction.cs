@@ -1,5 +1,4 @@
 using BudgetyTzar.Api.Application.Common;
-using BudgetyTzar.Api.Contracts.Events;
 using BudgetyTzar.Api.Infrastructure.Events;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using FluentValidation;
@@ -49,23 +48,7 @@ public sealed class CreateTransactionHandler(BudgetDbContext db, DomainEventOutb
 
         var transaction = FinancialTransaction.Create(budgetId, transactionDate, description, amount, direction, sourceAccount, externalReference, notes);
         db.Transactions.Add(transaction);
-        var eventId = events.Add(new DomainEvent(
-            "TransactionManuallyCreated",
-            budgetId,
-            nameof(FinancialTransaction),
-            transaction.Id,
-            $"Created transaction {transaction.Description} for {transaction.Amount} {transaction.Direction}.",
-            Payload: new TransactionManuallyCreatedPayload(
-                transaction.Id,
-                transaction.BudgetId,
-                transaction.TransactionDate,
-                transaction.Description,
-                transaction.Amount,
-                transaction.Direction,
-                transaction.SourceAccount,
-                transaction.ExternalReference,
-                transaction.Notes,
-                transaction.IsIgnored)));
+        var eventId = events.Add(transaction.CreatedEvent());
         await db.SaveChangesAsync(ct);
         return CommandResult<FinancialTransaction>.Created(transaction, eventId);
     }
