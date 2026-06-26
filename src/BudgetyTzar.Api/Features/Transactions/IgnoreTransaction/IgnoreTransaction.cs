@@ -1,4 +1,3 @@
-using BudgetyTzar.Api.Application.Common;
 using BudgetyTzar.Api.Infrastructure.Events;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;

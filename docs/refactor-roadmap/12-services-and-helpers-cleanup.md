@@ -69,3 +69,25 @@ Remove or relocate procedural services and helpers where ownership is clear.
   this increment.
 - Validation: `dotnet build BudgetyTzar.sln` hung silently and was stopped after matching the known roadmap caveat.
   `dotnet test` passed with 94 tests.
+- Continued with a command-result ownership cleanup by moving `CommandResultStatus`, `CommandResult<T>`, and
+  `CommandResult` from `Application/Common` to `Features/Shared/CommandResult.cs`.
+- Decision: treat command results as feature command orchestration plumbing because they are only used by feature
+  command handlers and the feature HTTP result mapper. They are not domain concepts, infrastructure concerns, or
+  persistence models.
+- Decision: colocate the result types with `CommandResultHttpExtensions` under `Features/Shared` and remove the old
+  `BudgetyTzar.Api.Application.Common` imports from command slices. This keeps the shared surface intentionally small:
+  one concrete command result shape plus its HTTP mapping.
+- Grouping rationale: the result records, status enum, and HTTP mapper are one tightly coupled command-response concern.
+  Moving only the records while leaving the mapper untouched would preserve a misleading ownership split; combining any
+  other helpers would have mixed unrelated cleanup concerns.
+- Preserved behavior: command handler return semantics, HTTP status mapping, projection readiness headers, validation
+  problem mapping, API routes, response bodies, Swagger metadata, event contracts, outbox behavior, projections, EF
+  mappings, migrations, and database schema remain unchanged.
+- Deferred follow-on: `BudgetItemEligibilityService` and `BudgetItemValidationErrors` remain in
+  `Application/Budgeting` because they support cross-command archived-budget-item correction rules across budgeting and
+  transaction allocation paths. `BudgetLookup`, `EndpointValidation`, `CamelCaseStringEnumConverter`, and
+  processing/failure persistence entity ownership remain separate review items.
+- Remaining Step 12 work: continue reviewing one ownership concern at a time, especially shared endpoint helpers and
+  remaining application-layer helpers, without broadening into domain or persistence redesign.
+- Validation: `dotnet build BudgetyTzar.sln` hung silently and was stopped after matching the known roadmap caveat.
+  `dotnet test` passed with 94 tests.

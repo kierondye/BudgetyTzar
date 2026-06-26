@@ -1,5 +1,3 @@
-using BudgetyTzar.Api.Application.Common;
-
 namespace BudgetyTzar.Api.Features;
 
 public static class CommandResultHttpExtensions

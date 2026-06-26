@@ -1,4 +1,4 @@
-namespace BudgetyTzar.Api.Application.Common;
+namespace BudgetyTzar.Api.Features;
 
 public enum CommandResultStatus
 {
