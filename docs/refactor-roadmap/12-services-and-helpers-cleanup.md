@@ -183,3 +183,28 @@ Remove or relocate procedural services and helpers where ownership is clear.
   broadening into speculative cleanup.
 - Validation: `dotnet build BudgetyTzar.sln` hung silently and was stopped after matching the known roadmap caveat.
   `dotnet test` passed with 94 tests.
+- Continued with an endpoint-validation helper ownership cleanup by moving `EndpointValidation` from `Features/Shared`
+  to `Features/Validation` and renaming the extension method from `Validate` to `ValidateEndpointRequest`.
+- Decision: treat endpoint request validation as feature-boundary validation plumbing. The helper still delegates to
+  FluentValidation and converts failures to HTTP validation problem results, but it no longer sits in generic shared
+  feature plumbing or uses a broad class/method name.
+- Decision: keep `CommandResult` and `CommandResultHttpExtensions` in `Features/Shared` because they are command
+  response/result mapping plumbing used across command endpoints. Keep `BudgetLookup` in `Features/Shared` pending a
+  separate budget-root ownership review.
+- Grouping rationale: the file move, class naming cleanup, method naming cleanup, and direct endpoint call-site updates
+  are one endpoint request-validation concern. No unrelated helpers were included.
+- Preserved behavior: the same `ValidateAsync` call is used, successful validation still returns `null`, failed
+  validation still returns `Results.ValidationProblem(result.ToDictionary())`, and API routes, validation messages,
+  response shapes, status codes, Swagger metadata, event contracts, outbox behavior, projections, audit behavior, EF
+  mappings, migrations, and database schema remain unchanged.
+- Deferred follow-on: `BudgetLookup` remains the main shared helper pending review. Step 12 should decide whether it is
+  justified as budget-root endpoint plumbing or should move closer to budgeting ownership.
+- Remaining Step 12 work: review `BudgetLookup` and then consider closing Step 12 if no non-speculative helper/service
+  ownership work remains.
+- Validation: `dotnet build BudgetyTzar.sln` hung silently and was stopped after matching the known roadmap caveat.
+  The first `dotnet test` compiled but failed on the known
+  `KafkaProjectionConsumerTests.ReportingProjectionConsumerDeadLettersPoisonEventAndContinuesWithLaterEvents` SQLite
+  active-statement dead-letter transient. The focused rerun of that failing test passed; the final full `dotnet test`
+  again failed only on that same transient. Focused endpoint/command/API surface validation passed with
+  `dotnet test --filter "FullyQualifiedName~BudgetItemsTests|FullyQualifiedName~BudgetAdjustmentsTests|FullyQualifiedName~BudgetReallocationsTests|FullyQualifiedName~TransactionEditingTests|FullyQualifiedName~TransactionAllocationsTests|FullyQualifiedName~CanonicalApiSurfaceTests"`
+  (19 tests).

@@ -2,9 +2,9 @@ using FluentValidation;
 
 namespace BudgetyTzar.Api.Features;
 
-public static class Validation
+public static class EndpointValidation
 {
-    public static async Task<IResult?> Validate<T>(
+    public static async Task<IResult?> ValidateEndpointRequest<T>(
         this IValidator<T> validator,
         T request,
         CancellationToken cancellationToken)

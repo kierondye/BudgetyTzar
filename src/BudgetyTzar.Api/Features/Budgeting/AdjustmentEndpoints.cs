@@ -16,7 +16,7 @@ public static partial class Endpoints
             HttpContext httpContext,
             CancellationToken ct) =>
         {
-            if (await validator.Validate(request, ct) is { } validationProblem)
+            if (await validator.ValidateEndpointRequest(request, ct) is { } validationProblem)
             {
                 return validationProblem;
             }
