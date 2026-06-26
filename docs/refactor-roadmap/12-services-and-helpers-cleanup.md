@@ -91,3 +91,22 @@ Remove or relocate procedural services and helpers where ownership is clear.
   remaining application-layer helpers, without broadening into domain or persistence redesign.
 - Validation: `dotnet build BudgetyTzar.sln` hung silently and was stopped after matching the known roadmap caveat.
   `dotnet test` passed with 94 tests.
+- Continued with a serialization-helper ownership cleanup by moving `CamelCaseStringEnumConverter` from
+  `Features/Shared` to `Infrastructure/Serialization`.
+- Decision: treat the converter as infrastructure serialization plumbing because it configures JSON enum formatting for
+  HTTP serialization and enum attributes. It is not feature behavior, domain behavior, or persistence state.
+- Decision: keep the converter in the existing `BudgetyTzar.Api` namespace and keep the implementation unchanged so
+  `Program`, enum attributes, API JSON behavior, and tests continue resolving the same type without contract churn.
+- Grouping rationale: this increment intentionally moves only the general enum converter. `EventSerialization` remains
+  under `Infrastructure/Events` because it is specifically event-envelope/payload serialization, while the converter is
+  general API/domain enum serialization. Combining them would mix related but distinct serialization concerns.
+- Preserved behavior: enum JSON values remain camelCase, integer enum values remain disallowed, API routes and response
+  shapes remain unchanged, event contracts and schemas remain unchanged, projections/audit/snapshots remain unchanged,
+  and EF mappings, migrations, and database schema remain unchanged.
+- Deferred follow-on: `BudgetLookup` and `EndpointValidation` remain shared endpoint helpers pending separate ownership
+  review. Processing/failure persistence entities remain deferred because moving them could affect EF model identity and
+  migration snapshots.
+- Remaining Step 12 work: continue reviewing shared endpoint helpers and remaining application-layer helpers one
+  ownership concern at a time.
+- Validation: `dotnet build BudgetyTzar.sln` hung silently and was stopped after matching the known roadmap caveat.
+  `dotnet test` passed with 94 tests.
