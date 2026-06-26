@@ -32,7 +32,6 @@ public static class DependencyInjection
         services.AddSingleton<EventSchemaValidator>();
         services.AddSingleton<ReportingProjectionConsumerService>();
         services.AddSingleton<AuditEventConsumerService>();
-        services.AddSingleton<ProjectionNotificationService>();
         services.AddHostedService<KafkaTopicInitializerService>();
         services.AddHostedService<OutboxPublisherService>();
         services.AddHostedService(sp => sp.GetRequiredService<ReportingProjectionConsumerService>());
