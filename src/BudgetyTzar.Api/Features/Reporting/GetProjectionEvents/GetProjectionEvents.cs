@@ -75,7 +75,7 @@ public static partial class Endpoints
         HttpContext httpContext,
         CancellationToken ct)
     {
-        if (!await BudgetExists(db, budgetId, ct))
+        if (!await BudgetExistsForEndpoint(db, budgetId, ct))
         {
             httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
             return;

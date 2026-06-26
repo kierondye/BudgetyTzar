@@ -12,7 +12,7 @@ public static partial class Endpoints
             BudgetDbContext db,
             CancellationToken ct) =>
         {
-            if (!await BudgetExists(db, budgetId, ct))
+            if (!await BudgetExistsForEndpoint(db, budgetId, ct))
             {
                 return Results.NotFound();
             }

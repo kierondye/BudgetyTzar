@@ -43,7 +43,7 @@ public static partial class Endpoints
         Guid? waitForEventId,
         CancellationToken ct)
     {
-        if (!await BudgetExists(db, budgetId, ct))
+        if (!await BudgetExistsForEndpoint(db, budgetId, ct))
         {
             return null;
         }

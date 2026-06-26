@@ -9,7 +9,7 @@ public static partial class Endpoints
     {
         budgets.MapGet("/{budgetId:guid}/budget-items", async (Guid budgetId, BudgetDbContext db, CancellationToken ct) =>
         {
-            if (!await BudgetExists(db, budgetId, ct))
+            if (!await BudgetExistsForEndpoint(db, budgetId, ct))
             {
                 return Results.NotFound();
             }

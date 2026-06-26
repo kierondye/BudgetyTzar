@@ -208,3 +208,27 @@ Remove or relocate procedural services and helpers where ownership is clear.
   again failed only on that same transient. Focused endpoint/command/API surface validation passed with
   `dotnet test --filter "FullyQualifiedName~BudgetItemsTests|FullyQualifiedName~BudgetAdjustmentsTests|FullyQualifiedName~BudgetReallocationsTests|FullyQualifiedName~TransactionEditingTests|FullyQualifiedName~TransactionAllocationsTests|FullyQualifiedName~CanonicalApiSurfaceTests"`
   (19 tests).
+- Continued with a budget-root lookup helper ownership cleanup by moving `BudgetLookup` from `Features/Shared` to
+  `Features/Budgeting/BudgetLookup.cs` and renaming the private helper from `BudgetExists` to
+  `BudgetExistsForEndpoint`.
+- Decision: treat budget existence endpoint guards as budgeting feature ownership. Transaction, reporting, and audit
+  endpoints still use the helper because they are mounted under `/api/budgets/{budgetId}`, but the checked concept is
+  owned by budgeting.
+- Decision: keep the helper as a private method on the existing `Endpoints` partial and keep the concrete EF
+  `AnyAsync` query unchanged. No service, repository, mediator, generic lookup abstraction, DI registration, or
+  persistence model was introduced.
+- Grouping rationale: the file move, helper name clarification, and direct call-site updates are one budget-root
+  existence guard concern. No unrelated shared helpers were included.
+- Preserved behavior: missing-budget `404` behavior, query filters, API routes, response shapes, status codes, Swagger
+  metadata, projection readiness/SSE behavior, audit behavior, snapshot behavior, event contracts, outbox behavior, EF
+  mappings, migrations, and database schema remain unchanged.
+- Deferred follow-on: `Features/Shared` now contains only `CommandResult` and `CommandResultHttpExtensions`, which are
+  intentionally retained as shared command-response plumbing. Step 12 can now be reviewed for closure unless a new
+  non-speculative helper/service ownership concern is found.
+- Remaining Step 12 work: perform a closure review of remaining helpers and services rather than moving code for its
+  own sake.
+- Validation: `dotnet build BudgetyTzar.sln` hung silently and was stopped after matching the known roadmap caveat.
+  The first `dotnet test` compiled but failed on the known
+  `KafkaProjectionConsumerTests.ReportingProjectionConsumerDeadLettersPoisonEventAndContinuesWithLaterEvents` SQLite
+  dead-letter transient. The focused rerun of that failing test hit the same transient, and the final full
+  `dotnet test` passed with 94 tests.
