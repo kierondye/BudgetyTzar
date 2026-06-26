@@ -138,3 +138,27 @@ Remove or relocate procedural services and helpers where ownership is clear.
   final full `dotnet test` again failed only on that same test. Focused touched-path validation passed with
   `dotnet test --filter "FullyQualifiedName~BudgetAdjustmentsTests|FullyQualifiedName~BudgetReallocationsTests|FullyQualifiedName~TransactionAllocationsTests|FullyQualifiedName~BudgetItemTests"`
   (13 tests).
+- Continued with a projection-runner persistence ownership cleanup by moving `ProcessedProjectionEvent`,
+  `ProjectionProcessingStatus`, `ProjectionEventFailure`, `ProjectionFailureCategory`, and `ProjectionFailureStatus`
+  from `Application/Reporting` to `Infrastructure/Events`.
+- Decision: treat projection processing/checkpoint/readiness rows and projection failure rows as infrastructure event
+  runner persistence state. Reporting endpoints may read readiness state, but infrastructure owns claiming, completion,
+  failure persistence, retry/dead-letter metadata, and rebuild cleanup.
+- Decision: keep the moved types in the existing `BudgetyTzar.Api.Application.Reporting` namespace so EF model identity,
+  migration snapshots, tests, endpoint references, and infrastructure store references remain unchanged. This is
+  file/folder ownership only.
+- Grouping rationale: `ProcessedProjectionEvent` and `ProjectionEventFailure` are the two persistence entities owned by
+  the reporting projection runner boundary. Moving them together clarifies that processing lifecycle and projection
+  failure persistence are one infrastructure concern without mixing in the separate audit failure entity.
+- Preserved behavior: projection idempotency, processing leases/checkpoints, readiness status semantics, failure and
+  dead-letter persistence values, rebuild cleanup, API responses, event contracts, Kafka topics, outbox behavior, EF
+  mappings, migrations, database schema, projections, audit behavior, and snapshots remain unchanged.
+- Deferred follow-on: `AuditEventFailure` remains in `Application/Reporting` for a separate audit-runner persistence
+  ownership increment. `BudgetLookup` and `EndpointValidation` remain shared endpoint helpers pending separate review.
+- Remaining Step 12 work: review audit failure persistence ownership and the remaining shared endpoint helpers without
+  changing EF model identity, API contracts, or runtime behavior.
+- Validation: `dotnet build BudgetyTzar.sln` hung silently and was stopped after matching the known roadmap caveat.
+  The first `dotnet test` compiled but failed on the known
+  `KafkaProjectionConsumerTests.ReportingProjectionConsumerDeadLettersPoisonEventAndContinuesWithLaterEvents` SQLite
+  dead-letter transient. The focused rerun of that failing test passed, and the final full `dotnet test` passed with
+  94 tests.
