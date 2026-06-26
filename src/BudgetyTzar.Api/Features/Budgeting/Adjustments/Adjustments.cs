@@ -44,7 +44,8 @@ public sealed class RecordAdjustmentHandler(
         string? notes,
         CancellationToken ct)
     {
-        if (!await db.Budgets.AnyAsync(x => x.Id == budgetId, ct))
+        var budget = await db.Budgets.SingleOrDefaultAsync(x => x.Id == budgetId, ct);
+        if (budget is null)
         {
             return CommandResult<BudgetAdjustment>.NotFound();
         }
@@ -61,11 +62,15 @@ public sealed class RecordAdjustmentHandler(
         }
 
         var adjustment = BudgetAdjustment.Create(budgetId, budgetItemId, amount, type, date, notes);
-        if (!await NetPlannedSpendingIsValid(budgetId, adjustment, ct))
+        var existingAdjustments = await db.BudgetAdjustments
+            .AsNoTracking()
+            .Where(x => x.BudgetId == budgetId && x.Date <= adjustment.Date)
+            .ToListAsync(ct);
+        if (!budget.CanRecordAdjustment(existingAdjustments, adjustment))
         {
             return CommandResult<BudgetAdjustment>.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(amount)] = ["Net planned spending must not exceed net planned income."]
+                [nameof(amount)] = [Budget.NetPlannedSpendingExceededMessage]
             });
         }
 
@@ -74,17 +79,4 @@ public sealed class RecordAdjustmentHandler(
         await db.SaveChangesAsync(ct);
         return CommandResult<BudgetAdjustment>.Created(adjustment, eventId);
     }
-
-    private async Task<bool> NetPlannedSpendingIsValid(Guid budgetId, BudgetAdjustment pending, CancellationToken ct)
-    {
-        var existing = await db.BudgetAdjustments
-            .AsNoTracking()
-            .Where(x => x.BudgetId == budgetId && x.Date <= pending.Date)
-            .ToListAsync(ct);
-        var net = existing.Sum(SignedPlannedAmount) + SignedPlannedAmount(pending);
-        return net >= 0;
-    }
-
-    private static decimal SignedPlannedAmount(BudgetAdjustment adjustment) =>
-        adjustment.Type == BudgetAdjustmentType.Credit ? adjustment.Amount : -adjustment.Amount;
 }

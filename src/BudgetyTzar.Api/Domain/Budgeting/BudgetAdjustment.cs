@@ -45,6 +45,9 @@ public sealed class BudgetAdjustment
             LegacySignedAmount = type == BudgetAdjustmentType.Credit ? amount : -amount
         };
 
+    public decimal SignedPlannedAmount() =>
+        Type == BudgetAdjustmentType.Credit ? Amount : -Amount;
+
     public DomainEvent RecordedEvent(Guid budgetId, string budgetItemName) =>
         new(
             "BudgetAdjustmentRecorded",

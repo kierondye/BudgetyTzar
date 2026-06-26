@@ -74,3 +74,28 @@ Move gradually toward aggregates making decisions and emitting domain events as 
   DTO/domain coupling remain out of scope for this increment.
 - Remaining Step 11 work: continue moving obvious command-handler business rules into the owning aggregate or value
   object one slice at a time while preserving current persistence and contracts.
+- Continued with a budget adjustment planning increment by moving the net planned spending invariant out of
+  `RecordAdjustmentHandler` and into the budgeting domain model.
+- Decision: treat signed planned adjustment value as a `BudgetAdjustment` concept through `SignedPlannedAmount`, and
+  treat the cumulative planned-income/planned-spending check as a `Budget` aggregate rule through
+  `CanRecordAdjustment`.
+- Decision: keep the handler responsible for request primitive mapping, loading the budget and budget item, archived
+  item eligibility, querying existing persisted adjustments, EF persistence, outbox writing, and HTTP result mapping.
+  The handler still returns the same validation message through the existing command-result path.
+- Grouping rationale: `BudgetAdjustment.SignedPlannedAmount`, `Budget.CanRecordAdjustment`, and the adjustment handler
+  call-site are one tightly coupled invariant around recording planned budget movement. Moving them together avoids
+  leaving half of the same planning rule split across domain and handler code.
+- Preserved behavior: `/api/budgets/{budgetId}/budget-items/{budgetItemId}/adjustments`, request/response JSON, status
+  codes, Swagger metadata, validation messages, event names, event payload records, JSON schemas, outbox behavior, EF
+  mappings, migrations, database schema, projections, and snapshot results remain unchanged.
+- Validation during implementation: focused
+  `dotnet test --filter "FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetAdjustmentTests|FullyQualifiedName~BudgetAdjustmentsTests"`
+  passed with 5 tests.
+- Final validation: `dotnet build BudgetyTzar.sln` passed with 0 warnings and 0 errors; `dotnet test` passed with
+  83 tests.
+- Deferred follow-on: the handler still queries persisted adjustment history directly. Moving toward event-stream
+  rehydration or a richer budget aggregate state remains out of scope until a dedicated roadmap increment is ready.
+- Deferred follow-on: identifier value objects and broader command-path cleanup remain out of scope because this
+  increment only addressed the budget adjustment planning invariant.
+- Remaining Step 11 work: continue reviewing command handlers for business rules that can move into the owning
+  aggregate, value object, or concrete domain service without changing persistence, contracts, or projection behavior.
