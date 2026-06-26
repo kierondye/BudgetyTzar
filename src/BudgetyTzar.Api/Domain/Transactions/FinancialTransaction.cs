@@ -106,7 +106,28 @@ public sealed class FinancialTransaction
                 IsIgnored));
     }
 
-    public void Ignore() => IsIgnored = true;
+    public DomainEvent Ignore()
+    {
+        IsIgnored = true;
+
+        return new DomainEvent(
+            "TransactionIgnored",
+            BudgetId,
+            nameof(FinancialTransaction),
+            Id,
+            $"Ignored transaction {Description}.",
+            Payload: new TransactionIgnoredPayload(
+                Id,
+                BudgetId,
+                TransactionDate,
+                Description,
+                Amount,
+                Direction,
+                SourceAccount,
+                ExternalReference,
+                Notes,
+                IsIgnored));
+    }
 
     public IReadOnlyList<TransactionAllocation> ReplaceAllocations(IReadOnlyCollection<TransactionAllocationItem> allocations)
     {

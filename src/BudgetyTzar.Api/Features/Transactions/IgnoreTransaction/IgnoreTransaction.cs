@@ -1,5 +1,4 @@
 using BudgetyTzar.Api.Application.Common;
-using BudgetyTzar.Api.Contracts.Events;
 using BudgetyTzar.Api.Infrastructure.Events;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -16,24 +15,8 @@ public sealed class IgnoreTransactionHandler(BudgetDbContext db, DomainEventOutb
             return CommandResult.NotFound();
         }
 
-        transaction.Ignore();
-        var eventId = events.Add(new DomainEvent(
-            "TransactionIgnored",
-            budgetId,
-            nameof(FinancialTransaction),
-            transaction.Id,
-            $"Ignored transaction {transaction.Description}.",
-            Payload: new TransactionIgnoredPayload(
-                transaction.Id,
-                transaction.BudgetId,
-                transaction.TransactionDate,
-                transaction.Description,
-                transaction.Amount,
-                transaction.Direction,
-                transaction.SourceAccount,
-                transaction.ExternalReference,
-                transaction.Notes,
-                transaction.IsIgnored)));
+        var ignoredEvent = transaction.Ignore();
+        var eventId = events.Add(ignoredEvent);
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent(eventId);
     }

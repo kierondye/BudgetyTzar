@@ -125,3 +125,25 @@ Move gradually toward aggregates making decisions and emitting domain events as 
   only if ownership is clear without changing validation response shape.
 - Remaining Step 11 work: continue moving command-path business decisions and natural domain-event creation into
   aggregates one coherent command path at a time.
+- Continued with a transaction ignore aggregate increment by moving `TransactionIgnored` event creation from
+  `IgnoreTransactionHandler` into `FinancialTransaction.Ignore`.
+- Decision: keep `IgnoreTransactionHandler` responsible for loading the transaction, not-found handling, EF
+  persistence, outbox writing, and HTTP result mapping. The aggregate now owns the ignore state transition and returns
+  the domain event that describes it.
+- Grouping rationale: ignore mutation and ignored-event construction are one transaction aggregate concern. This follows
+  the transaction edit pattern without batching unrelated transaction creation behavior.
+- Preserved behavior: `/api/budgets/{budgetId}/transactions/{transactionId}/ignore`, status codes, response body,
+  Swagger metadata, event name, event payload record, JSON schema, envelope/outbox behavior, EF mappings, migrations,
+  database schema, projections, and audit behavior remain unchanged.
+- Validation during implementation: focused
+  `dotnet test --filter "FullyQualifiedName~FinancialTransactionTests|FullyQualifiedName~AuditEventProjectionTests|FullyQualifiedName~EventContractTests"`
+  passed with 11 tests.
+- Final validation: `dotnet build BudgetyTzar.sln` passed with 0 warnings and 0 errors; `dotnet test` passed with
+  86 tests.
+- Deferred follow-on: transaction manual creation event construction still happens in `CreateTransactionHandler`; move
+  it only as its own transaction-creation increment.
+- Deferred follow-on: transaction allocation replacement and clearing still construct allocation events in the feature
+  handler. Revisit as a focused allocation command-path increment because duplicate item validation, archived-item
+  eligibility, existing allocation details, and payload formatting need careful ownership decisions.
+- Remaining Step 11 work: continue moving command-path business decisions and natural domain-event creation into
+  aggregates one coherent command path at a time.

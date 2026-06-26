@@ -148,4 +148,38 @@ public sealed class FinancialTransactionTests
         Assert.Equal("Updated note", payload.Notes);
         Assert.False(payload.IsIgnored);
     }
+
+    [Fact]
+    public void TransactionIgnoreChangesStateAndProducesIgnoredEvent()
+    {
+        var budgetId = Guid.NewGuid();
+        var transaction = FinancialTransaction.Create(
+            budgetId,
+            new DateOnly(2026, 6, 10),
+            "Duplicate transaction",
+            25m,
+            TransactionDirection.Debit,
+            "Current account",
+            "DUP-1",
+            "Imported twice");
+
+        var domainEvent = transaction.Ignore();
+
+        Assert.True(transaction.IsIgnored);
+        Assert.Equal("TransactionIgnored", domainEvent.EventType);
+        Assert.Equal(budgetId, domainEvent.BudgetId);
+        Assert.Equal(transaction.Id, domainEvent.EntityId);
+        Assert.Equal("Ignored transaction Duplicate transaction.", domainEvent.Description);
+        var payload = Assert.IsType<TransactionIgnoredPayload>(domainEvent.Payload);
+        Assert.Equal(transaction.Id, payload.TransactionId);
+        Assert.Equal(budgetId, payload.BudgetId);
+        Assert.Equal(new DateOnly(2026, 6, 10), payload.TransactionDate);
+        Assert.Equal("Duplicate transaction", payload.Description);
+        Assert.Equal(25m, payload.Amount);
+        Assert.Equal(TransactionDirection.Debit, payload.Direction);
+        Assert.Equal("Current account", payload.SourceAccount);
+        Assert.Equal("DUP-1", payload.ExternalReference);
+        Assert.Equal("Imported twice", payload.Notes);
+        Assert.True(payload.IsIgnored);
+    }
 }
