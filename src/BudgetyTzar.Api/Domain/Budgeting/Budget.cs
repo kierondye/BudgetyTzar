@@ -34,7 +34,7 @@ public sealed class Budget
         return existingItems.Any(x => x.Name == trimmedName) ? DuplicateBudgetItemNameMessage : null;
     }
 
-    public BudgetItem CreateBudgetItem(IReadOnlyCollection<BudgetItem> existingItems, string name)
+    public BudgetItem CreateBudgetItem(IReadOnlyCollection<BudgetItem> existingItems, string name, BudgetItemKind kind)
     {
         var validationError = ValidateBudgetItemName(existingItems, name);
         if (validationError is not null)
@@ -42,7 +42,7 @@ public sealed class Budget
             throw new InvalidOperationException(validationError);
         }
 
-        return BudgetItem.Create(Id, name);
+        return BudgetItem.Create(Id, name, kind);
     }
 
     public DomainEvent CreatedEvent() =>

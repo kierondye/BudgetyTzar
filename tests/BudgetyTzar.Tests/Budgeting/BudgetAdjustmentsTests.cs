@@ -15,9 +15,9 @@ public sealed class BudgetAdjustmentsTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary");
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
-        var retired = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Retired");
+        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary", BudgetItemKind.Funding);
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
+        var retired = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Retired", BudgetItemKind.Consumption);
 
         await BudgetApiTestClient.RecordAdjustment(client, budget.Id, salary.Id, 2_500m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 1), "Expected salary");
         await BudgetApiTestClient.RecordAdjustment(client, budget.Id, groceries.Id, 500m, BudgetAdjustmentType.Debit, new DateOnly(2026, 6, 2), "Expected groceries");
@@ -42,8 +42,8 @@ public sealed class BudgetAdjustmentsTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary");
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
+        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary", BudgetItemKind.Funding);
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
 
         await BudgetApiTestClient.RecordAdjustment(client, budget.Id, salary.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 7, 1), "Future income");
         var earlyDebit = await client.PostAsJsonAsync(

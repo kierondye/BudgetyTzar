@@ -26,7 +26,7 @@ public sealed class PostgresCompatibilityTests
         await app.ResetDatabaseAsync();
         var client = app.CreateClient();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
         var transaction = await BudgetApiTestClient.CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 15), 1234.56m, TransactionDirection.Debit, "PostgreSQL transaction");
 
         var allocationResponse = await client.PutAsJsonAsync(
@@ -62,11 +62,11 @@ public sealed class PostgresCompatibilityTests
         await app.ResetDatabaseAsync();
         var client = app.CreateClient();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
+        await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
 
         var duplicateLine = await client.PostAsJsonAsync(
             $"/api/budgets/{budget.Id}/budget-items",
-            new CreateBudgetItemRequest("Groceries"));
+            new CreateBudgetItemRequest("Groceries", BudgetItemKind.Consumption));
 
         Assert.Equal(HttpStatusCode.BadRequest, duplicateLine.StatusCode);
     }

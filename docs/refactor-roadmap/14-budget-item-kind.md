@@ -6,7 +6,7 @@ Tighten the budget item domain model by introducing `BudgetItemKind` before cont
 
 ## Status
 
-Planned. Documentation and specification semantics have been approved; production implementation has not started.
+Increment 2 implemented and awaiting review. Increment 1 documentation and specification semantics were approved before implementation.
 
 ## Ubiquitous Language
 
@@ -127,6 +127,8 @@ Status: complete.
 
 ### Increment 2 - Domain, API, And Event Contract Introduction
 
+Status: implemented, awaiting review.
+
 - Add `BudgetItemKind` with initial values `Funding` and `Consumption`.
 - Require kind in `CreateBudgetItemRequest`.
 - Include kind in budget item response DTOs.
@@ -134,15 +136,51 @@ Status: complete.
 - Tighten `budget-item-created.v1` JSON schema to require `kind`.
 - Update event payload contract tests and real outbox envelope contract tests.
 
+Implementation notes:
+
+- Added `BudgetItemKind` to the authoritative `BudgetItem` domain model and budget item creation path.
+- API budget item creation now requires `kind`; responses include `kind`.
+- `BudgetItemCreatedPayload` and `budget-item-created.v1` now carry required `kind`.
+- Tests and API helpers now create budget items explicitly as `Funding` or `Consumption`.
+- A narrow EF-generated `BudgetItems.Kind` migration was added because the command-side EF model now owns the authoritative kind and PostgreSQL-backed tests apply migrations. Reporting projection and snapshot/read-model persistence were not broadened in this increment.
+
+Architectural decisions:
+
+- Kind is stored as command-side budgeting state, not inferred from debit or credit movement direction.
+- Existing debit/credit adjustment and transaction allocation behavior remains unchanged.
+- The event contract was tightened in v1 because this is an intentional early-project correction.
+- Existing migrated budget items receive `Consumption` as a migration default only to satisfy the non-null command-state column for legacy rows.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetItemsTests|FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetItemTests|FullyQualifiedName~EventPayloadRecordContractTests|FullyQualifiedName~EventContractTests"` - passed, 23 tests.
+- `dotnet build tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false` - passed.
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~PostgresCompatibilityTests"` - passed, 4 tests after regenerating the migration metadata.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 96 tests.
+- `dotnet build BudgetyTzar.sln` was attempted earlier, but the default solution build hung with no output. The test project build above was used to verify compilation.
+
+Deferred work:
+
+- Budget adjustment kind validation.
+- Transaction allocation interpretation rules.
+- Reallocation availability rules.
+- `AvailableBudget`.
+- Reporting projection item kind, snapshot/read-model kind exposure, and projection rebuild semantics.
+- Step 13 concurrency work.
+
 ### Increment 3 - Database And Read Model Updates
 
-- Add kind to `BudgetItems`.
 - Add kind to reporting projection item state.
 - Add kind to snapshot/read models where budget item identity is exposed.
-- Add migrations rather than rewriting existing migrations.
 - Ensure projection rebuilds can reconstruct item kind from budget item events.
 
+Command-side `BudgetItems.Kind` was pulled into Increment 2 as a narrow migration because the authoritative domain model is EF-backed and PostgreSQL test setup applies migrations.
+
+- Add migrations rather than rewriting existing migrations for any remaining read-model persistence changes.
+
 ### Increment 4 - Test And Fixture Updates
+
+Status: partially complete for Increment 2 surfaces.
 
 - Update all salary, bonus, and income-source fixtures to `Funding`.
 - Update groceries, mortgage, petrol, eating out, incidentals, holiday funds, car maintenance, Christmas, and similar fixtures to `Consumption`.
@@ -178,7 +216,6 @@ Start only after `AvailableBudget` is precisely defined.
 
 ## Out Of Scope
 
-- Implementing production code in this documentation increment.
 - Adding `Financing`.
 - Reworking snapshot formulas or report presentation beyond carrying kind.
 - Introducing event sourcing infrastructure.

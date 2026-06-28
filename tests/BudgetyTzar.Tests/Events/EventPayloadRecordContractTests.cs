@@ -26,7 +26,8 @@ public sealed class EventPayloadRecordContractTests
             new BudgetItemCreatedPayload(
                 BudgetId,
                 BudgetItemId,
-                "Groceries")
+                "Groceries",
+                BudgetItemKind.Consumption)
         },
         {
             "budgetytzar.budgeting.budget-item-archived.v1",

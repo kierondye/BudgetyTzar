@@ -18,7 +18,7 @@ public static partial class Endpoints
                 .AsNoTracking()
                 .Where(x => x.BudgetId == budgetId)
                 .OrderBy(x => x.Name)
-                .Select(x => new BudgetItemDto(x.Id, x.BudgetId, x.Name, x.IsArchived, x.ArchivedAt, x.CreatedAt))
+                .Select(x => new BudgetItemDto(x.Id, x.BudgetId, x.Name, x.Kind, x.IsArchived, x.ArchivedAt, x.CreatedAt))
                 .ToListAsync(ct);
             return Results.Ok(items);
         });

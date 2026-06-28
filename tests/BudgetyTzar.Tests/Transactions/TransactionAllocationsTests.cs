@@ -14,7 +14,7 @@ public sealed class TransactionAllocationsTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
         var refund = await BudgetApiTestClient.CreateTransaction(client, budget.Id, 25m, TransactionDirection.Credit);
 
         var response = await client.PutAsJsonAsync(
@@ -48,7 +48,7 @@ public sealed class TransactionAllocationsTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
         var transaction = await BudgetApiTestClient.CreateTransaction(client, budget.Id, 20m, TransactionDirection.Debit);
 
         var response = await client.PutAsJsonAsync(
@@ -65,7 +65,7 @@ public sealed class TransactionAllocationsTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
         var transaction = await BudgetApiTestClient.CreateTransaction(client, budget.Id, 20m, TransactionDirection.Debit);
         await BudgetApiTestClient.ReplaceAllocations(client, budget.Id, transaction.Id, [new TransactionAllocationItem(groceries.Id, 20m)]);
 
@@ -85,8 +85,8 @@ public sealed class TransactionAllocationsTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
-        var household = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Household");
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
+        var household = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Household", BudgetItemKind.Consumption);
         var transaction = await BudgetApiTestClient.CreateTransaction(client, budget.Id, 50m, TransactionDirection.Debit);
 
         var response = await client.PutAsJsonAsync(
@@ -111,7 +111,7 @@ public sealed class TransactionAllocationsTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
         var transaction = await BudgetApiTestClient.CreateTransaction(client, budget.Id, 50m, TransactionDirection.Debit);
 
         var response = await client.PutAsJsonAsync(
@@ -134,7 +134,7 @@ public sealed class TransactionAllocationsTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
         var transaction = await BudgetApiTestClient.CreateTransaction(client, budget.Id, 50m, TransactionDirection.Debit);
 
         var response = await client.PutAsJsonAsync(
@@ -153,7 +153,7 @@ public sealed class TransactionAllocationsTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
         var transaction = await BudgetApiTestClient.CreateTransaction(client, budget.Id, 20m, TransactionDirection.Debit);
 
         var response = await client.PutAsJsonAsync(
@@ -171,7 +171,7 @@ public sealed class TransactionAllocationsTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
         var transaction = await BudgetApiTestClient.CreateTransaction(client, budget.Id, 20m, TransactionDirection.Debit);
         await BudgetApiTestClient.ReplaceAllocations(client, budget.Id, transaction.Id, [new TransactionAllocationItem(groceries.Id, 12m)]);
 

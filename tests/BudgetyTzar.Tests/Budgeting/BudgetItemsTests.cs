@@ -8,7 +8,7 @@ namespace BudgetyTzar.Tests;
 public sealed class BudgetItemsTests
 {
     [Fact]
-    public async Task BudgetItemApiCreatesNameOnlyItemsAndHidesLegacyDirectionFields()
+    public async Task BudgetItemApiCreatesKindedItemsAndHidesLegacyDirectionFields()
     {
         await using var app = new BudgetApiFactory();
         var client = app.CreateClient();
@@ -17,7 +17,7 @@ public sealed class BudgetItemsTests
 
         var response = await client.PostAsJsonAsync(
             $"/api/budgets/{budget.Id}/budget-items",
-            new CreateBudgetItemRequest("Groceries"));
+            new CreateBudgetItemRequest("Groceries", BudgetItemKind.Consumption));
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var json = await response.Content.ReadAsStringAsync();
@@ -29,6 +29,22 @@ public sealed class BudgetItemsTests
             $"/api/budgets/{budget.Id}/budget-items");
         var item = Assert.Single(items!);
         Assert.Equal("Groceries", item.Name);
+        Assert.Equal(BudgetItemKind.Consumption, item.Kind);
+    }
+
+    [Fact]
+    public async Task BudgetItemApiRejectsMissingKind()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await BudgetApiTestClient.CreateBudget(client);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/budgets/{budget.Id}/budget-items",
+            new { name = "Groceries" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -38,7 +54,7 @@ public sealed class BudgetItemsTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var retired = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Retired");
+        var retired = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Retired", BudgetItemKind.Consumption);
         var archiveDate = DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime);
 
         await BudgetApiTestClient.ArchiveBudgetItem(client, budget.Id, retired.Id);
@@ -61,7 +77,7 @@ public sealed class BudgetItemsTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var retired = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Retired");
+        var retired = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Retired", BudgetItemKind.Consumption);
         var futureDate = DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime).AddDays(1);
         await BudgetApiTestClient.ArchiveBudgetItem(client, budget.Id, retired.Id);
         var transaction = await BudgetApiTestClient.CreateTransaction(client, budget.Id, futureDate, 12m, TransactionDirection.Debit);

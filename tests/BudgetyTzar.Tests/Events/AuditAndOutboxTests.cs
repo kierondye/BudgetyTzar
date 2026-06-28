@@ -74,9 +74,9 @@ public sealed class AuditAndOutboxTests
         await app.ResetDatabaseAsync();
 
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
-        var savings = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Savings");
-        var household = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Household");
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
+        var savings = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Savings", BudgetItemKind.Consumption);
+        var household = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Household", BudgetItemKind.Consumption);
         var single = await BudgetApiTestClient.CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 12), 35m, TransactionDirection.Debit);
         var multi = await BudgetApiTestClient.CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 13), 40m, TransactionDirection.Debit);
         var manyToOne = await BudgetApiTestClient.CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 14), 50m, TransactionDirection.Debit);
@@ -137,7 +137,7 @@ public sealed class AuditAndOutboxTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
         await BudgetApiTestClient.RecordAdjustment(client, budget.Id, groceries.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 1), "Initial groceries.");
         await app.ProjectAuditEventsAsync(budget.Id);
 

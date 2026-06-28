@@ -1,21 +1,31 @@
 using BudgetyTzar.Api.Contracts.Events;
+using System.Text.Json.Serialization;
 
 namespace BudgetyTzar.Api;
+
+[JsonConverter(typeof(CamelCaseStringEnumConverter))]
+public enum BudgetItemKind
+{
+    Funding = 1,
+    Consumption = 2
+}
 
 public sealed class BudgetItem
 {
     public Guid Id { get; init; } = Guid.NewGuid();
     public Guid BudgetId { get; set; }
     public required string Name { get; set; }
+    public BudgetItemKind Kind { get; set; }
     public bool IsArchived { get; set; }
     public DateTimeOffset? ArchivedAt { get; set; }
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
 
-    public static BudgetItem Create(Guid budgetId, string name) =>
+    public static BudgetItem Create(Guid budgetId, string name, BudgetItemKind kind) =>
         new()
         {
             BudgetId = budgetId,
-            Name = name.Trim()
+            Name = name.Trim(),
+            Kind = kind
         };
 
     public DomainEvent CreatedEvent() =>
@@ -25,7 +35,7 @@ public sealed class BudgetItem
             nameof(BudgetItem),
             Id,
             $"Created budget item {Name}.",
-            Payload: new BudgetItemCreatedPayload(BudgetId, Id, Name));
+            Payload: new BudgetItemCreatedPayload(BudgetId, Id, Name, Kind));
 
     public DomainEvent Archive(DateTimeOffset archivedAt)
     {

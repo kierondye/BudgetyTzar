@@ -18,10 +18,10 @@ public sealed class BudgetSnapshotsTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary");
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
-        var mortgage = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Mortgage");
-        var incidentals = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Incidentals");
+        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary", BudgetItemKind.Funding);
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
+        var mortgage = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Mortgage", BudgetItemKind.Consumption);
+        var incidentals = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Incidentals", BudgetItemKind.Consumption);
 
         await BudgetApiTestClient.RecordAdjustment(client, budget.Id, salary.Id, 2_500m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 18), "Initial budget for salary.");
         await BudgetApiTestClient.RecordAdjustment(client, budget.Id, groceries.Id, 500m, BudgetAdjustmentType.Debit, new DateOnly(2026, 6, 18), "Initial budget for groceries.");
@@ -103,7 +103,7 @@ public sealed class BudgetSnapshotsTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
 
         using (var scope = app.Services.CreateScope())
         {
@@ -126,8 +126,8 @@ public sealed class BudgetSnapshotsTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary");
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
+        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary", BudgetItemKind.Funding);
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
         await BudgetApiTestClient.RecordAdjustment(client, budget.Id, salary.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 10));
         await BudgetApiTestClient.RecordAdjustment(client, budget.Id, groceries.Id, 100m, BudgetAdjustmentType.Debit, new DateOnly(2026, 6, 10));
         var transaction = await BudgetApiTestClient.CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 12), 35m, TransactionDirection.Debit);

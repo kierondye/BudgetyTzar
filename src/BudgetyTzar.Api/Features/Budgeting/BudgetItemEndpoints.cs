@@ -20,10 +20,10 @@ public static partial class Endpoints
                 return validationProblem;
             }
 
-            var result = await handler.Handle(budgetId, request.Name, ct);
+            var result = await handler.Handle(budgetId, request.Name, request.Kind!.Value, ct);
             return result.ToHttpResult(httpContext, item => Results.Created(
                 $"/api/budgets/{budgetId}/budget-items/{item.Id}",
-                new BudgetItemDto(item.Id, item.BudgetId, item.Name, item.IsArchived, item.ArchivedAt, item.CreatedAt)));
+                new BudgetItemDto(item.Id, item.BudgetId, item.Name, item.Kind, item.IsArchived, item.ArchivedAt, item.CreatedAt)));
         });
 
         budgets.MapPost("/{budgetId:guid}/budget-items/{budgetItemId:guid}/archive", async (

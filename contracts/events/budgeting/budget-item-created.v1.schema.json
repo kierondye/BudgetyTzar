@@ -3,10 +3,11 @@
   "$id": "https://budgetytzar.local/contracts/events/budgeting/budget-item-created.v1.schema.json",
   "title": "Budget Item Created",
   "type": "object",
-  "required": ["budgetId", "budgetItemId", "name"],
+  "required": ["budgetId", "budgetItemId", "name", "kind"],
   "properties": {
     "budgetId": { "type": "string", "format": "uuid" },
     "budgetItemId": { "type": "string", "format": "uuid" },
-    "name": { "type": "string" }
+    "name": { "type": "string" },
+    "kind": { "type": "string", "enum": ["funding", "consumption"] }
   }
 }

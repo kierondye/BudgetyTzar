@@ -18,8 +18,8 @@ public sealed class AuditEventProjectionTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
-        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary");
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
+        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary", BudgetItemKind.Funding);
         await BudgetApiTestClient.ArchiveBudgetItem(client, budget.Id, salary.Id);
         await BudgetApiTestClient.RecordAdjustment(client, budget.Id, groceries.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 1), "Initial groceries.");
         var reallocationResponse = await client.PostAsJsonAsync(

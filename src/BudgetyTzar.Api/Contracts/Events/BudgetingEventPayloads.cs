@@ -8,7 +8,8 @@ public sealed record BudgetCreatedPayload(
 public sealed record BudgetItemCreatedPayload(
     Guid BudgetId,
     Guid BudgetItemId,
-    string Name);
+    string Name,
+    BudgetItemKind Kind);
 
 public sealed record BudgetItemArchivedPayload(
     Guid BudgetId,

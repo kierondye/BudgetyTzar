@@ -27,7 +27,7 @@ public sealed class ProjectionProcessingTests
         var projector = scope.ServiceProvider.GetRequiredService<ReportingProjectionService>();
 
         var result = await projector.ApplyBudgetItemCreated(
-            new BudgetItemCreatedPayload(budgetId, budgetItemId, "Salary"),
+            new BudgetItemCreatedPayload(budgetId, budgetItemId, "Salary", BudgetItemKind.Funding),
             eventId,
             "budgetytzar.budgeting.budget-item-created.v1",
             occurredAt,
@@ -48,7 +48,7 @@ public sealed class ProjectionProcessingTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary");
+        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary", BudgetItemKind.Funding);
         await BudgetApiTestClient.RecordAdjustment(client, budget.Id, salary.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 10));
 
         using var scope = app.Services.CreateScope();
@@ -74,7 +74,7 @@ public sealed class ProjectionProcessingTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary");
+        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary", BudgetItemKind.Funding);
         await BudgetApiTestClient.RecordAdjustment(client, budget.Id, salary.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 10));
 
         using var scope = app.Services.CreateScope();
@@ -101,7 +101,7 @@ public sealed class ProjectionProcessingTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary");
+        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary", BudgetItemKind.Funding);
         await BudgetApiTestClient.RecordAdjustment(client, budget.Id, salary.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 10));
 
         using var scope = app.Services.CreateScope();

@@ -13,7 +13,7 @@ public sealed class TransactionQueriesTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
         var unallocated = await BudgetApiTestClient.CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 20), 10m, TransactionDirection.Debit);
         var allocated = await BudgetApiTestClient.CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 21), 10m, TransactionDirection.Debit);
         await BudgetApiTestClient.ReplaceAllocations(client, budget.Id, allocated.Id, [new TransactionAllocationItem(groceries.Id, 10m)]);

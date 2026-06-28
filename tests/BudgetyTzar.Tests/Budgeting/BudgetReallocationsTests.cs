@@ -15,8 +15,8 @@ public sealed class BudgetReallocationsTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var dining = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Dining");
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries");
+        var dining = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Dining", BudgetItemKind.Consumption);
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
 
         var invalid = await client.PostAsJsonAsync(
             $"/api/budgets/{budget.Id}/reallocations",

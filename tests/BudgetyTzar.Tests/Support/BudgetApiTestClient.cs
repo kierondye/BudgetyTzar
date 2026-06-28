@@ -14,11 +14,15 @@ internal static class BudgetApiTestClient
         return (await response.Content.ReadFromJsonAsync<Budget>())!;
     }
 
-    public static async Task<BudgetItemDto> CreateBudgetItem(HttpClient client, Guid budgetId, string name)
+    public static async Task<BudgetItemDto> CreateBudgetItem(
+        HttpClient client,
+        Guid budgetId,
+        string name,
+        BudgetItemKind kind)
     {
         var response = await client.PostAsJsonAsync(
             $"/api/budgets/{budgetId}/budget-items",
-            new CreateBudgetItemRequest(name));
+            new CreateBudgetItemRequest(name, kind));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<BudgetItemDto>())!;
     }
