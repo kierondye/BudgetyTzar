@@ -55,6 +55,31 @@ The secondary audience is prospective employers reviewing the project as evidenc
 
 ## 5. Core Concepts
 
+### 5.0 Ubiquitous Language
+
+The budget is the user's plan. The domain should describe changes as budget adjustments, budget reallocations, transaction allocations, and BudgetLedger activity rather than as a separate planning model.
+
+BudgetLedger
+: The dated record of budget adjustments, budget reallocations, transactions, and transaction allocations that explains budget state over time.
+
+BudgetItemKind
+: The semantic role of a budget item. Kind is not the same as debit/credit movement direction. A budget item keeps its kind even when corrections, refunds, reversals, underpayments, or overpayments move value in the opposite direction.
+
+Funding
+: A budget item kind for items that create BudgetCapacity, such as salary, bonus, or other funding sources. A funding item remains funding whether actual funding is above, equal to, or below budget.
+
+Consumption
+: A budget item kind for items that consume BudgetCapacity, such as groceries, mortgage, petrol, eating out, incidentals, holiday funds, car maintenance, or Christmas. A consumption item remains consumption whether actual spending is above, equal to, or below budget.
+
+BudgetCapacity
+: Value created by funding items and available to be assigned to consumption items through budget adjustments and budget reallocations.
+
+AvailableBudget
+: The budget still available to move away from or spend from a consumption item as of a specific date. The exact command-side calculation must be defined before enforcing reallocation availability.
+
+Correction, refund, reversal, underpayment, and overpayment
+: Movements interpreted against the budget item's kind. They can reduce or increase the item's balance, but they do not change the item's kind.
+
 ### 5.1 Budget
 
 A budget is the root container for budget items, budget adjustments, budget reallocations, transactions, transaction allocations, snapshots, and reports.
@@ -82,6 +107,13 @@ Examples:
 - Car maintenance.
 - Christmas.
 
+Each budget item has a `BudgetItemKind`:
+
+- `Funding`: creates BudgetCapacity, such as Salary or Bonus.
+- `Consumption`: consumes BudgetCapacity, such as Groceries, Mortgage, Petrol, Eating out, Holiday fund, Car maintenance, Christmas, or Incidentals.
+
+`Financing` is deferred until the domain has explicit borrowing, repayment, account, liability, or transfer semantics. It must not be introduced as a placeholder kind.
+
 Budget items do not have a fixed debit/credit direction. A single budget item can receive:
 
 - Debit budget adjustments.
@@ -89,13 +121,15 @@ Budget items do not have a fixed debit/credit direction. A single budget item ca
 - Debit transaction allocations.
 - Credit transaction allocations.
 
+Debit/credit direction is not the same as budget item kind. Transaction allocations never change or flip a budget item's kind. A funding item remains funding whether actual funding is above or below budget. A consumption item remains consumption whether actual spending is above or below budget. Corrections, refunds, reversals, underpayments, and overpayments are interpreted against the item's kind rather than changing the item's kind.
+
 Budget items do not have a reset/cumulative setting. All budget item balances are cumulative by default and are derived from dated ledger entries.
 
 Budget items may be active or archived. Archived budget items remain visible in historical snapshots and reports where they had activity.
 
 ### 5.3 Budget Adjustment
 
-A budget adjustment is a dated planned movement on one budget item. It changes the budget ledger without representing a bank transaction.
+A budget adjustment is a dated movement on one budget item. It changes the BudgetLedger without representing a bank transaction.
 
 Examples:
 
@@ -132,6 +166,8 @@ Example:
 - Debit Groceries by 30.00.
 
 This records that budget was moved from Eating out to Groceries. It does not alter actual transaction totals.
+
+Budget reallocations should initially move budget between consumption items. Moving budget away from a consumption item must not exceed that item's AvailableBudget as of the reallocation date once AvailableBudget is precisely defined.
 
 ### 5.5 Transaction
 
@@ -175,7 +211,7 @@ A snapshot includes:
 - Total transaction balance.
 - Optional activity totals for a selected date range.
 
-Balance calculation compares the planned budget ledger with the actual transaction ledger:
+Balance calculation compares the BudgetLedger with the actual transaction ledger:
 
 - Planned credits represent expected incoming value for a budget item.
 - Planned debits represent expected outgoing value or planned funding need for a budget item.
@@ -199,7 +235,9 @@ The user can:
 
 Acceptance criteria:
 
-- A budget item is created with a name only; it does not require a direction or rollover type.
+- A budget item is created with a name and `BudgetItemKind`; it does not require a debit/credit direction or rollover type.
+- Initial budget item kinds are `Funding` and `Consumption`.
+- `Financing` is deferred until the domain explicitly models borrowing, repayment, account, liability, or transfer semantics.
 - Archived budget items remain visible in historical snapshots and reports where they had activity.
 - Archived budget items can still be used for retrospective corrections when needed for audit accuracy.
 - Budget state can be recalculated from dated adjustments, reallocations, transactions, and transaction allocations.
@@ -219,9 +257,12 @@ Acceptance criteria:
 - Adjustment amounts must be positive.
 - Adjustment type must be debit or credit.
 - Net planned spending must not exceed net planned income for the budget as of the relevant date: budget adjustment credits minus budget adjustment debits must be greater than or equal to zero.
+- A consumption item must not become a funding source through budget adjustments. Credit budget adjustments on consumption items are allowed as reductions or corrections only when interpreted against existing consumption budget.
+- A funding item must not become a consumption item through budget adjustments. Debit budget adjustments on funding items are allowed as reductions, reversals, or corrections only when interpreted against existing funding budget.
 - Reallocations must contain at least two adjustments.
 - Reallocation adjustments must sum to zero: reallocation credits must equal reallocation debits.
 - Reallocations must not change actual transaction totals.
+- Reallocations must not move more budget away from a consumption item than its AvailableBudget as of the reallocation date. This invariant must be enforced only after AvailableBudget is precisely defined.
 
 ### 6.3 Transaction Entry and Allocation
 
@@ -240,6 +281,9 @@ Acceptance criteria:
 - Transaction allocations can be empty or can allocate a transaction to one or more budget items.
 - The sum of transaction allocations must not exceed the transaction amount.
 - Debit and credit transactions can be allocated to any budget item.
+- Transaction allocations never change a budget item's kind.
+- A credit transaction allocation to a consumption item is interpreted as a refund, rebate, overpayment correction, or other consumption-side correction.
+- A debit transaction allocation to a funding item is interpreted as a reversal, underpayment correction, or other funding-side correction.
 
 ### 6.4 Budget Tracking
 

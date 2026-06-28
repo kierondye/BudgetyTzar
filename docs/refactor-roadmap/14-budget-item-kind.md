@@ -1,0 +1,185 @@
+# 14 - Budget Item Kind
+
+## Goal
+
+Tighten the budget item domain model by introducing `BudgetItemKind` before continuing concurrency hardening. It is safer to start with explicit funding and consumption semantics and relax them later than to allow loose financial data that may be difficult to migrate safely.
+
+## Status
+
+Planned. Documentation and specification semantics have been approved; production implementation has not started.
+
+## Ubiquitous Language
+
+Use the language from `SPECIFICATION.md`:
+
+- `BudgetItemKind`
+- `Funding`
+- `Consumption`
+- `BudgetCapacity`
+- `AvailableBudget`
+- `BudgetLedger`
+- `BudgetAdjustment`
+- `BudgetReallocation`
+
+Avoid language such as:
+
+- Planned adjustment.
+- Budget planning state.
+- Planned ledger state.
+
+The budget is already the plan. Budget adjustments change the BudgetLedger.
+
+## Domain Decisions
+
+### Initial Kinds
+
+`Funding`
+: Budget items that create BudgetCapacity, such as salary, bonus, or other funding sources.
+
+`Consumption`
+: Budget items that consume BudgetCapacity, such as groceries, mortgage, petrol, eating out, incidentals, holiday funds, car maintenance, or Christmas.
+
+### Deferred Kinds
+
+`Financing` is deferred. The current domain does not yet define borrowing, repayment, account, liability, interest, or transfer semantics. Do not introduce `Financing` as a placeholder.
+
+## Semantic Rules
+
+- Credit/debit movement direction is not the same as budget item kind.
+- Transaction allocations never change or flip a budget item's kind.
+- A funding item remains funding whether actual funding is above, equal to, or below budget.
+- A consumption item remains consumption whether actual spending is above, equal to, or below budget.
+- Corrections, refunds, reversals, underpayments, and overpayments are interpreted against the item's kind rather than changing the item's kind.
+- A credit transaction allocation to a consumption item is interpreted as a refund, rebate, overpayment correction, or other consumption-side correction.
+- A debit transaction allocation to a funding item is interpreted as a reversal, underpayment correction, or other funding-side correction.
+
+## Contract Decisions
+
+This is an intentional early-project contract tightening. Do not preserve backwards compatibility for old clients.
+
+When implementation begins:
+
+- `CreateBudgetItemRequest` must require `BudgetItemKind`.
+- Budget item response DTOs must include `BudgetItemKind`.
+- `BudgetItemCreatedPayload` must include `BudgetItemKind`.
+- `contracts/events/budgeting/budget-item-created.v1.schema.json` must include `kind`.
+- Existing tests and fixtures must be updated so salary, bonus, and similar funding-source items are `Funding`.
+- Existing tests and fixtures must be updated so groceries, mortgage, petrol, eating out, incidentals, holiday funds, car maintenance, Christmas, and similar spending items are `Consumption`.
+
+Because compatibility is intentionally not preserved, the v1 budget-item-created schema can be tightened rather than introducing a v2 event solely for this early correction.
+
+## Expected Impact
+
+### Budget Items
+
+Budget item creation becomes semantically explicit. Kind belongs to authoritative budgeting command state, not reporting metadata.
+
+### Budget Adjustments
+
+Budget adjustments remain debit/credit movements on budget items.
+
+New invariants:
+
+- A consumption item must not become a funding source through budget adjustments.
+- A funding item must not become a consumption item through budget adjustments.
+- Opposite-direction adjustments remain valid for corrections, refunds, reversals, underpayments, and overpayments when they are interpreted against the item's kind.
+
+### Budget Reallocations
+
+Budget reallocations should initially move budget between consumption items.
+
+Deferred until `AvailableBudget` is precisely defined:
+
+- A reallocation must not move more budget away from a consumption item than its AvailableBudget as of the reallocation date.
+
+### Transaction Allocations
+
+Transaction allocations do not mutate budget item kind. They should be interpreted against the kind of the target budget item.
+
+Tests should cover:
+
+- Debit transaction allocations to consumption items.
+- Credit transaction allocations to funding items.
+- Credit transaction allocations to consumption items as refunds or corrections.
+- Debit transaction allocations to funding items as reversals or corrections.
+- Actual overpayment or underpayment does not change item kind.
+
+### Snapshot And Reporting
+
+Reporting and snapshot read models must carry item kind once the event and persistence changes exist, because reports need to explain item semantics. Reporting remains a read model and must not own the kind.
+
+Existing snapshot calculations should not be reworked until kind-aware report labels or AvailableBudget are explicitly specified.
+
+### Audit
+
+Audit projections should preserve the item kind from budget item creation events once the event payload includes it. Audit descriptions may remain concise, but event details must contain enough data to explain why the item was treated as funding or consumption.
+
+## Smallest Safe Implementation Sequence
+
+### Increment 1 - Glossary And Specification
+
+Status: complete.
+
+- Update `SPECIFICATION.md` with `BudgetItemKind`, `Funding`, `Consumption`, `BudgetCapacity`, `AvailableBudget`, and `BudgetLedger` language.
+- Clarify that debit/credit direction is not kind.
+- Clarify that transaction allocations never change kind.
+- Clarify that corrections, refunds, reversals, underpayments, and overpayments are interpreted against kind.
+
+### Increment 2 - Domain, API, And Event Contract Introduction
+
+- Add `BudgetItemKind` with initial values `Funding` and `Consumption`.
+- Require kind in `CreateBudgetItemRequest`.
+- Include kind in budget item response DTOs.
+- Include kind in `BudgetItemCreatedPayload`.
+- Tighten `budget-item-created.v1` JSON schema to require `kind`.
+- Update event payload contract tests and real outbox envelope contract tests.
+
+### Increment 3 - Database And Read Model Updates
+
+- Add kind to `BudgetItems`.
+- Add kind to reporting projection item state.
+- Add kind to snapshot/read models where budget item identity is exposed.
+- Add migrations rather than rewriting existing migrations.
+- Ensure projection rebuilds can reconstruct item kind from budget item events.
+
+### Increment 4 - Test And Fixture Updates
+
+- Update all salary, bonus, and income-source fixtures to `Funding`.
+- Update groceries, mortgage, petrol, eating out, incidentals, holiday funds, car maintenance, Christmas, and similar fixtures to `Consumption`.
+- Update API, domain, projection, audit, and event contract tests to assert kind where exposed.
+
+### Increment 5 - Budget Adjustment Kind Invariants
+
+- Prevent consumption items from becoming funding sources through budget adjustments.
+- Prevent funding items from becoming consumption items through budget adjustments.
+- Preserve legitimate corrections, refunds, reversals, underpayments, and overpayments.
+- Keep the existing budget-level invariant that budget adjustment credits minus budget adjustment debits must be greater than or equal to zero as of the relevant date.
+
+### Increment 6 - Transaction Allocation Interpretation Tests
+
+- Add tests proving transaction allocations do not change budget item kind.
+- Add tests for normal funding and consumption transaction allocation cases.
+- Add tests for refund and correction cases in the opposite direction.
+- Avoid adding stricter transaction-allocation command invariants until the desired actual-activity semantics are fully specified.
+
+### Increment 7 - Reallocation Availability Invariant
+
+Start only after `AvailableBudget` is precisely defined.
+
+- Define AvailableBudget as of a date.
+- Prevent reallocations from moving more budget away from a consumption item than its AvailableBudget.
+- Add PostgreSQL-backed concurrency tests for competing reallocations if the invariant depends on current available budget.
+
+### Increment 8 - Return To Step 13
+
+- Resume `docs/refactor-roadmap/13-architecture-boundary-hardening.md` after the item-kind invariants are explicit.
+- Revisit concurrent budget invariant correctness using the tightened aggregate and BudgetLedger semantics.
+- Prefer optimistic concurrency over broad row locking once the authoritative command state is clear.
+
+## Out Of Scope
+
+- Implementing production code in this documentation increment.
+- Adding `Financing`.
+- Reworking snapshot formulas or report presentation beyond carrying kind.
+- Introducing event sourcing infrastructure.
+- Introducing generic repositories, mediators, or broad persistence abstractions.
