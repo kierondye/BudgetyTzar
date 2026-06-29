@@ -189,14 +189,14 @@ Implementation notes:
 - Direct snapshot calculation carries kind from authoritative `BudgetItems`.
 - Snapshot calculations, totals, archived-item filtering, and balance formulas were not changed.
 - Added an EF-generated migration for reporting read-model kind columns. Existing read-model rows are backfilled from authoritative `BudgetItems.Kind` where matching command rows exist, with `Consumption` only as the non-null fallback.
-- Kafka projection tests use a SQLite busy timeout so concurrent audit and reporting consumer writes wait instead of failing immediately with transient database locks.
+- Kafka projection tests use a temporary file-backed SQLite database so concurrent audit and reporting consumer writes use separate connections instead of sharing one in-memory connection.
 
 Architectural decisions:
 
 - Reporting read models carry `BudgetItemKind` so reporting surfaces can explain budget item semantics, but they do not own or infer it.
 - Kind remains independent from debit/credit direction and is not derived from adjustments, reallocations, or transaction allocations.
 - The budget item archived event was also tightened to require kind because archived budget items are not expected to exist without a kind.
-- The SQLite busy-timeout change is test infrastructure only; it does not alter production persistence, event handling, or projection semantics.
+- The Kafka SQLite fixture change is test infrastructure only; it does not alter production persistence, event handling, or projection semantics.
 
 Tests run:
 
@@ -204,9 +204,10 @@ Tests run:
 - `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 96 tests.
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetItemTests|FullyQualifiedName~EventPayloadRecordContractTests|FullyQualifiedName~EventContractTests|FullyQualifiedName~ProjectionProcessingTests|FullyQualifiedName~BudgetSnapshotsTests"` - passed, 25 tests after adding kind to the archive event path.
 - `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 96 tests after adding kind to the archive event path.
-- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~KafkaProjectionConsumerTests.ReportingProjectionConsumerDeadLettersPoisonEventAndContinuesWithLaterEvents"` - passed, 1 test after fixing the Kafka test SQLite timeout.
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~KafkaProjectionConsumerTests.ReportingProjectionConsumerDeadLettersPoisonEventAndContinuesWithLaterEvents"` - passed, 1 test after moving the Kafka test fixture to file-backed SQLite.
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetSnapshotsTests|FullyQualifiedName~ProjectionProcessingTests|FullyQualifiedName~KafkaProjectionConsumerTests|FullyQualifiedName~PostgresCompatibilityTests|FullyQualifiedName~EventPayloadRecordContractTests|FullyQualifiedName~EventContractTests"` - passed, 29 tests.
 - `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 96 tests after the Kafka test infrastructure fix.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 96 tests after replacing the shared in-memory Kafka test database with a file-backed SQLite database.
 - `dotnet build BudgetyTzar.sln /nr:false /p:UseSharedCompilation=false` was attempted, but the solution build hung with no output and was stopped. The full test run compiled both projects successfully before executing.
 
 Deferred work:

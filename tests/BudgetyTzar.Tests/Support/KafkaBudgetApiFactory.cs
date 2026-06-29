@@ -1,9 +1,7 @@
-using System.Data.Common;
 using BudgetyTzar.Api;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,6 +11,8 @@ namespace BudgetyTzar.Tests;
 
 internal sealed class KafkaBudgetApiFactory(string bootstrapServers) : WebApplicationFactory<Program>
 {
+    private readonly string _databasePath = Path.Combine(Path.GetTempPath(), $"budgetytzar-kafka-{Guid.NewGuid():N}.db");
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("Database:MigrateOnStartup", "false");
@@ -34,17 +34,9 @@ internal sealed class KafkaBudgetApiFactory(string bootstrapServers) : WebApplic
             services.RemoveAll<DbContextOptions>();
             services.RemoveAll<DbContextOptions<BudgetDbContext>>();
             services.RemoveAll<IDbContextOptionsConfiguration<BudgetDbContext>>();
-            services.RemoveAll<DbConnection>();
-
-            services.AddSingleton<DbConnection>(_ =>
-            {
-                var connection = new SqliteConnection("DataSource=:memory:;Default Timeout=30");
-                connection.Open();
-                return connection;
-            });
 
             services.AddDbContext<BudgetDbContext>((provider, options) =>
-                options.UseSqlite(provider.GetRequiredService<DbConnection>()));
+                options.UseSqlite($"Data Source={_databasePath};Default Timeout=30"));
         });
     }
 
@@ -54,5 +46,14 @@ internal sealed class KafkaBudgetApiFactory(string bootstrapServers) : WebApplic
         var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
         await db.Database.EnsureDeletedAsync();
         await db.Database.EnsureCreatedAsync();
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        await base.DisposeAsync();
+        if (File.Exists(_databasePath))
+        {
+            File.Delete(_databasePath);
+        }
     }
 }
