@@ -72,6 +72,15 @@ public sealed class RecordAdjustmentHandler(
             });
         }
 
+        var kindValidationError = budget.ValidateBudgetItemKindForAdjustment(item, existingAdjustments, adjustment);
+        if (kindValidationError is not null)
+        {
+            return CommandResult<BudgetAdjustment>.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(amount)] = [kindValidationError]
+            });
+        }
+
         db.BudgetAdjustments.Add(adjustment);
         var eventId = events.Add(adjustment.RecordedEvent(item.Name));
         await db.SaveChangesAsync(ct);

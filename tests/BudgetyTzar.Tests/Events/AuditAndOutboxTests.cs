@@ -137,8 +137,11 @@ public sealed class AuditAndOutboxTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
+        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary", BudgetItemKind.Funding);
         var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
-        await BudgetApiTestClient.RecordAdjustment(client, budget.Id, groceries.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 1), "Initial groceries.");
+        await BudgetApiTestClient.RecordAdjustment(client, budget.Id, salary.Id, 100m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 1), "Expected salary.");
+        await BudgetApiTestClient.RecordAdjustment(client, budget.Id, groceries.Id, 100m, BudgetAdjustmentType.Debit, new DateOnly(2026, 6, 1), "Initial groceries.");
+        await BudgetApiTestClient.RecordAdjustment(client, budget.Id, groceries.Id, 50m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 1), "Reduced groceries.");
         await app.ProjectAuditEventsAsync(budget.Id);
 
         var events = await client.GetFromJsonAsync<IReadOnlyList<AuditEventDto>>(

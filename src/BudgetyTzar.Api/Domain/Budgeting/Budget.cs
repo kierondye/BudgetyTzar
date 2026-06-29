@@ -5,6 +5,8 @@ namespace BudgetyTzar.Api;
 public sealed class Budget
 {
     public const string NetPlannedSpendingExceededMessage = "Net planned spending must not exceed net planned income.";
+    public const string ConsumptionBudgetItemBecameFundingMessage = "A consumption item must not become a funding source through budget adjustments.";
+    public const string FundingBudgetItemBecameConsumptionMessage = "A funding item must not become a consumption item through budget adjustments.";
     public const string DuplicateBudgetItemNameMessage = "A budget item with this name already exists in this budget.";
 
     public Guid Id { get; init; } = Guid.NewGuid();
@@ -26,6 +28,24 @@ public sealed class Budget
             .Sum(x => x.SignedPlannedAmount());
 
         return netPlannedAmount + pendingAdjustment.SignedPlannedAmount() >= 0;
+    }
+
+    public string? ValidateBudgetItemKindForAdjustment(
+        BudgetItem budgetItem,
+        IReadOnlyCollection<BudgetAdjustment> existingAdjustments,
+        BudgetAdjustment pendingAdjustment)
+    {
+        var itemPlannedAmount = existingAdjustments
+            .Where(x => x.BudgetItemId == budgetItem.Id && x.Date <= pendingAdjustment.Date)
+            .Sum(x => x.SignedPlannedAmount());
+        var pendingItemPlannedAmount = itemPlannedAmount + pendingAdjustment.SignedPlannedAmount();
+
+        return budgetItem.Kind switch
+        {
+            BudgetItemKind.Consumption when pendingItemPlannedAmount > 0 => ConsumptionBudgetItemBecameFundingMessage,
+            BudgetItemKind.Funding when pendingItemPlannedAmount < 0 => FundingBudgetItemBecameConsumptionMessage,
+            _ => null
+        };
     }
 
     public string? ValidateBudgetItemName(IReadOnlyCollection<BudgetItem> existingItems, string name)

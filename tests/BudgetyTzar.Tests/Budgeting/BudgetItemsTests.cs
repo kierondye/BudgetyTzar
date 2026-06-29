@@ -54,9 +54,12 @@ public sealed class BudgetItemsTests
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
+        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary", BudgetItemKind.Funding);
         var retired = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Retired", BudgetItemKind.Consumption);
         var archiveDate = DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime);
 
+        await BudgetApiTestClient.RecordAdjustment(client, budget.Id, salary.Id, 15m, BudgetAdjustmentType.Credit, archiveDate, "Expected salary");
+        await BudgetApiTestClient.RecordAdjustment(client, budget.Id, retired.Id, 15m, BudgetAdjustmentType.Debit, archiveDate, "Retired budget");
         await BudgetApiTestClient.ArchiveBudgetItem(client, budget.Id, retired.Id);
 
         var retrospective = await client.PostAsJsonAsync(

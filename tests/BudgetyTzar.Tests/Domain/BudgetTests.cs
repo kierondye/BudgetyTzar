@@ -77,4 +77,104 @@ public sealed class BudgetTests
 
         Assert.False(canRecord);
     }
+
+    [Fact]
+    public void BudgetRejectsConsumptionAdjustmentThatWouldBecomeFunding()
+    {
+        var budget = Budget.Create("UK", "GBP");
+        var groceries = BudgetItem.Create(budget.Id, "Groceries", BudgetItemKind.Consumption);
+        var existingDebit = BudgetAdjustment.Create(
+            budget.Id,
+            groceries.Id,
+            75m,
+            BudgetAdjustmentType.Debit,
+            new DateOnly(2026, 6, 1),
+            "Expected groceries");
+        var correction = BudgetAdjustment.Create(
+            budget.Id,
+            groceries.Id,
+            100m,
+            BudgetAdjustmentType.Credit,
+            new DateOnly(2026, 6, 2),
+            "Correction");
+
+        var validationError = budget.ValidateBudgetItemKindForAdjustment(groceries, [existingDebit], correction);
+
+        Assert.Equal(Budget.ConsumptionBudgetItemBecameFundingMessage, validationError);
+    }
+
+    [Fact]
+    public void BudgetAllowsConsumptionCreditCorrectionWithinExistingConsumptionBudget()
+    {
+        var budget = Budget.Create("UK", "GBP");
+        var groceries = BudgetItem.Create(budget.Id, "Groceries", BudgetItemKind.Consumption);
+        var existingDebit = BudgetAdjustment.Create(
+            budget.Id,
+            groceries.Id,
+            100m,
+            BudgetAdjustmentType.Debit,
+            new DateOnly(2026, 6, 1),
+            "Expected groceries");
+        var correction = BudgetAdjustment.Create(
+            budget.Id,
+            groceries.Id,
+            25m,
+            BudgetAdjustmentType.Credit,
+            new DateOnly(2026, 6, 2),
+            "Correction");
+
+        var validationError = budget.ValidateBudgetItemKindForAdjustment(groceries, [existingDebit], correction);
+
+        Assert.Null(validationError);
+    }
+
+    [Fact]
+    public void BudgetRejectsFundingAdjustmentThatWouldBecomeConsumption()
+    {
+        var budget = Budget.Create("UK", "GBP");
+        var salary = BudgetItem.Create(budget.Id, "Salary", BudgetItemKind.Funding);
+        var existingCredit = BudgetAdjustment.Create(
+            budget.Id,
+            salary.Id,
+            75m,
+            BudgetAdjustmentType.Credit,
+            new DateOnly(2026, 6, 1),
+            "Expected salary");
+        var reversal = BudgetAdjustment.Create(
+            budget.Id,
+            salary.Id,
+            100m,
+            BudgetAdjustmentType.Debit,
+            new DateOnly(2026, 6, 2),
+            "Reversal");
+
+        var validationError = budget.ValidateBudgetItemKindForAdjustment(salary, [existingCredit], reversal);
+
+        Assert.Equal(Budget.FundingBudgetItemBecameConsumptionMessage, validationError);
+    }
+
+    [Fact]
+    public void BudgetAllowsFundingDebitCorrectionWithinExistingFundingBudget()
+    {
+        var budget = Budget.Create("UK", "GBP");
+        var salary = BudgetItem.Create(budget.Id, "Salary", BudgetItemKind.Funding);
+        var existingCredit = BudgetAdjustment.Create(
+            budget.Id,
+            salary.Id,
+            100m,
+            BudgetAdjustmentType.Credit,
+            new DateOnly(2026, 6, 1),
+            "Expected salary");
+        var reversal = BudgetAdjustment.Create(
+            budget.Id,
+            salary.Id,
+            25m,
+            BudgetAdjustmentType.Debit,
+            new DateOnly(2026, 6, 2),
+            "Reversal");
+
+        var validationError = budget.ValidateBudgetItemKindForAdjustment(salary, [existingCredit], reversal);
+
+        Assert.Null(validationError);
+    }
 }

@@ -252,10 +252,39 @@ Deferred work:
 
 ### Increment 5 - Budget Adjustment Kind Invariants
 
+Status: implemented, awaiting review.
+
 - Prevent consumption items from becoming funding sources through budget adjustments.
 - Prevent funding items from becoming consumption items through budget adjustments.
 - Preserve legitimate corrections, refunds, reversals, underpayments, and overpayments.
 - Keep the existing budget-level invariant that budget adjustment credits minus budget adjustment debits must be greater than or equal to zero as of the relevant date.
+
+Implementation notes:
+
+- Added command-side validation for single budget adjustment commands so each budget item's net planned adjustment position, as of the adjustment date, remains consistent with its `BudgetItemKind`.
+- Consumption items may receive credit budget adjustments only while their net planned position remains consumption-side.
+- Funding items may receive debit budget adjustments only while their net planned position remains funding-side.
+- Existing opposite-direction corrections remain valid when they reduce prior same-kind budget without crossing zero.
+- Updated older audit, archive, and event-contract fixtures that used standalone consumption credits as setup data so those credits are now valid corrections against existing consumption budget.
+
+Architectural decisions:
+
+- `BudgetItemKind` remains authoritative command state and is not inferred from debit or credit direction.
+- The invariant is scoped to budget adjustment commands and does not define `AvailableBudget`.
+- Reallocation availability and consumption-only reallocation policy remain deferred because they depend on the still-undefined `AvailableBudget` command calculation.
+- Snapshot formulas, reporting presentation, event contracts, and persistence schema were not changed.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetAdjustmentsTests|FullyQualifiedName~BudgetItemsTests|FullyQualifiedName~AuditEventProjectionTests|FullyQualifiedName~AuditAndOutboxTests|FullyQualifiedName~EventContractTests"` - passed, 25 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 101 tests.
+
+Deferred work:
+
+- Transaction allocation interpretation tests.
+- Reallocation availability rules and `AvailableBudget`.
+- Consumption-only reallocation policy, if still desired after `AvailableBudget` is defined.
+- Step 13 concurrency work.
 
 ### Increment 6 - Transaction Allocation Interpretation Tests
 

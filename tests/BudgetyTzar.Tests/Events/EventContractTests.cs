@@ -99,9 +99,12 @@ public sealed class EventContractTests
         await app.ResetDatabaseAsync();
 
         var budget = await BudgetApiTestClient.CreateBudget(client);
+        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary", BudgetItemKind.Funding);
         var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
         var savings = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Savings", BudgetItemKind.Consumption);
         var archived = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Old category", BudgetItemKind.Consumption);
+        await BudgetApiTestClient.RecordAdjustment(client, budget.Id, salary.Id, 20m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 12));
+        await BudgetApiTestClient.RecordAdjustment(client, budget.Id, groceries.Id, 20m, BudgetAdjustmentType.Debit, new DateOnly(2026, 6, 12));
         await BudgetApiTestClient.RecordReallocation(client, budget.Id, groceries.Id, savings.Id, 10m);
         await BudgetApiTestClient.RecordAdjustment(client, budget.Id, groceries.Id, 5m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 12));
         await BudgetApiTestClient.ArchiveBudgetItem(client, budget.Id, archived.Id);
