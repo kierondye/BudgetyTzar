@@ -6,7 +6,7 @@ Tighten the budget item domain model by introducing `BudgetItemKind` before cont
 
 ## Status
 
-Increment 3 implemented and awaiting review. Increment 1 documentation and specification semantics were approved before implementation, and Increment 2 introduced the command/API/event contract language.
+Increment 5 implemented and awaiting review. Increment 1 documentation and specification semantics were approved before implementation, Increment 2 introduced the command/API/event contract language, Increment 3 carried kind through read models, Increment 4 updated tests and fixtures, and Increment 5 added budget adjustment kind invariants.
 
 ## Ubiquitous Language
 
@@ -286,14 +286,63 @@ Deferred work:
 - Consumption-only reallocation policy, if still desired after `AvailableBudget` is defined.
 - Step 13 concurrency work.
 
-### Increment 6 - Transaction Allocation Interpretation Tests
+### Increment 6 - Effective Budget Command Validation Refactor
+
+Insert this refactoring increment before adding further business-rule validation. Increment 5 intentionally exposed that some validation methods on `Budget` now behave like static helper methods: they validate a passed-in `BudgetItem` and passed-in dated adjustment state while using little or no state from the `Budget` instance itself. That blurs the distinction between `Budget` as the long-lived identity/container and the date-effective command state needed to decide whether a new adjustment or reallocation is valid.
+
+Goal:
+
+- Keep `Budget` as the long-lived identity/container for budget items, adjustments, reallocations, transactions, and events.
+- Introduce an `EffectiveBudget`-style object, or a better repository-local name if one emerges during implementation, to represent budget state effective on a specific date for command validation.
+- Move item-level kind compatibility checks toward `BudgetItem`.
+- Let `EffectiveBudget` coordinate dated budget adjustment and reallocation validation using only the item balances/state needed for the target date.
+- Keep `BudgetReallocation` responsible for its own shape: at least two movements, credits equal debits, and initially consumption-only movements.
+- Let repository/application code hydrate `EffectiveBudget` from command-side persistence for the target date instead of loading full adjustment history into `Budget` unless the command actually requires it.
+
+Likely implementation shape:
+
+- Add a small command-side model such as `EffectiveBudget`, `EffectiveBudgetItem`, or equivalent naming aligned with the code once inspected.
+- Represent each budget item's effective planned position as of the command date, rather than passing full adjustment history into domain methods.
+- Move `Budget.ValidateBudgetItemKindForAdjustment` behavior into item/effective-state collaboration.
+- Move `Budget.CanRecordAdjustment` behavior into the effective budget object while preserving the existing net planned income invariant.
+- Update adjustment and reallocation handlers only where needed to hydrate and use the effective object.
+- Keep tests focused on unchanged behavior and clearer ownership boundaries.
+
+Invariants to preserve:
+
+- The total planned funding across all funding budget items must be greater than or equal to the total planned consumption across all consumption budget items as of the relevant date.
+- Consumption items must not become funding sources through budget adjustments.
+- Funding items must not become consumption items through budget adjustments.
+- Opposite-direction corrections remain valid when interpreted against existing same-kind budget.
+- Reallocations must contain at least two movements and credits must equal debits.
+- Reallocations should initially move budget between consumption items, without enforcing `AvailableBudget` until it is precisely defined.
+
+Out of scope:
+
+- Defining or enforcing `AvailableBudget`.
+- Reallocation availability checks.
+- Transaction allocation interpretation tests.
+- Snapshot/report formula changes.
+- Event sourcing infrastructure.
+- Generic repositories, mediators, or broad persistence abstractions.
+- Persistence schema changes unless a narrow implementation detail proves unavoidable.
+
+Completion notes to add when implemented:
+
+- Final naming decision for the effective budget object.
+- Which responsibilities moved from `Budget`, `BudgetItem`, and `BudgetReallocation`.
+- How command handlers hydrate date-effective state.
+- Tests run.
+- Any deferred cleanup or business rules.
+
+### Increment 7 - Transaction Allocation Interpretation Tests
 
 - Add tests proving transaction allocations do not change budget item kind.
 - Add tests for normal funding and consumption transaction allocation cases.
 - Add tests for refund and correction cases in the opposite direction.
 - Avoid adding stricter transaction-allocation command invariants until the desired actual-activity semantics are fully specified.
 
-### Increment 7 - Reallocation Availability Invariant
+### Increment 8 - Reallocation Availability Invariant
 
 Start only after `AvailableBudget` is precisely defined.
 
@@ -301,7 +350,7 @@ Start only after `AvailableBudget` is precisely defined.
 - Prevent reallocations from moving more budget away from a consumption item than its AvailableBudget.
 - Add PostgreSQL-backed concurrency tests for competing reallocations if the invariant depends on current available budget.
 
-### Increment 8 - Return To Step 13
+### Increment 9 - Return To Step 13
 
 - Resume `docs/refactor-roadmap/13-architecture-boundary-hardening.md` after the item-kind invariants are explicit.
 - Revisit concurrent budget invariant correctness using the tightened aggregate and BudgetLedger semantics.
