@@ -219,11 +219,36 @@ Deferred work:
 
 ### Increment 4 - Test And Fixture Updates
 
-Status: partially complete for Increment 2 surfaces.
+Status: complete.
 
 - Update all salary, bonus, and income-source fixtures to `Funding`.
 - Update groceries, mortgage, petrol, eating out, incidentals, holiday funds, car maintenance, Christmas, and similar fixtures to `Consumption`.
 - Update API, domain, projection, audit, and event contract tests to assert kind where exposed.
+
+Implementation notes:
+
+- Reviewed budget item creation call sites across tests and production helpers; all budget item fixtures now create items explicitly as `Funding` or `Consumption`.
+- Existing salary and funding-source fixtures use `Funding`.
+- Existing groceries, mortgage, dining, household, retired, old category, savings, and similar spending bucket fixtures use `Consumption`.
+- API, domain, event contract, projection, and snapshot tests assert kind where those surfaces expose budget item identity.
+- No production code changes were needed for this increment after the Increment 2 and Increment 3 work.
+
+Architectural decisions:
+
+- Fixture kind is explicit domain language, not inferred from item name at runtime or from debit/credit direction.
+- Test helper APIs require callers to choose the kind so new fixtures cannot silently create semantically vague budget items.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetSnapshotsTests|FullyQualifiedName~ProjectionProcessingTests|FullyQualifiedName~KafkaProjectionConsumerTests|FullyQualifiedName~PostgresCompatibilityTests|FullyQualifiedName~EventPayloadRecordContractTests|FullyQualifiedName~EventContractTests"` - passed, 29 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 96 tests.
+
+Deferred work:
+
+- Budget adjustment kind validation.
+- Transaction allocation interpretation rules.
+- Reallocation availability rules and `AvailableBudget`.
+- Step 13 concurrency work.
 
 ### Increment 5 - Budget Adjustment Kind Invariants
 
