@@ -27,6 +27,18 @@ public sealed class BudgetReallocationTests
     }
 
     [Fact]
+    public void ReallocationRequiresConsumptionBudgetItems()
+    {
+        var budgetId = Guid.NewGuid();
+        var validationError = BudgetReallocation.ValidateBudgetItems([
+            BudgetItem.Create(budgetId, "Salary", BudgetItemKind.Funding),
+            BudgetItem.Create(budgetId, "Groceries", BudgetItemKind.Consumption)
+        ]);
+
+        Assert.Equal(BudgetReallocation.ConsumptionItemsOnlyMessage, validationError);
+    }
+
+    [Fact]
     public void ReallocationCreatesLinkedBudgetAdjustments()
     {
         var budgetId = Guid.NewGuid();

@@ -6,6 +6,8 @@ public sealed record BudgetReallocationAdjustment(Guid BudgetItemId, decimal Amo
 
 public sealed class BudgetReallocation
 {
+    public const string ConsumptionItemsOnlyMessage = "Budget reallocations can only move budget between consumption items.";
+
     public Guid Id { get; init; } = Guid.NewGuid();
     public Guid BudgetId { get; set; }
     public Guid FromBudgetItemId { get; set; }
@@ -39,6 +41,11 @@ public sealed class BudgetReallocation
             ? null
             : "Reallocation credits must equal reallocation debits.";
     }
+
+    public static string? ValidateBudgetItems(IReadOnlyCollection<BudgetItem> budgetItems) =>
+        budgetItems.All(x => x.Kind == BudgetItemKind.Consumption)
+            ? null
+            : ConsumptionItemsOnlyMessage;
 
     public IReadOnlyList<BudgetAdjustment> CreateLinkedAdjustments(IReadOnlyCollection<BudgetReallocationAdjustment> adjustments)
     {

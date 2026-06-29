@@ -50,4 +50,27 @@ public sealed class BudgetReallocationsTests
         Assert.Equal(-30m, snapshot!.BudgetItems.Single(x => x.BudgetItemId == dining.Id).Balance);
         Assert.Equal(30m, snapshot.BudgetItems.Single(x => x.BudgetItemId == groceries.Id).Balance);
     }
+
+    [Fact]
+    public async Task ReallocationRejectsFundingBudgetItems()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await BudgetApiTestClient.CreateBudget(client);
+        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary", BudgetItemKind.Funding);
+        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/budgets/{budget.Id}/reallocations",
+            new CreateBudgetItemReallocationRequest(
+                new DateOnly(2026, 6, 5),
+                "Move funding",
+                [
+                    new BudgetReallocationAdjustmentItem(salary.Id, 30m, BudgetAdjustmentType.Credit),
+                    new BudgetReallocationAdjustmentItem(groceries.Id, 30m, BudgetAdjustmentType.Debit)
+                ]));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
 }

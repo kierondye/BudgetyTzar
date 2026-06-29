@@ -19,6 +19,7 @@ public sealed class AuditEventProjectionTests
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
         var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
+        var dining = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Dining", BudgetItemKind.Consumption);
         var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary", BudgetItemKind.Funding);
         await BudgetApiTestClient.RecordAdjustment(client, budget.Id, salary.Id, 150m, BudgetAdjustmentType.Credit, new DateOnly(2026, 6, 1), "Expected salary.");
         await BudgetApiTestClient.RecordAdjustment(client, budget.Id, groceries.Id, 100m, BudgetAdjustmentType.Debit, new DateOnly(2026, 6, 1), "Initial groceries.");
@@ -31,7 +32,7 @@ public sealed class AuditEventProjectionTests
                 "Move funds",
                 [
                     new BudgetReallocationAdjustmentItem(groceries.Id, 10m, BudgetAdjustmentType.Debit),
-                    new BudgetReallocationAdjustmentItem(salary.Id, 10m, BudgetAdjustmentType.Credit)
+                    new BudgetReallocationAdjustmentItem(dining.Id, 10m, BudgetAdjustmentType.Credit)
                 ]));
         reallocationResponse.EnsureSuccessStatusCode();
         var transaction = await BudgetApiTestClient.CreateTransaction(client, budget.Id, new DateOnly(2026, 6, 3), 25m, TransactionDirection.Debit);

@@ -6,7 +6,7 @@ Tighten the budget item domain model by introducing `BudgetItemKind` before cont
 
 ## Status
 
-Increment 7 implemented and awaiting review. Increment 1 documentation and specification semantics were approved before implementation, Increment 2 introduced the command/API/event contract language, Increment 3 carried kind through read models, Increment 4 updated tests and fixtures, Increment 5 added budget adjustment kind invariants, Increment 6 introduced date-effective command validation state, and Increment 7 added transaction allocation interpretation tests.
+Increment 8 implemented and awaiting review. Increment 1 documentation and specification semantics were approved before implementation, Increment 2 introduced the command/API/event contract language, Increment 3 carried kind through read models, Increment 4 updated tests and fixtures, Increment 5 added budget adjustment kind invariants, Increment 6 introduced date-effective command validation state, Increment 7 added transaction allocation interpretation tests, and Increment 8 added the consumption-only reallocation kind policy without defining or enforcing `AvailableBudget`.
 
 ## Ubiquitous Language
 
@@ -399,10 +399,43 @@ Tests run:
 Deferred work:
 
 - Reallocation availability rules and `AvailableBudget`.
-- Consumption-only reallocation policy remains deferred until command-side reallocation semantics are clarified alongside `AvailableBudget`.
 - Step 13 concurrency work.
 
-### Increment 8 - Reallocation Availability Invariant
+### Increment 8 - Consumption-Only Reallocation Kind Policy
+
+Status: implemented, awaiting review.
+
+- Require budget reallocations to involve consumption budget items only.
+- Keep existing reallocation shape rules: at least two movements and credits equal debits.
+- Do not enforce reallocation availability until `AvailableBudget` is precisely defined.
+
+Implementation notes:
+
+- Added a `BudgetReallocation` domain validation rule requiring all involved budget items to have `BudgetItemKind.Consumption`.
+- Wired the reallocation command handler to run the kind validation after item existence and archive-date eligibility are checked.
+- Added domain and API tests proving reallocations reject funding budget items.
+- Updated an audit projection fixture so the reallocation setup uses two consumption items while the funding item remains available for budget item archive coverage.
+- No persistence schema, event contract, reporting, snapshot, or API response changes were required.
+
+Architectural decisions:
+
+- `BudgetItemKind` is treated as authoritative budgeting command state for reallocation validation.
+- Reallocation kind validation uses the explicit budget item kind and does not infer meaning from debit or credit direction.
+- This increment intentionally enforces only the consumption-only policy; it does not define `AvailableBudget` or check whether the credited consumption item has enough available budget.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetReallocationTests|FullyQualifiedName~BudgetReallocationsTests|FullyQualifiedName~AuditEventProjectionTests|FullyQualifiedName~EventContractTests"` - passed, 12 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 109 tests.
+
+Deferred work:
+
+- Defining `AvailableBudget`.
+- Reallocation availability rules.
+- PostgreSQL-backed concurrency tests for competing reallocations if the eventual availability invariant depends on current available budget.
+- Step 13 concurrency work.
+
+### Increment 9 - Reallocation Availability Invariant
 
 Start only after `AvailableBudget` is precisely defined.
 
@@ -410,7 +443,7 @@ Start only after `AvailableBudget` is precisely defined.
 - Prevent reallocations from moving more budget away from a consumption item than its AvailableBudget.
 - Add PostgreSQL-backed concurrency tests for competing reallocations if the invariant depends on current available budget.
 
-### Increment 9 - Return To Step 13
+### Increment 10 - Return To Step 13
 
 - Resume `docs/refactor-roadmap/13-architecture-boundary-hardening.md` after the item-kind invariants are explicit.
 - Revisit concurrent budget invariant correctness using the tightened aggregate and BudgetLedger semantics.

@@ -72,6 +72,15 @@ public sealed class RecordReallocationHandler(
             return CommandResult<BudgetReallocation>.ValidationProblem(BudgetItemValidationErrors.ArchivedBudgetItemErrors());
         }
 
+        var budgetItemValidationError = BudgetReallocation.ValidateBudgetItems(items);
+        if (budgetItemValidationError is not null)
+        {
+            return CommandResult<BudgetReallocation>.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(adjustments)] = [budgetItemValidationError]
+            });
+        }
+
         var reallocation = BudgetReallocation.Create(budgetId, date, notes);
         var linkedAdjustments = reallocation.CreateLinkedAdjustments(reallocationAdjustments);
 
