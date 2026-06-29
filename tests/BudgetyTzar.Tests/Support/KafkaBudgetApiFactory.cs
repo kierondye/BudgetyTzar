@@ -38,7 +38,7 @@ internal sealed class KafkaBudgetApiFactory(string bootstrapServers) : WebApplic
 
             services.AddSingleton<DbConnection>(_ =>
             {
-                var connection = new SqliteConnection("DataSource=:memory:");
+                var connection = new SqliteConnection("DataSource=:memory:;Default Timeout=30");
                 connection.Open();
                 return connection;
             });
