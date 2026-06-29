@@ -37,7 +37,8 @@ public sealed class ProjectionProcessingTests
         Assert.True(await db.BudgetItemProjectionStates.AnyAsync(x =>
             x.BudgetId == budgetId
             && x.BudgetItemId == budgetItemId
-            && x.Name == "Salary"));
+            && x.Name == "Salary"
+            && x.Kind == BudgetItemKind.Funding));
         Assert.False(await db.ProcessedProjectionEvents.AnyAsync(x => x.EventId == eventId));
     }
 
@@ -119,7 +120,11 @@ public sealed class ProjectionProcessingTests
         Assert.Equal(messages.Count, await db.ProcessedProjectionEvents.CountAsync(x => x.BudgetId == budget.Id && x.Status == ProjectionProcessingStatus.Completed));
         Assert.Single(await db.BudgetItemProjectionStates.AsNoTracking().Where(x => x.BudgetId == budget.Id).ToListAsync());
         Assert.Single(await db.BudgetAdjustmentProjectionStates.AsNoTracking().Where(x => x.BudgetId == budget.Id).ToListAsync());
-        Assert.True(await db.BudgetSnapshotItemProjections.AnyAsync(x => x.BudgetId == budget.Id && x.BudgetItemId == salary.Id && x.Balance == -100m));
+        Assert.True(await db.BudgetSnapshotItemProjections.AnyAsync(x =>
+            x.BudgetId == budget.Id
+            && x.BudgetItemId == salary.Id
+            && x.Kind == BudgetItemKind.Funding
+            && x.Balance == -100m));
     }
 
     [Fact]

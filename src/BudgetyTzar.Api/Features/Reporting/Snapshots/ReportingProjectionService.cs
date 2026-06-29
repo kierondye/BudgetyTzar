@@ -27,7 +27,7 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
         CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
-        await UpsertBudgetItemState(payload.BudgetItemId, payload.BudgetId, payload.Name, isArchived: false, archivedAt: null, now, ct);
+        await UpsertBudgetItemState(payload.BudgetItemId, payload.BudgetId, payload.Name, payload.Kind, isArchived: false, archivedAt: null, now, ct);
         return await ApplyProjectionState(payload.BudgetId, DateOnly.FromDateTime(occurredAt.UtcDateTime), occurredAt, ct);
     }
 
@@ -39,7 +39,7 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
         CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
-        await UpsertBudgetItemState(payload.BudgetItemId, payload.BudgetId, payload.Name, isArchived: true, payload.ArchivedAt, now, ct);
+        await UpsertBudgetItemState(payload.BudgetItemId, payload.BudgetId, payload.Name, payload.Kind, isArchived: true, payload.ArchivedAt, now, ct);
         return await ApplyProjectionState(payload.BudgetId, fromDate: null, occurredAt, ct);
     }
 
@@ -187,6 +187,7 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
         Guid budgetItemId,
         Guid budgetId,
         string name,
+        BudgetItemKind kind,
         bool isArchived,
         DateTimeOffset? archivedAt,
         DateTimeOffset now,
@@ -200,6 +201,7 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
                 BudgetItemId = budgetItemId,
                 BudgetId = budgetId,
                 Name = name,
+                Kind = kind,
                 IsArchived = isArchived,
                 ArchivedAt = archivedAt,
                 UpdatedAt = now
@@ -208,6 +210,7 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
         }
 
         state.Name = name;
+        state.Kind = kind;
         state.IsArchived = isArchived;
         state.ArchivedAt = archivedAt;
         state.UpdatedAt = now;
@@ -368,6 +371,7 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
                 Date = snapshot.Date,
                 BudgetItemId = item.BudgetItemId,
                 Name = item.Name,
+                Kind = item.Kind,
                 Balance = item.Balance,
                 PlannedCredit = item.PlannedCredit,
                 PlannedDebit = item.PlannedDebit,
@@ -453,6 +457,7 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
                 {
                     item.BudgetItemId,
                     item.Name,
+                    item.Kind,
                     Balance = balance,
                     PlannedCredit = plannedCredit,
                     PlannedDebit = plannedDebit,
@@ -503,6 +508,7 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
             calculatedItems.Select(x => new BudgetSnapshotItem(
                 x.BudgetItemId,
                 x.Name,
+                x.Kind,
                 x.Balance,
                 x.PlannedCredit,
                 x.PlannedDebit,

@@ -55,7 +55,11 @@ public sealed class KafkaProjectionConsumerTests
         {
             using var scope = app.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
-            return await db.BudgetSnapshotItemProjections.AnyAsync(x => x.BudgetId == budget.Id && x.BudgetItemId == salary.Id && x.Balance == -100m)
+            return await db.BudgetSnapshotItemProjections.AnyAsync(x =>
+                    x.BudgetId == budget.Id
+                    && x.BudgetItemId == salary.Id
+                    && x.Kind == BudgetItemKind.Funding
+                    && x.Balance == -100m)
                 && await db.AuditEvents.AnyAsync(x => x.BudgetId == budget.Id && x.EventType == "BudgetAdjustmentRecorded");
         });
     }
@@ -115,7 +119,11 @@ public sealed class KafkaProjectionConsumerTests
                 var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
                 return await db.ProjectionEventFailures.AnyAsync(x => x.Status == ProjectionFailureStatus.DeadLettered)
                     && await db.AuditEventFailures.AnyAsync(x => x.Status == AuditFailureStatus.DeadLettered)
-                    && await db.BudgetSnapshotItemProjections.AnyAsync(x => x.BudgetId == budget.Id && x.BudgetItemId == salary.Id && x.Balance == -100m);
+                    && await db.BudgetSnapshotItemProjections.AnyAsync(x =>
+                        x.BudgetId == budget.Id
+                        && x.BudgetItemId == salary.Id
+                        && x.Kind == BudgetItemKind.Funding
+                        && x.Balance == -100m);
             },
             async () =>
             {

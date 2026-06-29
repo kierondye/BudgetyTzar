@@ -12,6 +12,7 @@ public sealed record BudgetSnapshot(
 public sealed record BudgetSnapshotItem(
     Guid BudgetItemId,
     string Name,
+    BudgetItemKind Kind,
     decimal Balance,
     decimal PlannedCredit,
     decimal PlannedDebit,

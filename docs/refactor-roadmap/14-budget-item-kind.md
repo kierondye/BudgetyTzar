@@ -6,7 +6,7 @@ Tighten the budget item domain model by introducing `BudgetItemKind` before cont
 
 ## Status
 
-Increment 2 implemented and awaiting review. Increment 1 documentation and specification semantics were approved before implementation.
+Increment 3 implemented and awaiting review. Increment 1 documentation and specification semantics were approved before implementation, and Increment 2 introduced the command/API/event contract language.
 
 ## Ubiquitous Language
 
@@ -141,6 +141,7 @@ Implementation notes:
 - Added `BudgetItemKind` to the authoritative `BudgetItem` domain model and budget item creation path.
 - API budget item creation now requires `kind`; responses include `kind`.
 - `BudgetItemCreatedPayload` and `budget-item-created.v1` now carry required `kind`.
+- `BudgetItemArchivedPayload` and `budget-item-archived.v1` also carry required `kind` so archived budget items remain fully described.
 - Tests and API helpers now create budget items explicitly as `Funding` or `Consumption`.
 - A narrow EF-generated `BudgetItems.Kind` migration was added because the command-side EF model now owns the authoritative kind and PostgreSQL-backed tests apply migrations. Reporting projection and snapshot/read-model persistence were not broadened in this increment.
 
@@ -170,6 +171,8 @@ Deferred work:
 
 ### Increment 3 - Database And Read Model Updates
 
+Status: implemented, awaiting review.
+
 - Add kind to reporting projection item state.
 - Add kind to snapshot/read models where budget item identity is exposed.
 - Ensure projection rebuilds can reconstruct item kind from budget item events.
@@ -177,6 +180,36 @@ Deferred work:
 Command-side `BudgetItems.Kind` was pulled into Increment 2 as a narrow migration because the authoritative domain model is EF-backed and PostgreSQL test setup applies migrations.
 
 - Add migrations rather than rewriting existing migrations for any remaining read-model persistence changes.
+
+Implementation notes:
+
+- Added `BudgetItemKind` to `BudgetItemProjectionState`, `BudgetSnapshotItemProjection`, and `BudgetSnapshotItem`.
+- Reporting projection state now stores kind from budget item events, including archive events.
+- Projection-backed snapshot rows carry kind from projection item state.
+- Direct snapshot calculation carries kind from authoritative `BudgetItems`.
+- Snapshot calculations, totals, archived-item filtering, and balance formulas were not changed.
+- Added an EF-generated migration for reporting read-model kind columns. Existing read-model rows are backfilled from authoritative `BudgetItems.Kind` where matching command rows exist, with `Consumption` only as the non-null fallback.
+
+Architectural decisions:
+
+- Reporting read models carry `BudgetItemKind` so reporting surfaces can explain budget item semantics, but they do not own or infer it.
+- Kind remains independent from debit/credit direction and is not derived from adjustments, reallocations, or transaction allocations.
+- The budget item archived event was also tightened to require kind because archived budget items are not expected to exist without a kind.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetSnapshotsTests|FullyQualifiedName~ProjectionProcessingTests|FullyQualifiedName~KafkaProjectionConsumerTests|FullyQualifiedName~PostgresCompatibilityTests"` - passed, 16 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 96 tests.
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetItemTests|FullyQualifiedName~EventPayloadRecordContractTests|FullyQualifiedName~EventContractTests|FullyQualifiedName~ProjectionProcessingTests|FullyQualifiedName~BudgetSnapshotsTests"` - passed, 25 tests after adding kind to the archive event path.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 96 tests after adding kind to the archive event path.
+- `dotnet build BudgetyTzar.sln /nr:false /p:UseSharedCompilation=false` was attempted, but the solution build hung with no output and was stopped. The full test run compiled both projects successfully before executing.
+
+Deferred work:
+
+- Budget adjustment kind validation.
+- Transaction allocation interpretation rules.
+- Reallocation availability rules and `AvailableBudget`.
+- Step 13 concurrency work.
 
 ### Increment 4 - Test And Fixture Updates
 

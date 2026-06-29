@@ -133,6 +133,7 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
             entity.ToTable("budget_snapshot_item");
             entity.HasKey(x => new { x.SnapshotId, x.BudgetItemId });
             entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.Kind).HasConversion<string>().HasMaxLength(24).IsRequired();
             entity.Property(x => x.Balance).HasPrecision(18, 2);
             entity.Property(x => x.PlannedCredit).HasPrecision(18, 2);
             entity.Property(x => x.PlannedDebit).HasPrecision(18, 2);
@@ -158,6 +159,7 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
             entity.ToTable("budget_item_projection_state");
             entity.HasKey(x => x.BudgetItemId);
             entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.Kind).HasConversion<string>().HasMaxLength(24).IsRequired();
             entity.HasIndex(x => new { x.BudgetId, x.Name });
         });
 

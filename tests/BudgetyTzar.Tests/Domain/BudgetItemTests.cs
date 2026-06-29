@@ -19,6 +19,8 @@ public sealed class BudgetItemTests
         Assert.Equal("BudgetItemArchived", domainEvent.EventType);
         Assert.Equal(budgetId, domainEvent.BudgetId);
         Assert.Equal(item.Id, domainEvent.EntityId);
+        var payload = Assert.IsType<BudgetItemArchivedPayload>(domainEvent.Payload);
+        Assert.Equal(BudgetItemKind.Consumption, payload.Kind);
     }
 
     [Fact]

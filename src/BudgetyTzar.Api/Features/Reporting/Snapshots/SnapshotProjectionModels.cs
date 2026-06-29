@@ -19,6 +19,7 @@ public sealed class BudgetSnapshotItemProjection
     public Guid BudgetId { get; set; }
     public DateOnly Date { get; set; }
     public required string Name { get; set; }
+    public BudgetItemKind Kind { get; set; }
     public decimal Balance { get; set; }
     public decimal PlannedCredit { get; set; }
     public decimal PlannedDebit { get; set; }

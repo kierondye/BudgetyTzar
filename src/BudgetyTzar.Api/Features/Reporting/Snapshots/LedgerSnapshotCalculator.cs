@@ -6,6 +6,7 @@ namespace BudgetyTzar.Api.Application.Reporting;
 file sealed record BudgetSnapshotCalculationItem(
     Guid BudgetItemId,
     string Name,
+    BudgetItemKind Kind,
     decimal Balance,
     decimal PlannedCredit,
     decimal PlannedDebit,
@@ -72,6 +73,7 @@ public static class LedgerSnapshotCalculator
                 return new BudgetSnapshotCalculationItem(
                     line.Id,
                     line.Name,
+                    line.Kind,
                     balance,
                     plannedCredit,
                     plannedDebit,
@@ -122,6 +124,7 @@ public static class LedgerSnapshotCalculator
                 .Select(x => new BudgetSnapshotItem(
                     x.BudgetItemId,
                     x.Name,
+                    x.Kind,
                     x.Balance,
                     x.PlannedCredit,
                     x.PlannedDebit,
@@ -159,6 +162,7 @@ public static class LedgerSnapshotCalculator
             .Select(x => new BudgetSnapshotItem(
                 x.BudgetItemId,
                 x.Name,
+                x.Kind,
                 x.Balance,
                 x.PlannedCredit,
                 x.PlannedDebit,

@@ -35,6 +35,7 @@ public sealed class EventPayloadRecordContractTests
                 BudgetId,
                 BudgetItemId,
                 "Old category",
+                BudgetItemKind.Consumption,
                 new DateTimeOffset(2026, 6, 15, 10, 30, 0, TimeSpan.Zero))
         },
         {

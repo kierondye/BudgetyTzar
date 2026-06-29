@@ -66,6 +66,8 @@ public sealed class BudgetSnapshotsTests
         ]);
 
         var afterSpendSnapshot = await BudgetApiTestClient.GetSnapshot(client, budget.Id, new DateOnly(2026, 6, 21));
+        Assert.Equal(BudgetItemKind.Funding, afterSpendSnapshot.BudgetItems.Single(x => x.BudgetItemId == salary.Id).Kind);
+        Assert.Equal(BudgetItemKind.Consumption, afterSpendSnapshot.BudgetItems.Single(x => x.BudgetItemId == groceries.Id).Kind);
         BudgetApiTestClient.AssertSnapshot(
             afterSpendSnapshot,
             2_800m,
@@ -116,6 +118,7 @@ public sealed class BudgetSnapshotsTests
 
         var item = Assert.Single(snapshot!.BudgetItems);
         Assert.Equal(groceries.Id, item.BudgetItemId);
+        Assert.Equal(BudgetItemKind.Consumption, item.Kind);
         Assert.Equal(0m, item.Balance);
     }
 
@@ -151,11 +154,14 @@ public sealed class BudgetSnapshotsTests
         var item = await db.BudgetSnapshotItemProjections.AsNoTracking().SingleAsync(x => x.SnapshotId == snapshot.Id && x.BudgetItemId == groceries.Id);
 
         Assert.Equal(65m, item.Balance);
+        Assert.Equal(BudgetItemKind.Consumption, item.Kind);
         Assert.Equal(-35m, snapshot.TotalBalance);
 
         var apiSnapshot = await client.GetFromJsonAsync<BudgetSnapshot>(
             $"/api/budgets/{budget.Id}/snapshot?date=2026-06-30");
-        Assert.Equal(65m, apiSnapshot!.BudgetItems.Single(x => x.BudgetItemId == groceries.Id).Balance);
+        var groceriesSnapshotItem = apiSnapshot!.BudgetItems.Single(x => x.BudgetItemId == groceries.Id);
+        Assert.Equal(BudgetItemKind.Consumption, groceriesSnapshotItem.Kind);
+        Assert.Equal(65m, groceriesSnapshotItem.Balance);
 
         await app.ProjectAuditEventsAsync(budget.Id);
         var apiAuditEvents = await client.GetFromJsonAsync<IReadOnlyList<AuditEventDto>>(

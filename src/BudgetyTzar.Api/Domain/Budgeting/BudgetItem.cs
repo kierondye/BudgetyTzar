@@ -47,7 +47,7 @@ public sealed class BudgetItem
             nameof(BudgetItem),
             Id,
             $"Archived budget item {Name}.",
-            Payload: new BudgetItemArchivedPayload(BudgetId, Id, Name, archivedAt));
+            Payload: new BudgetItemArchivedPayload(BudgetId, Id, Name, Kind, archivedAt));
     }
 
     public bool CanAcceptActivityOn(DateOnly activityDate)

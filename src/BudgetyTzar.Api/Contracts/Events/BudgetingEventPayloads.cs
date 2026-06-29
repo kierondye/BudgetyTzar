@@ -15,6 +15,7 @@ public sealed record BudgetItemArchivedPayload(
     Guid BudgetId,
     Guid BudgetItemId,
     string Name,
+    BudgetItemKind Kind,
     DateTimeOffset ArchivedAt);
 
 public sealed record BudgetAdjustmentRecordedPayload(

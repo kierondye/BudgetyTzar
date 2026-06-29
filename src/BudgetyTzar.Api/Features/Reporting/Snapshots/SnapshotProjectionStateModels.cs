@@ -5,6 +5,7 @@ public sealed class BudgetItemProjectionState
     public Guid BudgetItemId { get; set; }
     public Guid BudgetId { get; set; }
     public required string Name { get; set; }
+    public BudgetItemKind Kind { get; set; }
     public bool IsArchived { get; set; }
     public DateTimeOffset? ArchivedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
