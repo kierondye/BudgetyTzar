@@ -20,7 +20,7 @@ public static partial class Endpoints
                 return validationProblem;
             }
 
-            var result = await handler.HandleCanonical(
+            var result = await handler.Handle(
                 budgetId,
                 request.Date,
                 request.Notes,

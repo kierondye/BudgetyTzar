@@ -32,7 +32,7 @@ public sealed class RecordAdjustmentHandler(
     BudgetDbContext db,
     DomainEventOutboxWriter events)
 {
-    public async Task<CommandResult<BudgetAdjustment>> HandleCanonical(
+    public async Task<CommandResult<BudgetAdjustment>> Handle(
         Guid budgetId,
         Guid budgetItemId,
         decimal amount,

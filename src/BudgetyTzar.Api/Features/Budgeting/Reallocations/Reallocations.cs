@@ -36,7 +36,7 @@ public sealed class RecordReallocationHandler(
     DomainEventOutboxWriter events,
     BudgetItemEligibilityService eligibility)
 {
-    public async Task<CommandResult<BudgetReallocation>> HandleCanonical(
+    public async Task<CommandResult<BudgetReallocation>> Handle(
         Guid budgetId,
         DateOnly date,
         string? notes,
