@@ -7,21 +7,32 @@ namespace BudgetyTzar.Tests;
 
 public sealed class TransactionAllocationsTests
 {
-    [Fact]
-    public async Task OppositeDirectionTransactionAllocationIsAccepted()
+    [Theory]
+    [InlineData(BudgetItemKind.Consumption, TransactionDirection.Debit, "Groceries")]
+    [InlineData(BudgetItemKind.Funding, TransactionDirection.Credit, "Salary")]
+    [InlineData(BudgetItemKind.Consumption, TransactionDirection.Credit, "Groceries refund")]
+    [InlineData(BudgetItemKind.Funding, TransactionDirection.Debit, "Salary reversal")]
+    public async Task TransactionAllocationDirectionDoesNotChangeBudgetItemKind(
+        BudgetItemKind kind,
+        TransactionDirection direction,
+        string itemName)
     {
         await using var app = new BudgetApiFactory();
         var client = app.CreateClient();
         await app.ResetDatabaseAsync();
         var budget = await BudgetApiTestClient.CreateBudget(client);
-        var groceries = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
-        var refund = await BudgetApiTestClient.CreateTransaction(client, budget.Id, 25m, TransactionDirection.Credit);
+        var budgetItem = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, itemName, kind);
+        var transaction = await BudgetApiTestClient.CreateTransaction(client, budget.Id, 25m, direction);
 
         var response = await client.PutAsJsonAsync(
-            $"/api/budgets/{budget.Id}/transactions/{refund.Id}/allocations",
-            new ReplaceTransactionAllocationsRequest([new TransactionAllocationItem(groceries.Id, 25m)]));
+            $"/api/budgets/{budget.Id}/transactions/{transaction.Id}/allocations",
+            new ReplaceTransactionAllocationsRequest([new TransactionAllocationItem(budgetItem.Id, 25m)]));
+        var budgetItems = await client.GetFromJsonAsync<IReadOnlyList<BudgetItemDto>>(
+            $"/api/budgets/{budget.Id}/budget-items");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        var persistedBudgetItem = Assert.Single(budgetItems!, x => x.Id == budgetItem.Id);
+        Assert.Equal(kind, persistedBudgetItem.Kind);
     }
 
     [Fact]

@@ -6,7 +6,7 @@ Tighten the budget item domain model by introducing `BudgetItemKind` before cont
 
 ## Status
 
-Increment 6 implemented and awaiting review. Increment 1 documentation and specification semantics were approved before implementation, Increment 2 introduced the command/API/event contract language, Increment 3 carried kind through read models, Increment 4 updated tests and fixtures, Increment 5 added budget adjustment kind invariants, and Increment 6 introduced date-effective command validation state.
+Increment 7 implemented and awaiting review. Increment 1 documentation and specification semantics were approved before implementation, Increment 2 introduced the command/API/event contract language, Increment 3 carried kind through read models, Increment 4 updated tests and fixtures, Increment 5 added budget adjustment kind invariants, Increment 6 introduced date-effective command validation state, and Increment 7 added transaction allocation interpretation tests.
 
 ## Ubiquitous Language
 
@@ -372,10 +372,35 @@ Deferred work:
 
 ### Increment 7 - Transaction Allocation Interpretation Tests
 
+Status: implemented, awaiting review.
+
 - Add tests proving transaction allocations do not change budget item kind.
 - Add tests for normal funding and consumption transaction allocation cases.
 - Add tests for refund and correction cases in the opposite direction.
 - Avoid adding stricter transaction-allocation command invariants until the desired actual-activity semantics are fully specified.
+
+Implementation notes:
+
+- Added API-level transaction allocation coverage for normal consumption spending, normal funding receipt, consumption-side refund/correction, and funding-side reversal/correction.
+- Each case records an allocation through the transaction allocation command path and then reloads budget items to prove the target budget item's `BudgetItemKind` remains unchanged.
+- Replaced the narrower opposite-direction allocation test with a four-case theory covering both normal and opposite-direction allocation semantics.
+- No production code changes were required.
+
+Architectural decisions:
+
+- Transaction allocation direction remains actual activity data and does not infer, mutate, or flip the authoritative budget item kind.
+- The increment intentionally adds tests only; it does not introduce stricter transaction-allocation command invariants while actual-activity semantics remain deliberately permissive.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~TransactionAllocationsTests"` - passed, 12 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 107 tests.
+
+Deferred work:
+
+- Reallocation availability rules and `AvailableBudget`.
+- Consumption-only reallocation policy remains deferred until command-side reallocation semantics are clarified alongside `AvailableBudget`.
+- Step 13 concurrency work.
 
 ### Increment 8 - Reallocation Availability Invariant
 
