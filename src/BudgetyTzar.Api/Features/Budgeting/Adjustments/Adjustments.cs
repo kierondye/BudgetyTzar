@@ -30,8 +30,7 @@ public sealed class CreateBudgetItemAdjustmentValidator : AbstractValidator<Crea
 
 public sealed class RecordAdjustmentHandler(
     BudgetDbContext db,
-    DomainEventOutboxWriter events,
-    BudgetItemEligibilityService eligibility)
+    DomainEventOutboxWriter events)
 {
     public async Task<CommandResult<BudgetAdjustment>> HandleCanonical(
         Guid budgetId,
@@ -42,48 +41,96 @@ public sealed class RecordAdjustmentHandler(
         string? notes,
         CancellationToken ct)
     {
-        var budget = await db.Budgets.SingleOrDefaultAsync(x => x.Id == budgetId, ct);
-        if (budget is null)
+        var budgetExists = await BudgetExists(budgetId, ct);
+        if (!budgetExists)
         {
             return CommandResult<BudgetAdjustment>.NotFound();
         }
 
-        var item = await eligibility.GetBudgetItem(budgetId, budgetItemId, ct);
-        if (item is null)
+        var item = await LoadBudgetItem(budgetId, budgetItemId, ct);
+        var effectivePlannedAmounts = await LoadEffectivePlannedAmounts(budgetId, date, ct);
+        var effectiveBudget = HydrateEffectiveBudget(budgetId, budgetItemId, date, item, effectivePlannedAmounts);
+
+        var itemLookup = effectiveBudget.GetBudgetItem(budgetItemId);
+        if (itemLookup is EffectiveBudgetItemNotFound)
         {
             return CommandResult<BudgetAdjustment>.NotFound();
         }
 
-        if (!item.CanAcceptActivityOn(date))
+        if (itemLookup is not EffectiveBudgetItemFound found)
+        {
+            throw new InvalidOperationException("Effective budget item lookup result was not handled.");
+        }
+
+        var result = found.Item.CreateAdjustment(amount, type, notes);
+        if (result is EffectiveBudgetAdjustmentArchivedBudgetItem)
         {
             return CommandResult<BudgetAdjustment>.ValidationProblem(BudgetItemValidationErrors.ArchivedBudgetItemErrors());
         }
 
-        var adjustment = BudgetAdjustment.Create(budgetId, budgetItemId, amount, type, date, notes);
-        var existingAdjustments = await db.BudgetAdjustments
-            .AsNoTracking()
-            .Where(x => x.BudgetId == budgetId && x.Date <= adjustment.Date)
-            .ToListAsync(ct);
-        if (!budget.CanRecordAdjustment(existingAdjustments, adjustment))
+        if (result is EffectiveBudgetAdjustmentValidationProblem validationProblem)
         {
             return CommandResult<BudgetAdjustment>.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(amount)] = [Budget.NetPlannedSpendingExceededMessage]
+                [nameof(amount)] = [validationProblem.Error]
             });
         }
 
-        var kindValidationError = budget.ValidateBudgetItemKindForAdjustment(item, existingAdjustments, adjustment);
-        if (kindValidationError is not null)
+        if (result is not EffectiveBudgetAdjustmentRecorded recorded)
         {
-            return CommandResult<BudgetAdjustment>.ValidationProblem(new Dictionary<string, string[]>
-            {
-                [nameof(amount)] = [kindValidationError]
-            });
+            throw new InvalidOperationException("Effective budget adjustment result was not handled.");
         }
 
+        var adjustment = recorded.Adjustment;
         db.BudgetAdjustments.Add(adjustment);
-        var eventId = events.Add(adjustment.RecordedEvent(item.Name));
+        var eventId = events.Add(adjustment.RecordedEvent(recorded.BudgetItemName));
         await db.SaveChangesAsync(ct);
         return CommandResult<BudgetAdjustment>.Created(adjustment, eventId);
     }
+
+    private Task<bool> BudgetExists(Guid budgetId, CancellationToken ct) =>
+        db.Budgets
+            .AsNoTracking()
+            .AnyAsync(x => x.Id == budgetId, ct);
+
+    private Task<BudgetItem?> LoadBudgetItem(Guid budgetId, Guid budgetItemId, CancellationToken ct) =>
+        db.BudgetItems
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.BudgetId == budgetId && x.Id == budgetItemId, ct);
+
+    private Task<List<EffectivePlannedAmount>> LoadEffectivePlannedAmounts(
+        Guid budgetId,
+        DateOnly date,
+        CancellationToken ct) =>
+        db.BudgetAdjustments
+            .AsNoTracking()
+            .Where(x => x.BudgetId == budgetId && x.Date <= date)
+            .GroupBy(x => x.BudgetItemId)
+            .Select(x => new EffectivePlannedAmount(
+                x.Key,
+                x.Sum(y => y.Type == BudgetAdjustmentType.Credit ? y.Amount : -y.Amount)))
+            .ToListAsync(ct);
+
+    private static EffectiveBudget HydrateEffectiveBudget(
+        Guid budgetId,
+        Guid budgetItemId,
+        DateOnly date,
+        BudgetItem? item,
+        IReadOnlyCollection<EffectivePlannedAmount> effectivePlannedAmounts)
+    {
+        var itemPlannedAmount = effectivePlannedAmounts
+            .SingleOrDefault(x => x.BudgetItemId == budgetItemId)
+            ?.PlannedAmount ?? 0m;
+        IReadOnlyCollection<EffectiveBudgetItemState> effectiveBudgetItems = item is null
+            ? []
+            : [new EffectiveBudgetItemState(item, itemPlannedAmount)];
+
+        return new EffectiveBudget(
+            budgetId,
+            date,
+            effectivePlannedAmounts.Sum(x => x.PlannedAmount),
+            effectiveBudgetItems);
+    }
 }
+
+internal sealed record EffectivePlannedAmount(Guid BudgetItemId, decimal PlannedAmount);

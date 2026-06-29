@@ -6,7 +6,7 @@ Tighten the budget item domain model by introducing `BudgetItemKind` before cont
 
 ## Status
 
-Increment 5 implemented and awaiting review. Increment 1 documentation and specification semantics were approved before implementation, Increment 2 introduced the command/API/event contract language, Increment 3 carried kind through read models, Increment 4 updated tests and fixtures, and Increment 5 added budget adjustment kind invariants.
+Increment 6 implemented and awaiting review. Increment 1 documentation and specification semantics were approved before implementation, Increment 2 introduced the command/API/event contract language, Increment 3 carried kind through read models, Increment 4 updated tests and fixtures, Increment 5 added budget adjustment kind invariants, and Increment 6 introduced date-effective command validation state.
 
 ## Ubiquitous Language
 
@@ -327,13 +327,48 @@ Out of scope:
 - Generic repositories, mediators, or broad persistence abstractions.
 - Persistence schema changes unless a narrow implementation detail proves unavoidable.
 
-Completion notes to add when implemented:
+Status: implemented, awaiting review.
 
-- Final naming decision for the effective budget object.
-- Which responsibilities moved from `Budget`, `BudgetItem`, and `BudgetReallocation`.
-- How command handlers hydrate date-effective state.
-- Tests run.
-- Any deferred cleanup or business rules.
+Implementation notes:
+
+- Added `EffectiveBudget` and `EffectiveBudgetItem` as small command-side domain objects for date-effective budget adjustment validation.
+- `EffectiveBudget` owns the budget-level date-effective planned funding versus planned consumption check.
+- `EffectiveBudget` exposes scoped item lookup through `GetBudgetItem(budgetItemId)`.
+- `EffectiveBudgetItem` creates budget adjustments through `CreateAdjustment(amount, type, notes)`, using the effective budget's budget id and date by construction.
+- The final API shape is `effectiveBudget.GetBudgetItem(budgetItemId)` followed by `effectiveBudgetItem.CreateAdjustment(amount, type, notes)`.
+- Item lookup and adjustment creation both return non-null domain results with distinct success and failure cases.
+- `BudgetItem` owns the item-kind boundary check for effective planned position, so consumption items cannot become funding sources and funding items cannot become consumption items through budget adjustments.
+- Removed adjustment validation helpers from `Budget`, leaving it focused on long-lived budget identity/container behavior and budget item name validation.
+- Updated the budget adjustment command handler to hydrate grouped effective planned positions from command-side `BudgetAdjustments` as of the adjustment date instead of loading full adjustment history into `Budget`.
+- The budget adjustment command handler no longer creates a free-floating pending `BudgetAdjustment` and then asks `EffectiveBudget` to validate it. It hydrates effective state, retrieves a scoped effective budget item, and asks that item to create the adjustment.
+- The budget adjustment command handler no longer loads a `Budget` entity solely to prove existence; it uses a lightweight existence check before hydrating effective budget state.
+- Extracted the handler's EF query details into small private query/hydration methods so the handler reads as command orchestration without introducing a repository abstraction.
+- Kept `BudgetReallocation` responsibility unchanged in this increment: it still validates reallocation shape and creates linked adjustments. No new reallocation availability or kind policy was added.
+- No persistence schema, event contract, reporting, snapshot, or API response changes were required.
+
+Architectural decisions:
+
+- The final naming is `EffectiveBudget` for the date-scoped command validation state, `EffectiveBudgetItemState` for hydrated item state, `EffectiveBudgetItemLookupResult` for item lookup, and `EffectiveBudgetAdjustmentResult` for adjustment creation.
+- Date-effective state is hydrated by the application handler from command-side persistence and passed into domain validation, rather than making `Budget` behave like a static validation helper.
+- Item-kind compatibility belongs with `BudgetItem`; cross-item planned funding coverage belongs with `EffectiveBudget`.
+- Normal domain construction no longer allows callers to choose a mismatched budget id, date, or item id when creating a command-side budget adjustment through effective budget state.
+- Missing budget items are normal domain outcomes from `GetBudgetItem`; archived budget items are normal outcomes from `EffectiveBudgetItem.CreateAdjustment`.
+- Defensive validation remains at the hydration boundary: effective budget items supplied to `EffectiveBudget` must belong to the effective budget.
+- Query extraction stayed local to the adjustment command slice because the query shape is not yet reused elsewhere.
+- The existing validation messages and HTTP behavior were preserved.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetTests|FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~BudgetAdjustmentsTests"` - passed, 14 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 104 tests.
+
+Deferred work:
+
+- Transaction allocation interpretation tests.
+- Reallocation availability rules and `AvailableBudget`.
+- Consumption-only reallocation policy remains deferred until the command-side reallocation semantics are clarified alongside `AvailableBudget`.
+- Moving effective budget hydration behind a repository-local helper if more command handlers need the same date-effective state.
+- Step 13 concurrency work.
 
 ### Increment 7 - Transaction Allocation Interpretation Tests
 

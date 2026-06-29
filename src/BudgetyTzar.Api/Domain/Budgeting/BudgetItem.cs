@@ -12,6 +12,9 @@ public enum BudgetItemKind
 
 public sealed class BudgetItem
 {
+    public const string ConsumptionBudgetItemBecameFundingMessage = "A consumption item must not become a funding source through budget adjustments.";
+    public const string FundingBudgetItemBecameConsumptionMessage = "A funding item must not become a consumption item through budget adjustments.";
+
     public Guid Id { get; init; } = Guid.NewGuid();
     public Guid BudgetId { get; set; }
     public required string Name { get; set; }
@@ -59,4 +62,12 @@ public sealed class BudgetItem
 
         return activityDate <= DateOnly.FromDateTime(ArchivedAt.Value.UtcDateTime);
     }
+
+    public string? ValidateEffectivePlannedPosition(decimal plannedAmount) =>
+        Kind switch
+        {
+            BudgetItemKind.Consumption when plannedAmount > 0 => ConsumptionBudgetItemBecameFundingMessage,
+            BudgetItemKind.Funding when plannedAmount < 0 => FundingBudgetItemBecameConsumptionMessage,
+            _ => null
+        };
 }
