@@ -14,6 +14,8 @@ This is an incremental refactor. Preserve current API, persistence, event payloa
 - Do not move historical adjustments, transactions, or reporting read models into `Budget`.
 - Preserve existing event names and payloads unless a later increment has a clear contract reason to change them.
 - Prefer result objects for expected domain rejections. Exceptions remain acceptable for programmer errors or impossible construction paths.
+- Move toward immutable domain behaviour: command methods should preferably return modified domain objects instead of mutating existing instances.
+- Do not complete immutability by making a broad, risky rewrite. Make it incremental and document remaining mutable areas.
 - Avoid broad renaming unless it directly supports the new model.
 - Transactions are out of scope for this step.
 
@@ -32,6 +34,44 @@ Callers should express intent through `EffectiveBudget` methods such as `RecordA
 
 Vertical slice handlers may inspect `EffectiveBudgetResult` cases, but they should not know the persistence anatomy of a successful `EffectiveBudget`. Saving pending adjustments, events, and any future pending records belongs behind a single persistence boundary.
 
+## Immutability Direction
+
+The domain model should move toward immutable domain logic.
+
+For this step, treat immutability as an architectural direction, not a requirement to rewrite the whole model in one increment.
+
+Guidance:
+
+- Prefer domain methods that return a new modified domain object rather than mutating the existing instance.
+- Avoid exposing mutable collections from domain objects.
+- Avoid setters on domain state where practical.
+- Prefer constructors/factories that produce valid objects.
+- Pending changes should be represented as part of the returned `EffectiveBudget`, not by mutating hidden internal lists where this can be changed safely.
+- If full immutability would make an increment too large, preserve behaviour and document the remaining mutable state as follow-up work.
+- Do not introduce broad copy/rebuild infrastructure just to achieve immutability in one pass.
+- Keep EF persistence compatibility in mind, but do not let EF shape the public domain API unnecessarily.
+
+Preferred direction:
+
+```csharp
+var result = effectiveBudget.RecordAdjustment(...);
+
+if (result is EffectiveBudgetResult.Success success)
+{
+    var modifiedBudget = success.Budget;
+    effectiveBudgetRepository.Save(modifiedBudget);
+}
+```
+
+Rather than relying on mutation of the original instance:
+
+```csharp
+effectiveBudget.RecordAdjustment(...);
+effectiveBudgetRepository.Save(effectiveBudget);
+```
+
+The success result should contain the modified `EffectiveBudget`.
+
 ## Proposed Increments
 
 ### Increment 1 - Record Adjustment Through Effective Budget
@@ -40,6 +80,7 @@ Status: implemented, awaiting review.
 
 - Add `EffectiveBudget.RecordAdjustment(budgetItemId, amount, type, notes)`.
 - Introduce a closed result type for effective budget modifications, with cases for success, item not found, archived item, and validation failure.
+- `EffectiveBudgetResult.Success(EffectiveBudget Budget)` should return the modified effective budget. It should not require callers to assume the original instance was mutated.
 - Move adjustment validation currently reached through `EffectiveBudgetItem.CreateAdjustment(...)` into `EffectiveBudget.RecordAdjustment(...)`.
 - Let successful operations add the adjustment and domain event to pending collections owned by `EffectiveBudget`.
 - Update in-memory effective planned amounts after success so subsequent operations in the same unit of work validate against the new state.
