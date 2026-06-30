@@ -1,6 +1,4 @@
-using BudgetyTzar.Api.Infrastructure.Persistence;
 using FluentValidation;
-using Microsoft.EntityFrameworkCore;
 
 namespace BudgetyTzar.Api.Features;
 
@@ -27,9 +25,7 @@ public sealed class CreateBudgetItemAdjustmentValidator : AbstractValidator<Crea
     }
 }
 
-public sealed class RecordAdjustmentHandler(
-    BudgetDbContext db,
-    IEffectiveBudgetRepository effectiveBudgets)
+public sealed class RecordAdjustmentHandler(IEffectiveBudgetRepository effectiveBudgets)
 {
     public async Task<CommandResult<BudgetAdjustment>> Handle(
         Guid budgetId,
@@ -40,8 +36,8 @@ public sealed class RecordAdjustmentHandler(
         string? notes,
         CancellationToken ct)
     {
-        var budgetExists = await BudgetExists(budgetId, ct);
-        if (!budgetExists)
+        var budgetResult = await effectiveBudgets.GetEffectiveBudget(budgetId, date, ct);
+        if (budgetResult is EffectiveBudgetLoadResult.BudgetNotFound)
         {
             return CommandResult<BudgetAdjustment>.NotFound();
         }
@@ -55,11 +51,12 @@ public sealed class RecordAdjustmentHandler(
             });
         }
 
-        var item = await LoadBudgetItem(budgetId, budgetItemId, ct);
-        var effectivePlannedAmounts = await LoadEffectivePlannedAmounts(budgetId, date, ct);
-        var effectiveBudget = HydrateEffectiveBudget(budgetId, budgetItemId, date, item, effectivePlannedAmounts);
+        if (budgetResult is not EffectiveBudgetLoadResult.Success loaded)
+        {
+            throw new InvalidOperationException("Effective budget load result was not handled.");
+        }
 
-        var result = effectiveBudget.RecordAdjustment(
+        var result = loaded.Budget.RecordAdjustment(
             budgetItemId,
             ((PositiveMoneyAmountResult.Success)amountResult).Amount,
             type,
@@ -90,50 +87,4 @@ public sealed class RecordAdjustmentHandler(
         var saved = await effectiveBudgets.Save(success.Budget, ct);
         return CommandResult<BudgetAdjustment>.Created(saved.CreatedAdjustment, saved.EventId);
     }
-
-    private Task<bool> BudgetExists(Guid budgetId, CancellationToken ct) =>
-        db.Budgets
-            .AsNoTracking()
-            .AnyAsync(x => x.Id == budgetId, ct);
-
-    private Task<BudgetItem?> LoadBudgetItem(Guid budgetId, Guid budgetItemId, CancellationToken ct) =>
-        db.BudgetItems
-            .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.BudgetId == budgetId && x.Id == budgetItemId, ct);
-
-    private Task<List<EffectivePlannedAmount>> LoadEffectivePlannedAmounts(
-        Guid budgetId,
-        DateOnly date,
-        CancellationToken ct) =>
-        db.BudgetAdjustments
-            .AsNoTracking()
-            .Where(x => x.BudgetId == budgetId && x.Date <= date)
-            .GroupBy(x => x.BudgetItemId)
-            .Select(x => new EffectivePlannedAmount(
-                x.Key,
-                x.Sum(y => y.Type == BudgetAdjustmentType.Credit ? y.Amount : -y.Amount)))
-            .ToListAsync(ct);
-
-    private static EffectiveBudget HydrateEffectiveBudget(
-        Guid budgetId,
-        Guid budgetItemId,
-        DateOnly date,
-        BudgetItem? item,
-        IReadOnlyCollection<EffectivePlannedAmount> effectivePlannedAmounts)
-    {
-        var itemPlannedAmount = effectivePlannedAmounts
-            .SingleOrDefault(x => x.BudgetItemId == budgetItemId)
-            ?.PlannedAmount ?? 0m;
-        IReadOnlyCollection<EffectiveBudgetItemState> effectiveBudgetItems = item is null
-            ? []
-            : [new EffectiveBudgetItemState(item, itemPlannedAmount)];
-
-        return new EffectiveBudget(
-            budgetId,
-            date,
-            effectivePlannedAmounts.Sum(x => x.PlannedAmount),
-            effectiveBudgetItems);
-    }
 }
-
-internal sealed record EffectivePlannedAmount(Guid BudgetItemId, decimal PlannedAmount);

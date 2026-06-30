@@ -319,7 +319,7 @@ Tests run:
 
 ### Increment 7 - Load Effective Budget Through Repository
 
-Status: planned.
+Status: implemented, awaiting review.
 
 Goal: start moving domain model population out of handlers by moving effective-budget population and EF query shape behind the effective-budget repository boundary.
 
@@ -329,16 +329,15 @@ Goal: start moving domain model population out of handlers by moving effective-b
 ```csharp
 var effectiveBudget = await effectiveBudgetRepository.GetEffectiveBudget(
     budgetId,
-    budgetItemId,
     date,
     ct);
 ```
 
 - The load boundary should know how to:
   - verify the parent budget exists or otherwise report that it does not.
-  - load the target budget item needed by the command.
+  - load all budget items needed by the command model.
   - calculate effective planned amounts as of the command date.
-  - hydrate `EffectiveBudget` with the item state needed for the command.
+  - hydrate `EffectiveBudget` with the item state needed for budget modification commands.
 - The handler should coordinate the use case:
   - request the effective budget.
   - validate raw command input such as positive money.
@@ -359,12 +358,19 @@ Rationale:
 
 Implementation notes:
 
-- Not started.
+- Added `IEffectiveBudgetRepository.GetEffectiveBudget(...)` as the load boundary for the temporal command model.
+- Added a closed `EffectiveBudgetLoadResult` with success and missing-budget cases so expected missing-budget outcomes remain result-driven.
+- Moved budget existence lookup, budget item loading, effective planned amount grouping, and `EffectiveBudget` hydration from the adjustment handler into `EffectiveBudgetRepository`.
+- `GetEffectiveBudget(...)` loads all budget items for the budget/date command model; unknown command item ids remain `EffectiveBudgetResult.ItemNotFound` outcomes from `EffectiveBudget.RecordAdjustment(...)`.
+- The adjustment handler now coordinates the use case by loading the command model, validating raw money input, calling `RecordAdjustment(...)`, inspecting domain result cases, and saving the successful command model.
+- Preserved existing 404 behavior for missing budgets and missing budget items.
+- Kept EF query shape and hydration details out of domain objects.
+- Kept transactions, reallocations, event payloads, and the save boundary out of scope.
 
-Tests to run:
+Tests run:
 
-- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetAdjustmentsTests"`
-- Run `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` if practical.
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetAdjustmentsTests"` - passed, 8 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 121 tests.
 
 ### Increment 8 - Make Budget Item Immutable
 
