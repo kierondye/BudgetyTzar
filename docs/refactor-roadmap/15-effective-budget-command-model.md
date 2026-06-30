@@ -30,6 +30,8 @@ This is an incremental refactor. Preserve current API, persistence, event payloa
 
 Callers should express intent through `EffectiveBudget` methods such as `RecordAdjustment(...)` rather than navigating to child objects and asking those objects to create changes. Any `EffectiveBudgetItem` representation should be private or internal implementation detail, not the public command surface.
 
+Vertical slice handlers may inspect `EffectiveBudgetResult` cases, but they should not know the persistence anatomy of a successful `EffectiveBudget`. Saving pending adjustments, events, and any future pending records belongs behind a single persistence boundary.
+
 ## Proposed Increments
 
 ### Increment 1 - Record Adjustment Through Effective Budget
@@ -60,7 +62,35 @@ Tests run:
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~BudgetAdjustmentsTests"` - passed, 13 tests.
 - `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 110 tests.
 
-### Increment 2 - Hide Effective Budget Item Details
+### Increment 2 - Introduce Effective Budget Save Boundary
+
+Status: next.
+
+Goal: move knowledge of how to persist an `EffectiveBudget` out of vertical slice handlers and into a single persistence boundary.
+
+- Add an application/infrastructure save method for `EffectiveBudget`, for example:
+  - `effectiveBudgetRepository.Save(effectiveBudget)`, or
+  - `db.SaveEffectiveBudget(effectiveBudget)` only if no repository abstraction currently exists.
+- The adjustment handler should no longer directly persist individual pending collections such as:
+  - `budget.PendingAdjustments.Single()`.
+  - `budget.PendingEvents.Single()`.
+- The handler should only coordinate the use case:
+  - load the effective budget.
+  - call `RecordAdjustment(...)`.
+  - handle failure result cases.
+  - save the successful effective budget through the persistence boundary.
+- The save boundary should persist all pending adjustments and pending events currently owned by `EffectiveBudget`.
+- Use `AddRange(...)` rather than assuming there is exactly one pending adjustment or event.
+- Keep EF-specific persistence details outside the domain model.
+- Do not put `Save(...)` methods on `EffectiveBudget` itself.
+- Do not introduce a broad Unit of Work abstraction unless the existing code already has one.
+- Add focused tests if there is existing coverage around the handler/persistence path.
+
+Rationale:
+
+`EffectiveBudget` is now the temporal command model. The vertical slice handler should not know the exact list of pending child records that must be persisted after a successful command. If a later operation adds pending reallocations, audit records, snapshots, or multiple events, the handler should not need to change. That knowledge belongs at the persistence boundary.
+
+### Increment 3 - Hide Effective Budget Item Details
 
 Status: deferred.
 
@@ -68,7 +98,7 @@ Status: deferred.
 - Make any item state wrapper private or internal if still useful.
 - Keep `EffectiveBudgetItemState` as an assembly-facing hydration input only if it remains the simplest repository/application boundary.
 
-### Increment 3 - Strengthen Money Input
+### Increment 4 - Strengthen Money Input
 
 Status: deferred.
 
@@ -77,7 +107,7 @@ Status: deferred.
 - Avoid relying on `MoneyAmount.Positive(...)` throwing inside expected validation paths.
 - Keep API validation messages stable unless explicitly changing validation contracts.
 
-### Increment 4 - Let Budget Own Budget Items
+### Increment 5 - Let Budget Own Budget Items
 
 Status: deferred.
 
@@ -85,14 +115,6 @@ Status: deferred.
 - Keep duplicate budget-item-name rules inside `Budget`.
 - Keep `BudgetItemKind` rather than introducing `FundingBudgetItem` and `ConsumptionBudgetItem` subclasses unless later code clearly justifies polymorphism.
 - Keep budget items simple: identity, name, kind, archive state.
-
-### Increment 5 - Repository/Application Save Shape
-
-Status: deferred.
-
-- Make repository or handler save paths consume pending changes and events from `EffectiveBudget`.
-- Keep EF persistence orchestration in infrastructure/application code.
-- Consider a repository abstraction only if it reduces real duplication or clarifies aggregate persistence without hiding important EF behavior.
 
 ## Validation Rules
 
