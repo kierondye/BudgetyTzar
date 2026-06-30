@@ -23,31 +23,43 @@ public sealed class EffectiveBudget
     public const string PositiveAmountRequiredMessage = MoneyAmount.PositiveAmountRequiredMessage;
     public const string MoneyScaleExceededMessage = MoneyAmount.MoneyScaleExceededMessage;
 
-    private readonly Dictionary<Guid, EffectiveBudgetItem> items;
-    private readonly List<BudgetAdjustment> pendingAdjustments = [];
-    private readonly List<DomainEvent> pendingEvents = [];
+    private readonly IReadOnlyDictionary<Guid, EffectiveBudgetItem> items;
+    private readonly IReadOnlyCollection<BudgetAdjustment> pendingAdjustments;
+    private readonly IReadOnlyCollection<DomainEvent> pendingEvents;
 
     internal EffectiveBudget(Guid budgetId, DateOnly date, decimal netPlannedAmount, IReadOnlyCollection<EffectiveBudgetItemState> items)
+    {
+        var effectiveBudgetItems = items.ToDictionary(
+            x => ValidateItemBelongsToBudget(budgetId, x.BudgetItem),
+            x => new EffectiveBudgetItem(x.BudgetItem, x.PlannedAmount));
+
+        BudgetId = budgetId;
+        Date = date;
+        NetPlannedAmount = netPlannedAmount;
+        this.items = effectiveBudgetItems;
+        pendingAdjustments = [];
+        pendingEvents = [];
+    }
+
+    private EffectiveBudget(
+        Guid budgetId,
+        DateOnly date,
+        decimal netPlannedAmount,
+        IReadOnlyDictionary<Guid, EffectiveBudgetItem> items,
+        IReadOnlyCollection<BudgetAdjustment> pendingAdjustments,
+        IReadOnlyCollection<DomainEvent> pendingEvents)
     {
         BudgetId = budgetId;
         Date = date;
         NetPlannedAmount = netPlannedAmount;
-        this.items = items.ToDictionary(
-            x =>
-            {
-                if (x.BudgetItem.BudgetId != budgetId)
-                {
-                    throw new InvalidOperationException("Effective budget items must belong to the effective budget.");
-                }
-
-                return x.BudgetItem.Id;
-            },
-            x => new EffectiveBudgetItem(this, x.BudgetItem, x.PlannedAmount));
+        this.items = items;
+        this.pendingAdjustments = pendingAdjustments;
+        this.pendingEvents = pendingEvents;
     }
 
     public Guid BudgetId { get; }
     public DateOnly Date { get; }
-    public decimal NetPlannedAmount { get; private set; }
+    public decimal NetPlannedAmount { get; }
     public IReadOnlyCollection<BudgetAdjustment> PendingAdjustments => pendingAdjustments;
     public IReadOnlyCollection<DomainEvent> PendingEvents => pendingEvents;
 
@@ -102,12 +114,22 @@ public sealed class EffectiveBudget
             Date,
             notes);
 
-        item.PlannedAmount = updatedItemPlannedAmount;
-        NetPlannedAmount += signedPlannedAmount;
-        pendingAdjustments.Add(adjustment);
-        pendingEvents.Add(adjustment.RecordedEvent(item.BudgetItem.Name));
+        var updatedItems = items.ToDictionary(
+            x => x.Key,
+            x => x.Key == budgetItemId
+                ? new EffectiveBudgetItem(x.Value.BudgetItem, updatedItemPlannedAmount)
+                : x.Value);
+        var updatedPendingAdjustments = pendingAdjustments.Append(adjustment).ToArray();
+        var updatedPendingEvents = pendingEvents.Append(adjustment.RecordedEvent(item.BudgetItem.Name)).ToArray();
+        var updatedBudget = new EffectiveBudget(
+            BudgetId,
+            Date,
+            NetPlannedAmount + signedPlannedAmount,
+            updatedItems,
+            updatedPendingAdjustments,
+            updatedPendingEvents);
 
-        return new EffectiveBudgetResult.Success(this);
+        return new EffectiveBudgetResult.Success(updatedBudget);
     }
 
     internal string? ValidateEffectivePlannedPosition(decimal signedPlannedAmount) =>
@@ -115,20 +137,22 @@ public sealed class EffectiveBudget
             ? null
             : NetPlannedSpendingExceededMessage;
 
-    private sealed class EffectiveBudgetItem
+    private static Guid ValidateItemBelongsToBudget(Guid budgetId, BudgetItem budgetItem)
     {
-        internal EffectiveBudgetItem(EffectiveBudget budget, BudgetItem budgetItem, decimal plannedAmount)
+        if (budgetItem.BudgetId != budgetId)
         {
-            if (budget.BudgetId != budgetItem.BudgetId)
-            {
-                throw new InvalidOperationException("Effective budget items must belong to the effective budget.");
-            }
-
-            BudgetItem = budgetItem;
-            PlannedAmount = plannedAmount;
+            throw new InvalidOperationException("Effective budget items must belong to the effective budget.");
         }
 
+        return budgetItem.Id;
+    }
+
+    private sealed class EffectiveBudgetItem
+    {
+        internal EffectiveBudgetItem(BudgetItem budgetItem, decimal plannedAmount) =>
+            (BudgetItem, PlannedAmount) = (budgetItem, plannedAmount);
+
         public BudgetItem BudgetItem { get; }
-        public decimal PlannedAmount { get; set; }
+        public decimal PlannedAmount { get; }
     }
 }

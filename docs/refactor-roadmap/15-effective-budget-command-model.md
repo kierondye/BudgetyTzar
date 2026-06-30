@@ -278,6 +278,31 @@ Tests run:
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetItemsTests"` - passed, 19 tests.
 - `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 118 tests.
 
+### Increment 6 - Return Modified Effective Budget
+
+Status: implemented, awaiting review.
+
+- Move `EffectiveBudget.RecordAdjustment(...)` closer to the immutability direction by returning a modified successful `EffectiveBudget` instead of mutating the original instance.
+- Keep the existing `EffectiveBudgetResult.Success(EffectiveBudget Budget)` shape.
+- Preserve the existing persistence boundary and handler flow.
+- Keep failure cases non-mutating.
+- Do not broaden the change into a full domain immutability rewrite.
+
+Implementation notes:
+
+- `EffectiveBudget` now stores planned state, pending adjustments, and pending events as constructor-provided read-only collections.
+- Successful `RecordAdjustment(...)` creates and returns a new `EffectiveBudget` with updated net planned amount, item planned amount, pending adjustment, and pending event.
+- The original `EffectiveBudget` remains unchanged after a successful command.
+- Sequential commands now explicitly chain through `EffectiveBudgetResult.Success.Budget`.
+- The existing repository save boundary continues to persist pending adjustments and pending events from the successful command model.
+- Existing event names, payloads, API response shape, and persistence behavior were preserved.
+- Broader immutability work for other budgeting objects remains out of scope.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetAdjustmentsTests"` - passed, 17 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 118 tests.
+
 ## Validation Rules
 
 `EffectiveBudget.RecordAdjustment(...)` should validate:

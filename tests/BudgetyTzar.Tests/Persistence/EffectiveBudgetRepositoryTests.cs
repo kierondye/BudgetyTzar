@@ -24,16 +24,17 @@ public sealed class EffectiveBudgetRepositoryTests
 
         var firstResult = Assert.IsType<EffectiveBudgetResult.Success>(
             effectiveBudget.RecordAdjustment(groceries.Id, 25m, BudgetAdjustmentType.Debit, "First change"));
-        Assert.IsType<EffectiveBudgetResult.Success>(
+        var secondResult = Assert.IsType<EffectiveBudgetResult.Success>(
             firstResult.Budget.RecordAdjustment(groceries.Id, 30m, BudgetAdjustmentType.Debit, "Second change"));
 
-        var firstPendingAdjustment = effectiveBudget.PendingAdjustments.First();
+        var modifiedBudget = secondResult.Budget;
+        var firstPendingAdjustment = modifiedBudget.PendingAdjustments.First();
 
         using var scope = app.Services.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<IEffectiveBudgetRepository>();
         var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
 
-        var saved = await repository.Save(effectiveBudget, CancellationToken.None);
+        var saved = await repository.Save(modifiedBudget, CancellationToken.None);
 
         Assert.Equal(firstPendingAdjustment.Id, saved.CreatedAdjustment.Id);
         Assert.NotNull(saved.EventId);

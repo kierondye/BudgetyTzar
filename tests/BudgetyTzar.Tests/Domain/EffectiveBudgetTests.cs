@@ -28,7 +28,11 @@ public sealed class EffectiveBudgetTests
         var result = effectiveBudget.RecordAdjustment(groceries.Id, 100m, BudgetAdjustmentType.Debit, "Covered spending");
 
         var success = Assert.IsType<EffectiveBudgetResult.Success>(result);
-        Assert.Same(effectiveBudget, success.Budget);
+        Assert.NotSame(effectiveBudget, success.Budget);
+        Assert.Empty(effectiveBudget.PendingAdjustments);
+        Assert.Empty(effectiveBudget.PendingEvents);
+        Assert.Equal(100m, effectiveBudget.NetPlannedAmount);
+        Assert.Equal(0m, success.Budget.NetPlannedAmount);
         var adjustment = Assert.Single(success.Budget.PendingAdjustments);
         Assert.Equal(budgetId, adjustment.BudgetId);
         Assert.Equal(groceries.Id, adjustment.BudgetItemId);
@@ -125,6 +129,7 @@ public sealed class EffectiveBudgetTests
         var result = effectiveBudget.RecordAdjustment(groceries.Id, 25m, BudgetAdjustmentType.Credit, "Correction");
 
         var success = Assert.IsType<EffectiveBudgetResult.Success>(result);
+        Assert.NotSame(effectiveBudget, success.Budget);
         var adjustment = Assert.Single(success.Budget.PendingAdjustments);
         Assert.Equal(date, adjustment.Date);
         Assert.Equal(groceries.Id, adjustment.BudgetItemId);
@@ -163,6 +168,7 @@ public sealed class EffectiveBudgetTests
         var result = effectiveBudget.RecordAdjustment(salary.Id, 25m, BudgetAdjustmentType.Debit, "Reversal");
 
         var success = Assert.IsType<EffectiveBudgetResult.Success>(result);
+        Assert.NotSame(effectiveBudget, success.Budget);
         var adjustment = Assert.Single(success.Budget.PendingAdjustments);
         Assert.Equal(date, adjustment.Date);
         Assert.Equal(salary.Id, adjustment.BudgetItemId);
@@ -220,15 +226,18 @@ public sealed class EffectiveBudgetTests
             [new EffectiveBudgetItemState(groceries, 0m)]);
 
         var firstResult = effectiveBudget.RecordAdjustment(groceries.Id, 75m, BudgetAdjustmentType.Debit, "Covered spending");
-        Assert.IsType<EffectiveBudgetResult.Success>(firstResult);
+        var firstSuccess = Assert.IsType<EffectiveBudgetResult.Success>(firstResult);
 
-        var secondResult = effectiveBudget.RecordAdjustment(groceries.Id, 50m, BudgetAdjustmentType.Debit, "Too much");
+        var secondResult = firstSuccess.Budget.RecordAdjustment(groceries.Id, 50m, BudgetAdjustmentType.Debit, "Too much");
 
         var validationProblem = Assert.IsType<EffectiveBudgetResult.ValidationFailed>(secondResult);
         Assert.Equal(EffectiveBudget.NetPlannedSpendingExceededMessage, validationProblem.Error);
-        Assert.Equal(25m, effectiveBudget.NetPlannedAmount);
-        Assert.Single(effectiveBudget.PendingAdjustments);
-        Assert.Single(effectiveBudget.PendingEvents);
+        Assert.Equal(100m, effectiveBudget.NetPlannedAmount);
+        Assert.Empty(effectiveBudget.PendingAdjustments);
+        Assert.Empty(effectiveBudget.PendingEvents);
+        Assert.Equal(25m, firstSuccess.Budget.NetPlannedAmount);
+        Assert.Single(firstSuccess.Budget.PendingAdjustments);
+        Assert.Single(firstSuccess.Budget.PendingEvents);
     }
 
     [Fact]
