@@ -19,6 +19,19 @@ This is an incremental refactor. Preserve current API, persistence, event payloa
 - Avoid broad renaming unless it directly supports the new model.
 - Transactions are out of scope for this step.
 
+### Minimise Domain Concepts
+
+Prefer enriching existing domain objects and established architectural abstractions over introducing new types.
+
+Do not introduce new classes simply because behaviour needs somewhere to live.
+
+Every new type should represent either:
+
+- a concept from the ubiquitous language, or
+- a widely recognised architectural pattern.
+
+When in doubt, prefer extending an existing repository, domain object, or value object before introducing a new service.
+
 ## Design Direction
 
 `EffectiveBudget` should model the budget's effective command state as of a date:
@@ -72,6 +85,34 @@ effectiveBudgetRepository.Save(effectiveBudget);
 
 The success result should contain the modified `EffectiveBudget`.
 
+### Architectural Naming
+
+When introducing new types, prefer established DDD, OO, and .NET architectural patterns over project-specific names.
+
+Before introducing a new service or infrastructure type, first determine whether an existing architectural pattern already describes its responsibility.
+
+Examples include:
+
+- Repository
+- Factory
+- Domain Service
+- Specification
+- Policy
+- Mapper
+
+Avoid introducing new classes with names such as:
+
+- `*Saver`
+- `*Manager`
+- `*Processor`
+- `*Helper`
+- `*Wrapper`
+- `*Context`
+
+unless they represent a genuine domain concept or a well-established architectural pattern.
+
+A new type should exist because it represents a recognised concept, not simply because code needs somewhere to live.
+
 ## Proposed Increments
 
 ### Increment 1 - Record Adjustment Through Effective Budget
@@ -109,9 +150,30 @@ Status: next.
 
 Goal: move knowledge of how to persist an `EffectiveBudget` out of vertical slice handlers and into a single persistence boundary.
 
-- Add an application/infrastructure save method for `EffectiveBudget`, for example:
-  - `effectiveBudgetRepository.Save(effectiveBudget)`, or
-  - `db.SaveEffectiveBudget(effectiveBudget)` only if no repository abstraction currently exists.
+- The persistence boundary should preferably be represented by an existing repository abstraction.
+- Preferred direction:
+
+```csharp
+effectiveBudgetRepository.Save(effectiveBudget);
+```
+
+- If returning a persistence result is justified:
+
+```csharp
+var result = effectiveBudgetRepository.Save(effectiveBudget);
+```
+
+- Avoid introducing service types such as:
+
+```text
+EffectiveBudgetSaver
+BudgetSaver
+BudgetPersistenceManager
+```
+
+unless the roadmap later identifies a genuine architectural need for them.
+
+- If the existing repository abstraction cannot naturally support saving an `EffectiveBudget`, prefer extending or introducing an `IEffectiveBudgetRepository` rather than creating a dedicated `*Saver` service.
 - The adjustment handler should no longer directly persist individual pending collections such as:
   - `budget.PendingAdjustments.Single()`.
   - `budget.PendingEvents.Single()`.
