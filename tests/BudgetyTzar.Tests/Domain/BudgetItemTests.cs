@@ -6,6 +6,20 @@ namespace BudgetyTzar.Tests;
 public sealed class BudgetItemTests
 {
     [Fact]
+    public void BudgetItemDoesNotExposePublicMutationOrConstruction()
+    {
+        var publicConstructors = typeof(BudgetItem).GetConstructors();
+        var mutableProperties = typeof(BudgetItem)
+            .GetProperties()
+            .Where(x => x.SetMethod?.IsPublic == true)
+            .Select(x => x.Name)
+            .ToList();
+
+        Assert.Empty(publicConstructors);
+        Assert.Empty(mutableProperties);
+    }
+
+    [Fact]
     public void BudgetItemArchiveReturnsArchivedItemWithoutMutatingOriginal()
     {
         var budgetId = Guid.NewGuid();

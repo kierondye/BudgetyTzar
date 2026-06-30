@@ -5,6 +5,20 @@ namespace BudgetyTzar.Tests;
 public sealed class BudgetTests
 {
     [Fact]
+    public void BudgetDoesNotExposePublicMutationOrConstruction()
+    {
+        var publicConstructors = typeof(Budget).GetConstructors();
+        var mutableProperties = typeof(Budget)
+            .GetProperties()
+            .Where(x => x.SetMethod?.IsPublic == true)
+            .Select(x => x.Name)
+            .ToList();
+
+        Assert.Empty(publicConstructors);
+        Assert.Empty(mutableProperties);
+    }
+
+    [Fact]
     public void BudgetCreatesBudgetItemWhenNameIsUnique()
     {
         var budget = Budget.Create("UK", "GBP");

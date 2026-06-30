@@ -657,6 +657,29 @@ Tests run:
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetItemsTests|FullyQualifiedName~BudgetRepositoryTests"` - passed, 27 tests.
 - `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 128 tests.
 
+### Increment 16 - Verify Budget And Budget Item Public Immutability
+
+Status: implemented, awaiting review.
+
+Goal: close the remaining test coverage gap around Step 15's completion target that budgeting command-domain types involved in effective budget modification no longer expose mutable state as their public shape.
+
+- Add focused public-surface tests for `Budget`.
+- Add focused public-surface tests for `BudgetItem`.
+- Verify both types expose no public constructors and no public property setters.
+- Keep production behavior unchanged.
+- Keep transactions, adjustments, reallocations, persistence, and event payloads out of scope.
+
+Implementation notes:
+
+- Added `BudgetDoesNotExposePublicMutationOrConstruction`.
+- Added `BudgetItemDoesNotExposePublicMutationOrConstruction`.
+- Left production domain and persistence code unchanged because the existing implementation already matched the public immutability target.
+- Preserved all existing budget and budget-item behavior.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetItemTests"` - passed, 21 tests.
+
 ## Validation Rules
 
 `EffectiveBudget.RecordAdjustment(...)` should validate:
