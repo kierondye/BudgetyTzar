@@ -32,17 +32,27 @@ public sealed class BudgetAdjustment
         DateOnly date,
         string? notes,
         Guid? reallocationId = null) =>
+        Create(budgetId, budgetItemId, PositiveMoneyAmount.Require(amount), type, date, notes, reallocationId);
+
+    internal static BudgetAdjustment Create(
+        Guid budgetId,
+        Guid budgetItemId,
+        PositiveMoneyAmount amount,
+        BudgetAdjustmentType type,
+        DateOnly date,
+        string? notes,
+        Guid? reallocationId = null) =>
         new()
         {
             BudgetId = budgetId,
             BudgetItemId = budgetItemId,
             ReallocationId = reallocationId,
             Date = date,
-            Amount = MoneyAmount.Positive(amount).Value,
+            Amount = amount.Value,
             Type = type,
             Reason = notes?.Trim() ?? string.Empty,
             Notes = notes?.Trim(),
-            LegacySignedAmount = type == BudgetAdjustmentType.Credit ? amount : -amount
+            LegacySignedAmount = type == BudgetAdjustmentType.Credit ? amount.Value : -amount.Value
         };
 
     public decimal SignedPlannedAmount() =>

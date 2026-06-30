@@ -46,11 +46,24 @@ public sealed class RecordAdjustmentHandler(
             return CommandResult<BudgetAdjustment>.NotFound();
         }
 
+        var amountResult = PositiveMoneyAmount.Create(amount);
+        if (amountResult is PositiveMoneyAmountResult.ValidationFailed moneyValidationProblem)
+        {
+            return CommandResult<BudgetAdjustment>.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(amount)] = [moneyValidationProblem.Error]
+            });
+        }
+
         var item = await LoadBudgetItem(budgetId, budgetItemId, ct);
         var effectivePlannedAmounts = await LoadEffectivePlannedAmounts(budgetId, date, ct);
         var effectiveBudget = HydrateEffectiveBudget(budgetId, budgetItemId, date, item, effectivePlannedAmounts);
 
-        var result = effectiveBudget.RecordAdjustment(budgetItemId, amount, type, notes);
+        var result = effectiveBudget.RecordAdjustment(
+            budgetItemId,
+            ((PositiveMoneyAmountResult.Success)amountResult).Amount,
+            type,
+            notes);
         if (result is EffectiveBudgetResult.ItemNotFound)
         {
             return CommandResult<BudgetAdjustment>.NotFound();
@@ -61,11 +74,11 @@ public sealed class RecordAdjustmentHandler(
             return CommandResult<BudgetAdjustment>.ValidationProblem(BudgetItemValidationErrors.ArchivedBudgetItemErrors());
         }
 
-        if (result is EffectiveBudgetResult.ValidationFailed validationProblem)
+        if (result is EffectiveBudgetResult.ValidationFailed effectiveBudgetValidationProblem)
         {
             return CommandResult<BudgetAdjustment>.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(amount)] = [validationProblem.Error]
+                [nameof(amount)] = [effectiveBudgetValidationProblem.Error]
             });
         }
 

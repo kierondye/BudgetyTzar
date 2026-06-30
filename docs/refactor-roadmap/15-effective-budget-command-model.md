@@ -232,12 +232,27 @@ Tests run:
 
 ### Increment 4 - Strengthen Money Input
 
-Status: deferred.
+Status: implemented, awaiting review.
 
 - Add a non-throwing money factory/result for user-input validation.
 - Move command handlers to convert raw decimal input into a valid positive money value before calling domain operations.
 - Avoid relying on `MoneyAmount.Positive(...)` throwing inside expected validation paths.
 - Keep API validation messages stable unless explicitly changing validation contracts.
+
+Implementation notes:
+
+- Added `PositiveMoneyAmount.Create(...)` with a closed `PositiveMoneyAmountResult` for expected positive-money validation failures.
+- Preserved existing `MoneyAmount.Positive(...)` throwing behavior for programmer-error construction paths.
+- Moved the adjustment handler to convert the raw decimal amount into `PositiveMoneyAmount` before calling `EffectiveBudget.RecordAdjustment(...)`.
+- Added a `PositiveMoneyAmount` overload for `EffectiveBudget.RecordAdjustment(...)` and kept the decimal overload as a compatibility shim that returns validation failures instead of throwing.
+- Added an internal `PositiveMoneyAmount` overload for `BudgetAdjustment.Create(...)` so successful effective budget commands can create adjustments without revalidating through the throwing factory.
+- Preserved existing validation messages and event payload behavior.
+- Kept transactions, reallocations, and broader money input refactors out of scope for this increment.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~MoneyAmountTests|FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetAdjustmentsTests"` - passed, 20 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 117 tests.
 
 ### Increment 5 - Let Budget Own Budget Items
 

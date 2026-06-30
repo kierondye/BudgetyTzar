@@ -3,6 +3,9 @@ using System.Net.Http.Json;
 using BudgetyTzar.Api;
 using BudgetyTzar.Api.Application.Reporting;
 using BudgetyTzar.Api.Features;
+using BudgetyTzar.Api.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace BudgetyTzar.Tests;
 
@@ -87,5 +90,33 @@ public sealed class BudgetAdjustmentsTests
         Assert.Equal(HttpStatusCode.BadRequest, groceryInversion.StatusCode);
         Assert.Equal(HttpStatusCode.Created, salaryCorrection.StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, salaryInversion.StatusCode);
+    }
+
+    [Fact]
+    public async Task AdjustmentHandlerReturnsValidationProblemForInvalidMoneyBeforeRecordingAdjustment()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await BudgetApiTestClient.CreateBudget(client);
+        var salary = await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Salary", BudgetItemKind.Funding);
+
+        using var scope = app.Services.CreateScope();
+        var handler = scope.ServiceProvider.GetRequiredService<RecordAdjustmentHandler>();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+
+        var result = await handler.Handle(
+            budget.Id,
+            salary.Id,
+            10.001m,
+            BudgetAdjustmentType.Credit,
+            new DateOnly(2026, 6, 1),
+            "Too precise",
+            CancellationToken.None);
+
+        Assert.Equal(CommandResultStatus.ValidationProblem, result.Status);
+        var error = Assert.Single(result.Errors![nameof(CreateBudgetItemAdjustmentRequest.Amount).ToLowerInvariant()]);
+        Assert.Equal(MoneyAmount.MoneyScaleExceededMessage, error);
+        Assert.Equal(0, await db.BudgetAdjustments.CountAsync());
     }
 }

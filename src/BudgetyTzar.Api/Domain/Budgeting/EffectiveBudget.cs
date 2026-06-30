@@ -20,8 +20,8 @@ public abstract record EffectiveBudgetResult
 public sealed class EffectiveBudget
 {
     public const string NetPlannedSpendingExceededMessage = "Net planned spending must not exceed net planned income.";
-    public const string PositiveAmountRequiredMessage = "Amount must be greater than zero.";
-    public const string MoneyScaleExceededMessage = "Money values must use at most two decimal places.";
+    public const string PositiveAmountRequiredMessage = MoneyAmount.PositiveAmountRequiredMessage;
+    public const string MoneyScaleExceededMessage = MoneyAmount.MoneyScaleExceededMessage;
 
     private readonly Dictionary<Guid, EffectiveBudgetItem> items;
     private readonly List<BudgetAdjustment> pendingAdjustments = [];
@@ -57,6 +57,18 @@ public sealed class EffectiveBudget
         BudgetAdjustmentType type,
         string? notes)
     {
+        var amountResult = PositiveMoneyAmount.Create(amount);
+        return amountResult is PositiveMoneyAmountResult.Success success
+            ? RecordAdjustment(budgetItemId, success.Amount, type, notes)
+            : new EffectiveBudgetResult.ValidationFailed(((PositiveMoneyAmountResult.ValidationFailed)amountResult).Error);
+    }
+
+    public EffectiveBudgetResult RecordAdjustment(
+        Guid budgetItemId,
+        PositiveMoneyAmount amount,
+        BudgetAdjustmentType type,
+        string? notes)
+    {
         if (!items.TryGetValue(budgetItemId, out var item))
         {
             return new EffectiveBudgetResult.ItemNotFound(budgetItemId);
@@ -67,13 +79,7 @@ public sealed class EffectiveBudget
             return new EffectiveBudgetResult.ItemArchived(budgetItemId);
         }
 
-        var amountValidationError = ValidatePositiveMoney(amount);
-        if (amountValidationError is not null)
-        {
-            return new EffectiveBudgetResult.ValidationFailed(amountValidationError);
-        }
-
-        var positiveAmount = MoneyAmount.Positive(amount).Value;
+        var positiveAmount = amount.Value;
         var signedPlannedAmount = type == BudgetAdjustmentType.Credit ? positiveAmount : -positiveAmount;
         var budgetValidationError = ValidateEffectivePlannedPosition(signedPlannedAmount);
         if (budgetValidationError is not null)
@@ -91,7 +97,7 @@ public sealed class EffectiveBudget
         var adjustment = BudgetAdjustment.Create(
             BudgetId,
             item.BudgetItem.Id,
-            positiveAmount,
+            amount,
             type,
             Date,
             notes);
@@ -108,16 +114,6 @@ public sealed class EffectiveBudget
         NetPlannedAmount + signedPlannedAmount >= 0
             ? null
             : NetPlannedSpendingExceededMessage;
-
-    private static string? ValidatePositiveMoney(decimal amount)
-    {
-        if (amount <= 0)
-        {
-            return PositiveAmountRequiredMessage;
-        }
-
-        return decimal.Round(amount, 2) == amount ? null : MoneyScaleExceededMessage;
-    }
 
     private sealed class EffectiveBudgetItem
     {

@@ -73,6 +73,26 @@ public sealed class EffectiveBudgetTests
     }
 
     [Fact]
+    public void EffectiveBudgetRejectsTooPreciseDecimalAmountWithoutRecordingAdjustment()
+    {
+        var budgetId = Guid.NewGuid();
+        var date = new DateOnly(2026, 7, 2);
+        var salary = BudgetItem.Create(budgetId, "Salary", BudgetItemKind.Funding);
+        var effectiveBudget = new EffectiveBudget(
+            budgetId,
+            date,
+            0m,
+            [new EffectiveBudgetItemState(salary, 0m)]);
+
+        var result = effectiveBudget.RecordAdjustment(salary.Id, 10.001m, BudgetAdjustmentType.Credit, "Too precise");
+
+        var validationProblem = Assert.IsType<EffectiveBudgetResult.ValidationFailed>(result);
+        Assert.Equal(EffectiveBudget.MoneyScaleExceededMessage, validationProblem.Error);
+        Assert.Empty(effectiveBudget.PendingAdjustments);
+        Assert.Empty(effectiveBudget.PendingEvents);
+    }
+
+    [Fact]
     public void EffectiveBudgetRejectsConsumptionAdjustmentThatWouldBecomeFunding()
     {
         var budgetId = Guid.NewGuid();
