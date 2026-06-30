@@ -6,6 +6,18 @@ namespace BudgetyTzar.Tests;
 public sealed class BudgetAdjustmentTests
 {
     [Fact]
+    public void BudgetAdjustmentDoesNotExposePublicMutation()
+    {
+        var mutableProperties = typeof(BudgetAdjustment)
+            .GetProperties()
+            .Where(x => x.SetMethod?.IsPublic == true)
+            .Select(x => x.Name)
+            .ToList();
+
+        Assert.Empty(mutableProperties);
+    }
+
+    [Fact]
     public void SignedPlannedAmountTreatsCreditsAsPositiveAndDebitsAsNegative()
     {
         var budgetId = Guid.NewGuid();
@@ -51,5 +63,10 @@ public sealed class BudgetAdjustmentTests
         var payload = Assert.IsType<BudgetAdjustmentRecordedPayload>(domainEvent.Payload);
         Assert.Equal(budgetId, payload.BudgetId);
         Assert.Equal(budgetItemId, payload.BudgetItemId);
+        Assert.Equal(adjustment.Id, payload.BudgetAdjustmentId);
+        Assert.Equal(100m, payload.Amount);
+        Assert.Equal(BudgetAdjustmentType.Credit, payload.Direction);
+        Assert.Equal(new DateOnly(2026, 6, 1), payload.Date);
+        Assert.Equal("Initial balance", payload.Notes);
     }
 }

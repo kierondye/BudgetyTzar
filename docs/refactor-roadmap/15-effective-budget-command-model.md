@@ -500,7 +500,7 @@ Tests run:
 
 ### Increment 11 - Make Budget Adjustment Immutable
 
-Status: planned.
+Status: implemented, awaiting review.
 
 Goal: ensure `BudgetAdjustment` is an immutable record of a planned budget change.
 
@@ -514,12 +514,23 @@ Goal: ensure `BudgetAdjustment` is an immutable record of a planned budget chang
 
 Implementation notes:
 
-- Not started.
+- Removed public mutation from `BudgetAdjustment` by replacing public setters and init setters with private setters, private EF construction, and factory construction.
+- Kept `BudgetAdjustment.Create(...)` as the public valid construction path and retained the internal `PositiveMoneyAmount` overload for already-validated command flows.
+- Preserved `ReallocationId` as existing adjustment data without refactoring the reallocation workflow.
+- Preserved `SignedPlannedAmount()`, `BudgetAdjustmentRecorded` event name, and event payload shape.
+- Added focused domain coverage proving the public adjustment surface does not expose setters and the recorded event payload remains stable.
+- Kept transactions, allocations, reallocations, persistence shape, and event contracts otherwise unchanged.
 
 Tests to run:
 
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~BudgetAdjustmentsTests|FullyQualifiedName~EventContractTests"`
 - Run broader event tests if event construction changes.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~BudgetAdjustmentsTests|FullyQualifiedName~EventContractTests"` - passed, 19 tests.
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetAdjustmentTests"` - passed, 3 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 125 tests.
 
 ### Increment 12 - Make Budget Reallocation Immutable
 

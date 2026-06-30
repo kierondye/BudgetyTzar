@@ -12,17 +12,47 @@ public enum BudgetAdjustmentType
 
 public sealed class BudgetAdjustment
 {
-    public Guid Id { get; init; } = Guid.NewGuid();
-    public Guid BudgetId { get; set; }
-    public Guid BudgetItemId { get; set; }
-    public Guid? ReallocationId { get; set; }
-    public DateOnly Date { get; set; }
-    public decimal Amount { get; set; }
-    public BudgetAdjustmentType Type { get; set; }
-    public required string Reason { get; set; }
-    public string? Notes { get; set; }
-    public decimal LegacySignedAmount { get; set; }
-    public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+    private BudgetAdjustment()
+    {
+    }
+
+    private BudgetAdjustment(
+        Guid id,
+        Guid budgetId,
+        Guid budgetItemId,
+        Guid? reallocationId,
+        DateOnly date,
+        decimal amount,
+        BudgetAdjustmentType type,
+        string reason,
+        string? notes,
+        decimal legacySignedAmount,
+        DateTimeOffset createdAt)
+    {
+        Id = id;
+        BudgetId = budgetId;
+        BudgetItemId = budgetItemId;
+        ReallocationId = reallocationId;
+        Date = date;
+        Amount = amount;
+        Type = type;
+        Reason = reason;
+        Notes = notes;
+        LegacySignedAmount = legacySignedAmount;
+        CreatedAt = createdAt;
+    }
+
+    public Guid Id { get; private set; } = Guid.NewGuid();
+    public Guid BudgetId { get; private set; }
+    public Guid BudgetItemId { get; private set; }
+    public Guid? ReallocationId { get; private set; }
+    public DateOnly Date { get; private set; }
+    public decimal Amount { get; private set; }
+    public BudgetAdjustmentType Type { get; private set; }
+    public string Reason { get; private set; } = string.Empty;
+    public string? Notes { get; private set; }
+    public decimal LegacySignedAmount { get; private set; }
+    public DateTimeOffset CreatedAt { get; private set; } = DateTimeOffset.UtcNow;
 
     public static BudgetAdjustment Create(
         Guid budgetId,
@@ -41,19 +71,22 @@ public sealed class BudgetAdjustment
         BudgetAdjustmentType type,
         DateOnly date,
         string? notes,
-        Guid? reallocationId = null) =>
-        new()
-        {
-            BudgetId = budgetId,
-            BudgetItemId = budgetItemId,
-            ReallocationId = reallocationId,
-            Date = date,
-            Amount = amount.Value,
-            Type = type,
-            Reason = notes?.Trim() ?? string.Empty,
-            Notes = notes?.Trim(),
-            LegacySignedAmount = type == BudgetAdjustmentType.Credit ? amount.Value : -amount.Value
-        };
+        Guid? reallocationId = null)
+    {
+        var trimmedNotes = notes?.Trim();
+        return new BudgetAdjustment(
+            Guid.NewGuid(),
+            budgetId,
+            budgetItemId,
+            reallocationId,
+            date,
+            amount.Value,
+            type,
+            trimmedNotes ?? string.Empty,
+            trimmedNotes,
+            type == BudgetAdjustmentType.Credit ? amount.Value : -amount.Value,
+            DateTimeOffset.UtcNow);
+    }
 
     public decimal SignedPlannedAmount() =>
         Type == BudgetAdjustmentType.Credit ? Amount : -Amount;
