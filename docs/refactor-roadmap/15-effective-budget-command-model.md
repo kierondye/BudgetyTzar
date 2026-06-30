@@ -599,6 +599,38 @@ Tests run:
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetAdjustmentsTests"` - passed, 22 tests.
 - `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 128 tests.
 
+### Increment 14 - Remove Raw Money Effective Budget Shim
+
+Status: implemented, awaiting review.
+
+Goal: narrow the `EffectiveBudget` command surface so expected raw money validation happens before callers enter the domain command model.
+
+- Remove the decimal `EffectiveBudget.RecordAdjustment(...)` compatibility overload retained in Increment 13.
+- Keep `EffectiveBudget.RecordAdjustment(...)` accepting `PositiveMoneyAmount` so callers must supply validated positive money.
+- Preserve result-based domain rejections for effective-budget state validation.
+- Keep raw decimal validation in the handler and money value object result path.
+- Preserve existing event names, payloads, API behavior, persistence behavior, and save boundary behavior.
+- Keep transactions, reallocations, and broader money-input refactors out of scope.
+- Add focused public-surface coverage proving adjustment commands require validated money.
+
+Implementation notes:
+
+- Removed the public decimal `EffectiveBudget.RecordAdjustment(...)` overload.
+- Updated focused domain and repository tests to pass `PositiveMoneyAmount` into the effective-budget command model.
+- Added public-surface coverage that asserts `EffectiveBudget.RecordAdjustment(...)` exposes only the validated `PositiveMoneyAmount` command input.
+- Kept invalid raw decimal coverage in `PositiveMoneyAmount` tests and the adjustment handler test.
+- Preserved existing effective-budget validation result cases, event payloads, persistence behavior, and API behavior.
+
+Tests to run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetAdjustmentsTests|FullyQualifiedName~MoneyAmountTests"`
+- Run `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` if practical.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetAdjustmentsTests|FullyQualifiedName~MoneyAmountTests"` - passed, 25 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 128 tests.
+
 ## Validation Rules
 
 `EffectiveBudget.RecordAdjustment(...)` should validate:

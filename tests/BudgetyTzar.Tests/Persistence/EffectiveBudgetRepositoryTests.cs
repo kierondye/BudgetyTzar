@@ -46,7 +46,7 @@ public sealed class EffectiveBudgetRepositoryTests
 
         var result = loaded.Budget.RecordAdjustment(
             Guid.NewGuid(),
-            10m,
+            Money(10m),
             BudgetAdjustmentType.Credit,
             "Unknown item");
 
@@ -100,14 +100,14 @@ public sealed class EffectiveBudgetRepositoryTests
 
         var salaryCorrection = loaded.Budget.RecordAdjustment(
             salary.Id,
-            25m,
+            Money(25m),
             BudgetAdjustmentType.Debit,
             "Reduced current income");
         Assert.IsType<EffectiveBudgetResult.Success>(salaryCorrection);
 
         var result = loaded.Budget.RecordAdjustment(
             groceries.Id,
-            25.01m,
+            Money(25.01m),
             BudgetAdjustmentType.Debit,
             "Exceeds current funding");
 
@@ -130,9 +130,9 @@ public sealed class EffectiveBudgetRepositoryTests
             [new EffectiveBudgetItemState(groceries, 0m)]);
 
         var firstResult = Assert.IsType<EffectiveBudgetResult.Success>(
-            effectiveBudget.RecordAdjustment(groceries.Id, 25m, BudgetAdjustmentType.Debit, "First change"));
+            effectiveBudget.RecordAdjustment(groceries.Id, Money(25m), BudgetAdjustmentType.Debit, "First change"));
         var secondResult = Assert.IsType<EffectiveBudgetResult.Success>(
-            firstResult.Budget.RecordAdjustment(groceries.Id, 30m, BudgetAdjustmentType.Debit, "Second change"));
+            firstResult.Budget.RecordAdjustment(groceries.Id, Money(30m), BudgetAdjustmentType.Debit, "Second change"));
 
         var modifiedBudget = secondResult.Budget;
         var firstPendingAdjustment = modifiedBudget.PendingAdjustments.First();
@@ -149,4 +149,7 @@ public sealed class EffectiveBudgetRepositoryTests
         Assert.Equal(2, await db.OutboxMessages.CountAsync(x =>
             x.EventType == "budgetytzar.budgeting.budget-adjustment-recorded.v1"));
     }
+
+    private static PositiveMoneyAmount Money(decimal amount) =>
+        PositiveMoneyAmount.Require(amount);
 }

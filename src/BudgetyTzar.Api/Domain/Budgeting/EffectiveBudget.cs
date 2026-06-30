@@ -67,18 +67,6 @@ public sealed class EffectiveBudget
 
     public EffectiveBudgetResult RecordAdjustment(
         Guid budgetItemId,
-        decimal amount,
-        BudgetAdjustmentType type,
-        string? notes)
-    {
-        var amountResult = PositiveMoneyAmount.Create(amount);
-        return amountResult is PositiveMoneyAmountResult.Success success
-            ? RecordAdjustment(budgetItemId, success.Amount, type, notes)
-            : new EffectiveBudgetResult.ValidationFailed(((PositiveMoneyAmountResult.ValidationFailed)amountResult).Error);
-    }
-
-    public EffectiveBudgetResult RecordAdjustment(
-        Guid budgetItemId,
         PositiveMoneyAmount amount,
         BudgetAdjustmentType type,
         string? notes)
