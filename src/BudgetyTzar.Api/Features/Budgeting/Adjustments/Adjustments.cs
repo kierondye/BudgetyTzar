@@ -51,24 +51,18 @@ public sealed class RecordAdjustmentHandler(
         var effectivePlannedAmounts = await LoadEffectivePlannedAmounts(budgetId, date, ct);
         var effectiveBudget = HydrateEffectiveBudget(budgetId, budgetItemId, date, item, effectivePlannedAmounts);
 
-        var itemLookup = effectiveBudget.GetBudgetItem(budgetItemId);
-        if (itemLookup is EffectiveBudgetItemNotFound)
+        var result = effectiveBudget.RecordAdjustment(budgetItemId, amount, type, notes);
+        if (result is EffectiveBudgetResult.ItemNotFound)
         {
             return CommandResult<BudgetAdjustment>.NotFound();
         }
 
-        if (itemLookup is not EffectiveBudgetItemFound found)
-        {
-            throw new InvalidOperationException("Effective budget item lookup result was not handled.");
-        }
-
-        var result = found.Item.CreateAdjustment(amount, type, notes);
-        if (result is EffectiveBudgetAdjustmentArchivedBudgetItem)
+        if (result is EffectiveBudgetResult.ItemArchived)
         {
             return CommandResult<BudgetAdjustment>.ValidationProblem(BudgetItemValidationErrors.ArchivedBudgetItemErrors());
         }
 
-        if (result is EffectiveBudgetAdjustmentValidationProblem validationProblem)
+        if (result is EffectiveBudgetResult.ValidationFailed validationProblem)
         {
             return CommandResult<BudgetAdjustment>.ValidationProblem(new Dictionary<string, string[]>
             {
@@ -76,14 +70,15 @@ public sealed class RecordAdjustmentHandler(
             });
         }
 
-        if (result is not EffectiveBudgetAdjustmentRecorded recorded)
+        if (result is not EffectiveBudgetResult.Success success)
         {
             throw new InvalidOperationException("Effective budget adjustment result was not handled.");
         }
 
-        var adjustment = recorded.Adjustment;
+        var adjustment = success.Budget.PendingAdjustments.Single();
+        var domainEvent = success.Budget.PendingEvents.Single();
         db.BudgetAdjustments.Add(adjustment);
-        var eventId = events.Add(adjustment.RecordedEvent(recorded.BudgetItemName));
+        var eventId = events.Add(domainEvent);
         await db.SaveChangesAsync(ct);
         return CommandResult<BudgetAdjustment>.Created(adjustment, eventId);
     }

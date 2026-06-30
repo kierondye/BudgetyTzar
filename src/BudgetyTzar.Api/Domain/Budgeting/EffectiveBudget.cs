@@ -2,71 +2,30 @@ namespace BudgetyTzar.Api;
 
 public sealed record EffectiveBudgetItemState(BudgetItem BudgetItem, decimal PlannedAmount);
 
-public abstract record EffectiveBudgetItemLookupResult;
-
-public sealed record EffectiveBudgetItemFound(EffectiveBudgetItem Item) : EffectiveBudgetItemLookupResult;
-
-public sealed record EffectiveBudgetItemNotFound : EffectiveBudgetItemLookupResult;
-
-public abstract record EffectiveBudgetAdjustmentResult;
-
-public sealed record EffectiveBudgetAdjustmentRecorded(BudgetAdjustment Adjustment, string BudgetItemName) : EffectiveBudgetAdjustmentResult;
-
-public sealed record EffectiveBudgetAdjustmentArchivedBudgetItem : EffectiveBudgetAdjustmentResult;
-
-public sealed record EffectiveBudgetAdjustmentValidationProblem(string Error) : EffectiveBudgetAdjustmentResult;
-
-public sealed class EffectiveBudgetItem
+public abstract record EffectiveBudgetResult
 {
-    private readonly EffectiveBudget budget;
-
-    internal EffectiveBudgetItem(EffectiveBudget budget, BudgetItem budgetItem, decimal plannedAmount)
+    private EffectiveBudgetResult()
     {
-        this.budget = budget;
-        BudgetItem = budgetItem;
-        PlannedAmount = plannedAmount;
     }
 
-    public BudgetItem BudgetItem { get; }
-    public decimal PlannedAmount { get; }
+    public sealed record Success(EffectiveBudget Budget) : EffectiveBudgetResult;
 
-    public EffectiveBudgetAdjustmentResult CreateAdjustment(decimal amount, BudgetAdjustmentType type, string? notes)
-    {
-        if (!BudgetItem.CanAcceptActivityOn(budget.Date))
-        {
-            return new EffectiveBudgetAdjustmentArchivedBudgetItem();
-        }
+    public sealed record ItemNotFound(Guid BudgetItemId) : EffectiveBudgetResult;
 
-        var positiveAmount = MoneyAmount.Positive(amount).Value;
-        var signedPlannedAmount = type == BudgetAdjustmentType.Credit ? positiveAmount : -positiveAmount;
-        var budgetValidationError = budget.ValidateEffectivePlannedPosition(signedPlannedAmount);
-        if (budgetValidationError is not null)
-        {
-            return new EffectiveBudgetAdjustmentValidationProblem(budgetValidationError);
-        }
+    public sealed record ItemArchived(Guid BudgetItemId) : EffectiveBudgetResult;
 
-        var itemValidationError = BudgetItem.ValidateEffectivePlannedPosition(PlannedAmount + signedPlannedAmount);
-        if (itemValidationError is not null)
-        {
-            return new EffectiveBudgetAdjustmentValidationProblem(itemValidationError);
-        }
-
-        var adjustment = BudgetAdjustment.Create(
-            budget.BudgetId,
-            BudgetItem.Id,
-            positiveAmount,
-            type,
-            budget.Date,
-            notes);
-        return new EffectiveBudgetAdjustmentRecorded(adjustment, BudgetItem.Name);
-    }
+    public sealed record ValidationFailed(string Error) : EffectiveBudgetResult;
 }
 
 public sealed class EffectiveBudget
 {
     public const string NetPlannedSpendingExceededMessage = "Net planned spending must not exceed net planned income.";
+    public const string PositiveAmountRequiredMessage = "Amount must be greater than zero.";
+    public const string MoneyScaleExceededMessage = "Money values must use at most two decimal places.";
 
-    private readonly IReadOnlyDictionary<Guid, EffectiveBudgetItem> items;
+    private readonly Dictionary<Guid, EffectiveBudgetItem> items;
+    private readonly List<BudgetAdjustment> pendingAdjustments = [];
+    private readonly List<DomainEvent> pendingEvents = [];
 
     public EffectiveBudget(Guid budgetId, DateOnly date, decimal netPlannedAmount, IReadOnlyCollection<EffectiveBudgetItemState> items)
     {
@@ -88,20 +47,92 @@ public sealed class EffectiveBudget
 
     public Guid BudgetId { get; }
     public DateOnly Date { get; }
-    public decimal NetPlannedAmount { get; }
+    public decimal NetPlannedAmount { get; private set; }
+    public IReadOnlyCollection<BudgetAdjustment> PendingAdjustments => pendingAdjustments;
+    public IReadOnlyCollection<DomainEvent> PendingEvents => pendingEvents;
 
-    public EffectiveBudgetItemLookupResult GetBudgetItem(Guid budgetItemId)
+    public EffectiveBudgetResult RecordAdjustment(
+        Guid budgetItemId,
+        decimal amount,
+        BudgetAdjustmentType type,
+        string? notes)
     {
         if (!items.TryGetValue(budgetItemId, out var item))
         {
-            return new EffectiveBudgetItemNotFound();
+            return new EffectiveBudgetResult.ItemNotFound(budgetItemId);
         }
 
-        return new EffectiveBudgetItemFound(item);
+        if (!item.BudgetItem.CanAcceptActivityOn(Date))
+        {
+            return new EffectiveBudgetResult.ItemArchived(budgetItemId);
+        }
+
+        var amountValidationError = ValidatePositiveMoney(amount);
+        if (amountValidationError is not null)
+        {
+            return new EffectiveBudgetResult.ValidationFailed(amountValidationError);
+        }
+
+        var positiveAmount = MoneyAmount.Positive(amount).Value;
+        var signedPlannedAmount = type == BudgetAdjustmentType.Credit ? positiveAmount : -positiveAmount;
+        var budgetValidationError = ValidateEffectivePlannedPosition(signedPlannedAmount);
+        if (budgetValidationError is not null)
+        {
+            return new EffectiveBudgetResult.ValidationFailed(budgetValidationError);
+        }
+
+        var updatedItemPlannedAmount = item.PlannedAmount + signedPlannedAmount;
+        var itemValidationError = item.BudgetItem.ValidateEffectivePlannedPosition(updatedItemPlannedAmount);
+        if (itemValidationError is not null)
+        {
+            return new EffectiveBudgetResult.ValidationFailed(itemValidationError);
+        }
+
+        var adjustment = BudgetAdjustment.Create(
+            BudgetId,
+            item.BudgetItem.Id,
+            positiveAmount,
+            type,
+            Date,
+            notes);
+
+        item.PlannedAmount = updatedItemPlannedAmount;
+        NetPlannedAmount += signedPlannedAmount;
+        pendingAdjustments.Add(adjustment);
+        pendingEvents.Add(adjustment.RecordedEvent(item.BudgetItem.Name));
+
+        return new EffectiveBudgetResult.Success(this);
     }
 
     internal string? ValidateEffectivePlannedPosition(decimal signedPlannedAmount) =>
         NetPlannedAmount + signedPlannedAmount >= 0
             ? null
             : NetPlannedSpendingExceededMessage;
+
+    private static string? ValidatePositiveMoney(decimal amount)
+    {
+        if (amount <= 0)
+        {
+            return PositiveAmountRequiredMessage;
+        }
+
+        return decimal.Round(amount, 2) == amount ? null : MoneyScaleExceededMessage;
+    }
+
+    private sealed class EffectiveBudgetItem
+    {
+        internal EffectiveBudgetItem(EffectiveBudget budget, BudgetItem budgetItem, decimal plannedAmount)
+        {
+            if (budget.BudgetId != budgetItem.BudgetId)
+            {
+                throw new InvalidOperationException("Effective budget items must belong to the effective budget.");
+            }
+
+            BudgetItem = budgetItem;
+            PlannedAmount = plannedAmount;
+        }
+
+        public BudgetItem BudgetItem { get; }
+        public decimal PlannedAmount { get; set; }
+    }
 }

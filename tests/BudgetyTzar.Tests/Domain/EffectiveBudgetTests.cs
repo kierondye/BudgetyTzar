@@ -1,4 +1,5 @@
 using BudgetyTzar.Api;
+using BudgetyTzar.Api.Contracts.Events;
 
 namespace BudgetyTzar.Tests;
 
@@ -16,19 +17,31 @@ public sealed class EffectiveBudgetTests
             100m,
             [new EffectiveBudgetItemState(groceries, 0m)]);
 
-        var itemLookup = effectiveBudget.GetBudgetItem(groceries.Id);
-        var item = Assert.IsType<EffectiveBudgetItemFound>(itemLookup).Item;
-        var result = item.CreateAdjustment(100m, BudgetAdjustmentType.Debit, "Covered spending");
+        var result = effectiveBudget.RecordAdjustment(groceries.Id, 100m, BudgetAdjustmentType.Debit, "Covered spending");
 
-        var recorded = Assert.IsType<EffectiveBudgetAdjustmentRecorded>(result);
-        var adjustment = recorded.Adjustment;
-        Assert.Equal("Groceries", recorded.BudgetItemName);
+        var success = Assert.IsType<EffectiveBudgetResult.Success>(result);
+        Assert.Same(effectiveBudget, success.Budget);
+        var adjustment = Assert.Single(success.Budget.PendingAdjustments);
         Assert.Equal(budgetId, adjustment.BudgetId);
         Assert.Equal(groceries.Id, adjustment.BudgetItemId);
         Assert.Equal(date, adjustment.Date);
         Assert.Equal(100m, adjustment.Amount);
         Assert.Equal(BudgetAdjustmentType.Debit, adjustment.Type);
         Assert.Equal("Covered spending", adjustment.Notes);
+
+        var domainEvent = Assert.Single(success.Budget.PendingEvents);
+        Assert.Equal("BudgetAdjustmentRecorded", domainEvent.EventType);
+        Assert.Equal(budgetId, domainEvent.BudgetId);
+        Assert.Equal(nameof(BudgetAdjustment), domainEvent.EntityType);
+        Assert.Equal(adjustment.Id, domainEvent.EntityId);
+        var payload = Assert.IsType<BudgetAdjustmentRecordedPayload>(domainEvent.Payload);
+        Assert.Equal(adjustment.Id, payload.BudgetAdjustmentId);
+        Assert.Equal(budgetId, payload.BudgetId);
+        Assert.Equal(groceries.Id, payload.BudgetItemId);
+        Assert.Equal(100m, payload.Amount);
+        Assert.Equal(BudgetAdjustmentType.Debit, payload.Direction);
+        Assert.Equal(date, payload.Date);
+        Assert.Equal("Covered spending", payload.Notes);
     }
 
     [Fact]
@@ -43,12 +56,12 @@ public sealed class EffectiveBudgetTests
             0m,
             [new EffectiveBudgetItemState(groceries, 0m)]);
 
-        var itemLookup = effectiveBudget.GetBudgetItem(groceries.Id);
-        var item = Assert.IsType<EffectiveBudgetItemFound>(itemLookup).Item;
-        var result = item.CreateAdjustment(100m, BudgetAdjustmentType.Debit, "Too early");
+        var result = effectiveBudget.RecordAdjustment(groceries.Id, 100m, BudgetAdjustmentType.Debit, "Too early");
 
-        var validationProblem = Assert.IsType<EffectiveBudgetAdjustmentValidationProblem>(result);
+        var validationProblem = Assert.IsType<EffectiveBudgetResult.ValidationFailed>(result);
         Assert.Equal(EffectiveBudget.NetPlannedSpendingExceededMessage, validationProblem.Error);
+        Assert.Empty(effectiveBudget.PendingAdjustments);
+        Assert.Empty(effectiveBudget.PendingEvents);
     }
 
     [Fact]
@@ -63,11 +76,9 @@ public sealed class EffectiveBudgetTests
             25m,
             [new EffectiveBudgetItemState(groceries, -75m)]);
 
-        var itemLookup = effectiveBudget.GetBudgetItem(groceries.Id);
-        var item = Assert.IsType<EffectiveBudgetItemFound>(itemLookup).Item;
-        var result = item.CreateAdjustment(100m, BudgetAdjustmentType.Credit, "Correction");
+        var result = effectiveBudget.RecordAdjustment(groceries.Id, 100m, BudgetAdjustmentType.Credit, "Correction");
 
-        var validationProblem = Assert.IsType<EffectiveBudgetAdjustmentValidationProblem>(result);
+        var validationProblem = Assert.IsType<EffectiveBudgetResult.ValidationFailed>(result);
         Assert.Equal(BudgetItem.ConsumptionBudgetItemBecameFundingMessage, validationProblem.Error);
     }
 
@@ -83,12 +94,10 @@ public sealed class EffectiveBudgetTests
             0m,
             [new EffectiveBudgetItemState(groceries, -100m)]);
 
-        var itemLookup = effectiveBudget.GetBudgetItem(groceries.Id);
-        var item = Assert.IsType<EffectiveBudgetItemFound>(itemLookup).Item;
-        var result = item.CreateAdjustment(25m, BudgetAdjustmentType.Credit, "Correction");
+        var result = effectiveBudget.RecordAdjustment(groceries.Id, 25m, BudgetAdjustmentType.Credit, "Correction");
 
-        var recorded = Assert.IsType<EffectiveBudgetAdjustmentRecorded>(result);
-        var adjustment = recorded.Adjustment;
+        var success = Assert.IsType<EffectiveBudgetResult.Success>(result);
+        var adjustment = Assert.Single(success.Budget.PendingAdjustments);
         Assert.Equal(date, adjustment.Date);
         Assert.Equal(groceries.Id, adjustment.BudgetItemId);
     }
@@ -105,11 +114,9 @@ public sealed class EffectiveBudgetTests
             200m,
             [new EffectiveBudgetItemState(salary, 75m)]);
 
-        var itemLookup = effectiveBudget.GetBudgetItem(salary.Id);
-        var item = Assert.IsType<EffectiveBudgetItemFound>(itemLookup).Item;
-        var result = item.CreateAdjustment(100m, BudgetAdjustmentType.Debit, "Reversal");
+        var result = effectiveBudget.RecordAdjustment(salary.Id, 100m, BudgetAdjustmentType.Debit, "Reversal");
 
-        var validationProblem = Assert.IsType<EffectiveBudgetAdjustmentValidationProblem>(result);
+        var validationProblem = Assert.IsType<EffectiveBudgetResult.ValidationFailed>(result);
         Assert.Equal(BudgetItem.FundingBudgetItemBecameConsumptionMessage, validationProblem.Error);
     }
 
@@ -125,18 +132,16 @@ public sealed class EffectiveBudgetTests
             100m,
             [new EffectiveBudgetItemState(salary, 100m)]);
 
-        var itemLookup = effectiveBudget.GetBudgetItem(salary.Id);
-        var item = Assert.IsType<EffectiveBudgetItemFound>(itemLookup).Item;
-        var result = item.CreateAdjustment(25m, BudgetAdjustmentType.Debit, "Reversal");
+        var result = effectiveBudget.RecordAdjustment(salary.Id, 25m, BudgetAdjustmentType.Debit, "Reversal");
 
-        var recorded = Assert.IsType<EffectiveBudgetAdjustmentRecorded>(result);
-        var adjustment = recorded.Adjustment;
+        var success = Assert.IsType<EffectiveBudgetResult.Success>(result);
+        var adjustment = Assert.Single(success.Budget.PendingAdjustments);
         Assert.Equal(date, adjustment.Date);
         Assert.Equal(salary.Id, adjustment.BudgetItemId);
     }
 
     [Fact]
-    public void EffectiveBudgetReturnsNotFoundWhenLookingUpUnknownItem()
+    public void EffectiveBudgetReturnsNotFoundWhenRecordingAdjustmentForUnknownItem()
     {
         var effectiveBudget = new EffectiveBudget(
             Guid.NewGuid(),
@@ -144,9 +149,14 @@ public sealed class EffectiveBudgetTests
             0m,
             []);
 
-        var result = effectiveBudget.GetBudgetItem(Guid.NewGuid());
+        var unknownItemId = Guid.NewGuid();
 
-        Assert.IsType<EffectiveBudgetItemNotFound>(result);
+        var result = effectiveBudget.RecordAdjustment(unknownItemId, 25m, BudgetAdjustmentType.Credit, "Unknown item");
+
+        var notFound = Assert.IsType<EffectiveBudgetResult.ItemNotFound>(result);
+        Assert.Equal(unknownItemId, notFound.BudgetItemId);
+        Assert.Empty(effectiveBudget.PendingAdjustments);
+        Assert.Empty(effectiveBudget.PendingEvents);
     }
 
     [Fact]
@@ -161,11 +171,36 @@ public sealed class EffectiveBudgetTests
             100m,
             [new EffectiveBudgetItemState(groceries, 0m)]);
 
-        var itemLookup = effectiveBudget.GetBudgetItem(groceries.Id);
-        var item = Assert.IsType<EffectiveBudgetItemFound>(itemLookup).Item;
-        var result = item.CreateAdjustment(25m, BudgetAdjustmentType.Debit, "After archive");
+        var result = effectiveBudget.RecordAdjustment(groceries.Id, 25m, BudgetAdjustmentType.Debit, "After archive");
 
-        Assert.IsType<EffectiveBudgetAdjustmentArchivedBudgetItem>(result);
+        var archived = Assert.IsType<EffectiveBudgetResult.ItemArchived>(result);
+        Assert.Equal(groceries.Id, archived.BudgetItemId);
+        Assert.Empty(effectiveBudget.PendingAdjustments);
+        Assert.Empty(effectiveBudget.PendingEvents);
+    }
+
+    [Fact]
+    public void EffectiveBudgetUpdatesEffectivePlannedAmountAfterSuccessfulAdjustment()
+    {
+        var budgetId = Guid.NewGuid();
+        var date = new DateOnly(2026, 7, 2);
+        var groceries = BudgetItem.Create(budgetId, "Groceries", BudgetItemKind.Consumption);
+        var effectiveBudget = new EffectiveBudget(
+            budgetId,
+            date,
+            100m,
+            [new EffectiveBudgetItemState(groceries, 0m)]);
+
+        var firstResult = effectiveBudget.RecordAdjustment(groceries.Id, 75m, BudgetAdjustmentType.Debit, "Covered spending");
+        Assert.IsType<EffectiveBudgetResult.Success>(firstResult);
+
+        var secondResult = effectiveBudget.RecordAdjustment(groceries.Id, 50m, BudgetAdjustmentType.Debit, "Too much");
+
+        var validationProblem = Assert.IsType<EffectiveBudgetResult.ValidationFailed>(secondResult);
+        Assert.Equal(EffectiveBudget.NetPlannedSpendingExceededMessage, validationProblem.Error);
+        Assert.Equal(25m, effectiveBudget.NetPlannedAmount);
+        Assert.Single(effectiveBudget.PendingAdjustments);
+        Assert.Single(effectiveBudget.PendingEvents);
     }
 
     [Fact]
