@@ -374,7 +374,7 @@ Tests run:
 
 ### Increment 8 - Make Budget Item Immutable
 
-Status: planned.
+Status: implemented, awaiting review.
 
 Goal: remove public mutation from `BudgetItem` while preserving existing archive behavior and event payloads.
 
@@ -390,12 +390,23 @@ Goal: remove public mutation from `BudgetItem` while preserving existing archive
 
 Implementation notes:
 
-- Not started.
+- Removed public mutation from `BudgetItem` by replacing public setters and required object initialization with private setters, private EF construction, and factory construction.
+- Changed `BudgetItem.Archive(...)` to return an archived `BudgetItem` copy instead of mutating the original instance.
+- Added `BudgetItem.ArchivedEvent()` so the archived item produces the existing `BudgetItemArchived` event payload without changing event names or payload shape.
+- Updated the archive handler to persist the returned archived item through the EF tracked entry while keeping data access outside the domain object.
+- Updated effective-budget archive tests to pass the returned archived item into the command model.
+- Added focused domain coverage proving archive does not mutate the original item and the archived event payload remains stable.
+- Kept transactions, allocations, reallocations, and broader `Budget` immutability out of scope.
 
 Tests to run:
 
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetItem|FullyQualifiedName~BudgetItemsTests"`
 - Run broader budgeting tests if call sites change.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetItem|FullyQualifiedName~BudgetItemsTests"` - passed, 20 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 122 tests.
 
 ### Increment 9 - Make Budget Immutable
 

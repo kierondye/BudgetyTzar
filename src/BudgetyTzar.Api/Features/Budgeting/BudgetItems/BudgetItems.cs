@@ -68,7 +68,10 @@ public sealed class ArchiveBudgetItemHandler(BudgetDbContext db, DomainEventOutb
             return CommandResult.NotFound();
         }
 
-        var eventId = events.Add(item.Archive(DateTimeOffset.UtcNow));
+        var archivedItem = item.Archive(DateTimeOffset.UtcNow);
+        db.Entry(item).CurrentValues.SetValues(archivedItem);
+
+        var eventId = events.Add(archivedItem.ArchivedEvent());
         await db.SaveChangesAsync(ct);
         return CommandResult.NoContent(eventId);
     }

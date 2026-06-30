@@ -15,21 +15,45 @@ public sealed class BudgetItem
     public const string ConsumptionBudgetItemBecameFundingMessage = "A consumption item must not become a funding source through budget adjustments.";
     public const string FundingBudgetItemBecameConsumptionMessage = "A funding item must not become a consumption item through budget adjustments.";
 
-    public Guid Id { get; init; } = Guid.NewGuid();
-    public Guid BudgetId { get; set; }
-    public required string Name { get; set; }
-    public BudgetItemKind Kind { get; set; }
-    public bool IsArchived { get; set; }
-    public DateTimeOffset? ArchivedAt { get; set; }
-    public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+    private BudgetItem()
+    {
+    }
+
+    private BudgetItem(
+        Guid id,
+        Guid budgetId,
+        string name,
+        BudgetItemKind kind,
+        bool isArchived,
+        DateTimeOffset? archivedAt,
+        DateTimeOffset createdAt)
+    {
+        Id = id;
+        BudgetId = budgetId;
+        Name = name;
+        Kind = kind;
+        IsArchived = isArchived;
+        ArchivedAt = archivedAt;
+        CreatedAt = createdAt;
+    }
+
+    public Guid Id { get; private set; } = Guid.NewGuid();
+    public Guid BudgetId { get; private set; }
+    public string Name { get; private set; } = string.Empty;
+    public BudgetItemKind Kind { get; private set; }
+    public bool IsArchived { get; private set; }
+    public DateTimeOffset? ArchivedAt { get; private set; }
+    public DateTimeOffset CreatedAt { get; private set; } = DateTimeOffset.UtcNow;
 
     public static BudgetItem Create(Guid budgetId, string name, BudgetItemKind kind) =>
-        new()
-        {
-            BudgetId = budgetId,
-            Name = name.Trim(),
-            Kind = kind
-        };
+        new(
+            Guid.NewGuid(),
+            budgetId,
+            name.Trim(),
+            kind,
+            isArchived: false,
+            archivedAt: null,
+            createdAt: DateTimeOffset.UtcNow);
 
     public DomainEvent CreatedEvent() =>
         new(
@@ -40,17 +64,30 @@ public sealed class BudgetItem
             $"Created budget item {Name}.",
             Payload: new BudgetItemCreatedPayload(BudgetId, Id, Name, Kind));
 
-    public DomainEvent Archive(DateTimeOffset archivedAt)
+    public BudgetItem Archive(DateTimeOffset archivedAt) =>
+        new(
+            Id,
+            BudgetId,
+            Name,
+            Kind,
+            isArchived: true,
+            archivedAt,
+            createdAt: CreatedAt);
+
+    public DomainEvent ArchivedEvent()
     {
-        IsArchived = true;
-        ArchivedAt = archivedAt;
+        if (!IsArchived || ArchivedAt is null)
+        {
+            throw new InvalidOperationException("Only an archived budget item can produce an archived event.");
+        }
+
         return new DomainEvent(
             "BudgetItemArchived",
             BudgetId,
             nameof(BudgetItem),
             Id,
             $"Archived budget item {Name}.",
-            Payload: new BudgetItemArchivedPayload(BudgetId, Id, Name, Kind, archivedAt));
+            Payload: new BudgetItemArchivedPayload(BudgetId, Id, Name, Kind, ArchivedAt.Value));
     }
 
     public bool CanAcceptActivityOn(DateOnly activityDate)

@@ -198,12 +198,12 @@ public sealed class EffectiveBudgetTests
     {
         var budgetId = Guid.NewGuid();
         var groceries = BudgetItem.Create(budgetId, "Groceries", BudgetItemKind.Consumption);
-        groceries.Archive(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+        var archivedGroceries = groceries.Archive(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
         var effectiveBudget = new EffectiveBudget(
             budgetId,
             new DateOnly(2026, 6, 2),
             100m,
-            [new EffectiveBudgetItemState(groceries, 0m)]);
+            [new EffectiveBudgetItemState(archivedGroceries, 0m)]);
 
         var result = effectiveBudget.RecordAdjustment(groceries.Id, 25m, BudgetAdjustmentType.Debit, "After archive");
 
