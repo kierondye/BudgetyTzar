@@ -447,7 +447,7 @@ Tests run:
 
 ### Increment 10 - Load Budget Through Repository
 
-Status: planned.
+Status: implemented, awaiting review.
 
 Goal: move `Budget` population, including budget-owned items, out of vertical slice handlers and behind a budget repository/data access boundary.
 
@@ -480,12 +480,23 @@ Once `Budget` owns its item collection, loading that owned collection is part of
 
 Implementation notes:
 
-- Not started.
+- Added `IBudgetRepository.GetBudgetWithItems(...)` as the load boundary for budget command models that need budget-owned item state.
+- Added a closed `BudgetLoadResult` with success and missing-budget cases so expected missing-budget outcomes remain result-driven.
+- Implemented `BudgetRepository` using EF-backed persistence to load the budget and budget-owned items, then hydrate `Budget` through its internal reconstruction path.
+- Updated the create-budget-item handler to request the hydrated `Budget` command model from the repository instead of manually querying budget items and calling `WithItems(...)`.
+- Preserved existing duplicate-name validation inside `Budget`, existing 404 behavior for missing budgets, and existing `BudgetItemCreated` event payload behavior.
+- Left archive behavior unchanged because it does not populate a `Budget` command model in the current flow.
+- Kept transactions, historical adjustments, reporting read models, and projections out of scope.
 
 Tests to run:
 
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetItemsTests"`
 - Run broader budgeting tests if persistence mappings or handler flows change.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetItemsTests|FullyQualifiedName~BudgetRepositoryTests"` - passed, 25 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 124 tests.
 
 ### Increment 11 - Make Budget Adjustment Immutable
 

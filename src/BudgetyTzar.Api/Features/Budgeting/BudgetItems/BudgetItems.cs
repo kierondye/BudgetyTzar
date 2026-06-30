@@ -25,21 +25,20 @@ public sealed class CreateBudgetItemValidator : AbstractValidator<CreateBudgetIt
     }
 }
 
-public sealed class CreateBudgetItemHandler(BudgetDbContext db, DomainEventOutboxWriter events)
+public sealed class CreateBudgetItemHandler(
+    IBudgetRepository budgets,
+    BudgetDbContext db,
+    DomainEventOutboxWriter events)
 {
     public async Task<CommandResult<BudgetItem>> Handle(Guid budgetId, string name, BudgetItemKind kind, CancellationToken ct)
     {
-        var budget = await db.Budgets.SingleOrDefaultAsync(x => x.Id == budgetId, ct);
-        if (budget is null)
+        var loadResult = await budgets.GetBudgetWithItems(budgetId, ct);
+        if (loadResult is BudgetLoadResult.BudgetNotFound)
         {
             return CommandResult<BudgetItem>.NotFound();
         }
 
-        var existingItems = await db.BudgetItems
-            .AsNoTracking()
-            .Where(x => x.BudgetId == budgetId)
-            .ToListAsync(ct);
-        budget = budget.WithItems(existingItems);
+        var budget = ((BudgetLoadResult.Success)loadResult).Budget;
 
         var validationError = budget.ValidateBudgetItemName(name);
         if (validationError is not null)
