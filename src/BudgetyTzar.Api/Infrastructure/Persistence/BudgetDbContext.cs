@@ -31,6 +31,7 @@ public sealed class BudgetDbContext(DbContextOptions<BudgetDbContext> options) :
             entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
             entity.Property(x => x.Currency).HasMaxLength(3).IsRequired();
             entity.HasIndex(x => x.Name);
+            entity.Ignore(x => x.Items);
         });
 
         modelBuilder.Entity<BudgetItem>(entity =>

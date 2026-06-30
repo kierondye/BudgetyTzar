@@ -256,12 +256,27 @@ Tests run:
 
 ### Increment 5 - Let Budget Own Budget Items
 
-Status: deferred.
+Status: implemented, awaiting review.
 
 - Move from `Budget.CreateBudgetItem(existingItems, ...)` toward `Budget` owning its item collection.
 - Keep duplicate budget-item-name rules inside `Budget`.
 - Keep `BudgetItemKind` rather than introducing `FundingBudgetItem` and `ConsumptionBudgetItem` subclasses unless later code clearly justifies polymorphism.
 - Keep budget items simple: identity, name, kind, archive state.
+
+Implementation notes:
+
+- Added a budget-owned item collection exposed as a read-only `Budget.Items` view.
+- Replaced the public `Budget.CreateBudgetItem(existingItems, ...)` flow with `Budget.CreateBudgetItem(name, kind)`.
+- Moved duplicate-name validation to use the budget-owned item collection.
+- Added internal budget-item hydration for the EF-backed command path so the domain owns the collection without introducing a schema or migration change in this increment.
+- Kept `BudgetItem` simple and preserved `BudgetItemKind`.
+- Kept transaction, allocation, reallocation, and effective-budget behavior out of scope.
+- Preserved existing budget-item event names and payloads.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetItemsTests"` - passed, 19 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 118 tests.
 
 ## Validation Rules
 

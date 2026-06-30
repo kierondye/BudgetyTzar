@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using BudgetyTzar.Api;
 using BudgetyTzar.Api.Features;
 
@@ -45,6 +46,26 @@ public sealed class BudgetItemsTests
             new { name = "Groceries" });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task BudgetItemApiRejectsDuplicateNames()
+    {
+        await using var app = new BudgetApiFactory();
+        var client = app.CreateClient();
+        await app.ResetDatabaseAsync();
+        var budget = await BudgetApiTestClient.CreateBudget(client);
+        await BudgetApiTestClient.CreateBudgetItem(client, budget.Id, "Groceries", BudgetItemKind.Consumption);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/budgets/{budget.Id}/budget-items",
+            new CreateBudgetItemRequest(" Groceries ", BudgetItemKind.Consumption));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var errors = document.RootElement.GetProperty("errors");
+        var error = Assert.Single(errors.GetProperty(nameof(CreateBudgetItemRequest.Name).ToLowerInvariant()).EnumerateArray());
+        Assert.Equal(Budget.DuplicateBudgetItemNameMessage, error.GetString());
     }
 
     [Fact]

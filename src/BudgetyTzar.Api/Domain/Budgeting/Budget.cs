@@ -6,10 +6,13 @@ public sealed class Budget
 {
     public const string DuplicateBudgetItemNameMessage = "A budget item with this name already exists in this budget.";
 
+    private readonly List<BudgetItem> items = [];
+
     public Guid Id { get; init; } = Guid.NewGuid();
     public required string Name { get; set; }
     public required string Currency { get; set; }
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+    public IReadOnlyCollection<BudgetItem> Items => items;
 
     public static Budget Create(string name, string currency) =>
         new()
@@ -18,21 +21,37 @@ public sealed class Budget
             Currency = new Currency(currency).Value
         };
 
-    public string? ValidateBudgetItemName(IReadOnlyCollection<BudgetItem> existingItems, string name)
+    internal void LoadItems(IReadOnlyCollection<BudgetItem> budgetItems)
     {
-        var trimmedName = name.Trim();
-        return existingItems.Any(x => x.Name == trimmedName) ? DuplicateBudgetItemNameMessage : null;
+        items.Clear();
+        foreach (var item in budgetItems)
+        {
+            if (item.BudgetId != Id)
+            {
+                throw new InvalidOperationException("Budget items must belong to the budget.");
+            }
+
+            items.Add(item);
+        }
     }
 
-    public BudgetItem CreateBudgetItem(IReadOnlyCollection<BudgetItem> existingItems, string name, BudgetItemKind kind)
+    public string? ValidateBudgetItemName(string name)
     {
-        var validationError = ValidateBudgetItemName(existingItems, name);
+        var trimmedName = name.Trim();
+        return Items.Any(x => x.Name == trimmedName) ? DuplicateBudgetItemNameMessage : null;
+    }
+
+    public BudgetItem CreateBudgetItem(string name, BudgetItemKind kind)
+    {
+        var validationError = ValidateBudgetItemName(name);
         if (validationError is not null)
         {
             throw new InvalidOperationException(validationError);
         }
 
-        return BudgetItem.Create(Id, name, kind);
+        var item = BudgetItem.Create(Id, name, kind);
+        items.Add(item);
+        return item;
     }
 
     public DomainEvent CreatedEvent() =>
