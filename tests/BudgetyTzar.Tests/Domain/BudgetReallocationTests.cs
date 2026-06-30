@@ -6,6 +6,18 @@ namespace BudgetyTzar.Tests;
 public sealed class BudgetReallocationTests
 {
     [Fact]
+    public void BudgetReallocationDoesNotExposePublicMutation()
+    {
+        var mutableProperties = typeof(BudgetReallocation)
+            .GetProperties()
+            .Where(x => x.SetMethod?.IsPublic == true)
+            .Select(x => x.Name)
+            .ToList();
+
+        Assert.Empty(mutableProperties);
+    }
+
+    [Fact]
     public void ReallocationRequiresAtLeastTwoAdjustments()
     {
         var validationError = BudgetReallocation.ValidateAdjustments([

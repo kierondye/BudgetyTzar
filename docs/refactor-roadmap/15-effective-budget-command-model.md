@@ -534,7 +534,7 @@ Tests run:
 
 ### Increment 12 - Make Budget Reallocation Immutable
 
-Status: planned.
+Status: implemented, awaiting review.
 
 Goal: make `BudgetReallocation` immutable without expanding the scope into transactions, allocation logic, or reporting redesign.
 
@@ -547,12 +547,21 @@ Goal: make `BudgetReallocation` immutable without expanding the scope into trans
 
 Implementation notes:
 
-- Not started.
+- Removed public mutation from `BudgetReallocation` by replacing public setters and init setters with private setters, private EF construction, and factory construction.
+- Kept `BudgetReallocation.Create(...)` as the public construction path and preserved the existing trimmed-notes behavior.
+- Preserved existing reallocation validation, linked adjustment creation, event name, event payload shape, and persistence shape.
+- Added focused domain coverage proving the public reallocation surface does not expose setters.
+- Kept transactions, allocations, effective-budget behavior, and reallocation workflow redesign out of scope.
 
 Tests to run:
 
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetReallocation|FullyQualifiedName~Reallocation"`
 - Run broader budgeting tests if reallocation persistence mappings change.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetReallocation|FullyQualifiedName~Reallocation"` - passed, 8 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 126 tests.
 
 ### Increment 13 - Finish Effective Budget Immutability Surface
 
