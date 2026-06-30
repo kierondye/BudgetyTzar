@@ -41,6 +41,30 @@ public sealed class BudgetTests
     }
 
     [Fact]
+    public void BudgetOwnedItemsAreReadOnlySnapshotsAfterReconstruction()
+    {
+        var budgetId = Guid.NewGuid();
+        var groceries = BudgetItem.Create(budgetId, "Groceries", BudgetItemKind.Consumption);
+        var utilities = BudgetItem.Create(budgetId, "Utilities", BudgetItemKind.Consumption);
+        var reconstructedItems = new List<BudgetItem> { groceries };
+        var budget = new Budget(
+            budgetId,
+            "UK",
+            "GBP",
+            DateTimeOffset.UtcNow,
+            reconstructedItems);
+
+        reconstructedItems.Add(utilities);
+
+        var item = Assert.Single(budget.Items);
+        Assert.Same(groceries, item);
+        var exposedItems = Assert.IsAssignableFrom<ICollection<BudgetItem>>(budget.Items);
+        Assert.True(exposedItems.IsReadOnly);
+        Assert.Throws<NotSupportedException>(() => exposedItems.Add(utilities));
+        Assert.Single(budget.Items);
+    }
+
+    [Fact]
     public void BudgetRejectsDuplicateBudgetItemName()
     {
         var budget = Budget.Create("UK", "GBP");

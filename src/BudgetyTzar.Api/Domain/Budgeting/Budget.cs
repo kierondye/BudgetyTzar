@@ -1,4 +1,5 @@
 using BudgetyTzar.Api.Contracts.Events;
+using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
 
 namespace BudgetyTzar.Api;
@@ -22,7 +23,7 @@ public sealed class Budget
 
     private Budget()
     {
-        items = [];
+        items = ToReadOnlyCollection([]);
     }
 
     [JsonConstructor]
@@ -37,7 +38,7 @@ public sealed class Budget
         Name = name;
         Currency = currency;
         CreatedAt = createdAt;
-        this.items = items;
+        this.items = ToReadOnlyCollection(items);
     }
 
     public Guid Id { get; private set; } = Guid.NewGuid();
@@ -95,4 +96,7 @@ public sealed class Budget
             Id,
             $"Created budget {Name}.",
             Payload: new BudgetCreatedPayload(Id, Name, Currency));
+
+    private static ReadOnlyCollection<BudgetItem> ToReadOnlyCollection(IEnumerable<BudgetItem> items) =>
+        Array.AsReadOnly(items.ToArray());
 }

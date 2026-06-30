@@ -704,6 +704,30 @@ Tests run:
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetAdjustmentTests|FullyQualifiedName~BudgetReallocationTests"` - passed, 9 tests.
 - `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 130 tests.
 
+### Increment 18 - Snapshot Budget-Owned Items On Reconstruction
+
+Status: implemented, awaiting review.
+
+Goal: close a remaining public immutability edge where reconstructed `Budget` instances could expose changes made to the source item collection after construction.
+
+- Snapshot budget-owned items during `Budget` reconstruction.
+- Expose the reconstructed `Budget.Items` collection as a read-only snapshot.
+- Keep `Budget.CreateBudgetItem(...)`, duplicate-name validation, repository loading, persistence shape, and event payloads unchanged.
+- Keep transactions, adjustments, reallocations, and broader repository changes out of scope.
+
+Implementation notes:
+
+- Changed the `Budget` reconstruction path to copy item collections into a `ReadOnlyCollection<BudgetItem>`.
+- Added focused domain coverage proving mutations to the source collection do not affect `Budget.Items`.
+- Added focused domain coverage proving the exposed item collection is read-only from the caller's perspective.
+- Preserved existing budget-item creation, duplicate-name validation, and repository hydration behavior.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetItemTests"` - passed, 22 tests.
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetRepositoryTests|FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetItemTests"` - passed, 28 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 131 tests.
+
 ## Validation Rules
 
 `EffectiveBudget.RecordAdjustment(...)` should validate:
