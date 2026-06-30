@@ -25,6 +25,7 @@ public static class DependencyInjection
         });
 
         services.AddScoped<DomainEventOutboxWriter>();
+        services.AddScoped<IEffectiveBudgetRepository, EffectiveBudgetRepository>();
         services.AddScoped<ProjectionProcessingStore>();
         services.AddScoped<ProjectionFailureStore>();
         services.AddScoped<ProjectionRebuildStore>();

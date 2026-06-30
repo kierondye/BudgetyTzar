@@ -1,4 +1,3 @@
-using BudgetyTzar.Api.Infrastructure.Events;
 using BudgetyTzar.Api.Infrastructure.Persistence;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
@@ -30,7 +29,7 @@ public sealed class CreateBudgetItemAdjustmentValidator : AbstractValidator<Crea
 
 public sealed class RecordAdjustmentHandler(
     BudgetDbContext db,
-    DomainEventOutboxWriter events)
+    IEffectiveBudgetRepository effectiveBudgets)
 {
     public async Task<CommandResult<BudgetAdjustment>> Handle(
         Guid budgetId,
@@ -75,12 +74,8 @@ public sealed class RecordAdjustmentHandler(
             throw new InvalidOperationException("Effective budget adjustment result was not handled.");
         }
 
-        var adjustment = success.Budget.PendingAdjustments.Single();
-        var domainEvent = success.Budget.PendingEvents.Single();
-        db.BudgetAdjustments.Add(adjustment);
-        var eventId = events.Add(domainEvent);
-        await db.SaveChangesAsync(ct);
-        return CommandResult<BudgetAdjustment>.Created(adjustment, eventId);
+        var saved = await effectiveBudgets.Save(success.Budget, ct);
+        return CommandResult<BudgetAdjustment>.Created(saved.CreatedAdjustment, saved.EventId);
     }
 
     private Task<bool> BudgetExists(Guid budgetId, CancellationToken ct) =>

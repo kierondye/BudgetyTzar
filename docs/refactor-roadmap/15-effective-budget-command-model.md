@@ -146,7 +146,7 @@ Tests run:
 
 ### Increment 2 - Introduce Effective Budget Save Boundary
 
-Status: next.
+Status: implemented, awaiting review.
 
 Goal: move knowledge of how to persist an `EffectiveBudget` out of vertical slice handlers and into a single persistence boundary.
 
@@ -193,9 +193,24 @@ Rationale:
 
 `EffectiveBudget` is now the temporal command model. The vertical slice handler should not know the exact list of pending child records that must be persisted after a successful command. If a later operation adds pending reallocations, audit records, snapshots, or multiple events, the handler should not need to change. That knowledge belongs at the persistence boundary.
 
+Implementation notes:
+
+- Added `IEffectiveBudgetRepository.Save(EffectiveBudget, CancellationToken)` as the persistence boundary for successful effective budget command models.
+- Implemented `EffectiveBudgetRepository` using EF-backed persistence and the existing outbox writer.
+- The repository persists all pending adjustments with `AddRange(...)`.
+- The repository writes all pending domain events owned by the effective budget.
+- The adjustment handler now coordinates the use case and saves the successful effective budget through the repository boundary.
+- The adjustment handler no longer directly persists `PendingAdjustments` or `PendingEvents`.
+- The save result returns the first created adjustment and first event id to preserve the existing HTTP response body and projection header shape while still saving all pending records.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~BudgetAdjustmentsTests"` - passed, 14 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 111 tests.
+
 ### Increment 3 - Hide Effective Budget Item Details
 
-Status: deferred.
+Status: next.
 
 - Remove public item lookup flows if no remaining callers depend on them.
 - Make any item state wrapper private or internal if still useful.
