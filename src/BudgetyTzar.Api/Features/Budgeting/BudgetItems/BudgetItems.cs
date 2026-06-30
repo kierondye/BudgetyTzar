@@ -40,16 +40,21 @@ public sealed class CreateBudgetItemHandler(
 
         var budget = ((BudgetLoadResult.Success)loadResult).Budget;
 
-        var validationError = budget.ValidateBudgetItemName(name);
-        if (validationError is not null)
+        var result = budget.CreateBudgetItem(name, kind);
+        if (result is CreateBudgetItemResult.DuplicateName duplicateName)
         {
             return CommandResult<BudgetItem>.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(name)] = [validationError]
+                [nameof(name)] = [duplicateName.Error]
             });
         }
 
-        var (_, item) = budget.CreateBudgetItem(name, kind);
+        if (result is not CreateBudgetItemResult.Success success)
+        {
+            throw new InvalidOperationException("Create budget item result was not handled.");
+        }
+
+        var item = success.Item;
         db.BudgetItems.Add(item);
         var eventId = events.Add(item.CreatedEvent());
         await db.SaveChangesAsync(ct);

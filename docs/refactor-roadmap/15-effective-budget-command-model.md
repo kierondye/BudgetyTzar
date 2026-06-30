@@ -631,6 +631,32 @@ Tests run:
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetAdjustmentsTests|FullyQualifiedName~MoneyAmountTests"` - passed, 25 tests.
 - `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 128 tests.
 
+### Increment 15 - Return Result For Duplicate Budget Item Names
+
+Status: implemented, awaiting review.
+
+Goal: remove an expected domain rejection from the exception path while preserving the existing budget-item API behavior.
+
+- Add a closed result type for `Budget.CreateBudgetItem(...)`.
+- Return a duplicate-name result instead of throwing `InvalidOperationException` for the expected duplicate-name rejection.
+- Keep successful creation returning the modified immutable `Budget` and created `BudgetItem`.
+- Update the create-budget-item handler to inspect the result case and preserve the existing validation response shape.
+- Keep budget-item persistence and event payload behavior unchanged.
+- Keep transactions, adjustments, reallocations, and broader budget repository changes out of scope.
+
+Implementation notes:
+
+- Added `CreateBudgetItemResult` with `Success(Budget Budget, BudgetItem Item)` and `DuplicateName(string Error)` cases.
+- Changed `Budget.CreateBudgetItem(...)` to return result cases for both success and duplicate-name rejection.
+- Removed the create-budget-item handler's separate pre-validation call and made the domain command result the single source for duplicate-name handling.
+- Preserved the existing duplicate-name API validation field and message.
+- Preserved successful `BudgetItemCreated` event behavior and persistence shape.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetItemsTests|FullyQualifiedName~BudgetRepositoryTests"` - passed, 27 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 128 tests.
+
 ## Validation Rules
 
 `EffectiveBudget.RecordAdjustment(...)` should validate:

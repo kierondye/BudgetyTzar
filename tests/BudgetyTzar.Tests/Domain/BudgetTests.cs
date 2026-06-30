@@ -9,8 +9,11 @@ public sealed class BudgetTests
     {
         var budget = Budget.Create("UK", "GBP");
 
-        var (modifiedBudget, item) = budget.CreateBudgetItem(" Groceries ", BudgetItemKind.Consumption);
+        var result = budget.CreateBudgetItem(" Groceries ", BudgetItemKind.Consumption);
 
+        var success = Assert.IsType<CreateBudgetItemResult.Success>(result);
+        var modifiedBudget = success.Budget;
+        var item = success.Item;
         Assert.Equal(budget.Id, item.BudgetId);
         Assert.Equal("Groceries", item.Name);
         Assert.Equal(BudgetItemKind.Consumption, item.Kind);
@@ -27,15 +30,14 @@ public sealed class BudgetTests
     public void BudgetRejectsDuplicateBudgetItemName()
     {
         var budget = Budget.Create("UK", "GBP");
-        var (modifiedBudget, _) = budget.CreateBudgetItem("Groceries", BudgetItemKind.Consumption);
+        var created = Assert.IsType<CreateBudgetItemResult.Success>(
+            budget.CreateBudgetItem("Groceries", BudgetItemKind.Consumption));
 
-        var validationError = modifiedBudget.ValidateBudgetItemName(" Groceries ");
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            modifiedBudget.CreateBudgetItem(" Groceries ", BudgetItemKind.Consumption));
+        var result = created.Budget.CreateBudgetItem(" Groceries ", BudgetItemKind.Consumption);
 
-        Assert.Equal(Budget.DuplicateBudgetItemNameMessage, validationError);
-        Assert.Equal(Budget.DuplicateBudgetItemNameMessage, exception.Message);
+        var duplicateName = Assert.IsType<CreateBudgetItemResult.DuplicateName>(result);
+        Assert.Equal(Budget.DuplicateBudgetItemNameMessage, duplicateName.Error);
         Assert.Empty(budget.Items);
-        Assert.Single(modifiedBudget.Items);
+        Assert.Single(created.Budget.Items);
     }
 }

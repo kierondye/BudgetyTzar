@@ -3,6 +3,17 @@ using System.Text.Json.Serialization;
 
 namespace BudgetyTzar.Api;
 
+public abstract record CreateBudgetItemResult
+{
+    private CreateBudgetItemResult()
+    {
+    }
+
+    public sealed record Success(Budget Budget, BudgetItem Item) : CreateBudgetItemResult;
+
+    public sealed record DuplicateName(string Error) : CreateBudgetItemResult;
+}
+
 public sealed class Budget
 {
     public const string DuplicateBudgetItemNameMessage = "A budget item with this name already exists in this budget.";
@@ -62,16 +73,18 @@ public sealed class Budget
         return Items.Any(x => x.Name == trimmedName) ? DuplicateBudgetItemNameMessage : null;
     }
 
-    public (Budget Budget, BudgetItem Item) CreateBudgetItem(string name, BudgetItemKind kind)
+    public CreateBudgetItemResult CreateBudgetItem(string name, BudgetItemKind kind)
     {
         var validationError = ValidateBudgetItemName(name);
         if (validationError is not null)
         {
-            throw new InvalidOperationException(validationError);
+            return new CreateBudgetItemResult.DuplicateName(validationError);
         }
 
         var item = BudgetItem.Create(Id, name, kind);
-        return (new Budget(Id, Name, Currency, CreatedAt, items.Append(item).ToArray()), item);
+        return new CreateBudgetItemResult.Success(
+            new Budget(Id, Name, Currency, CreatedAt, items.Append(item).ToArray()),
+            item);
     }
 
     public DomainEvent CreatedEvent() =>
