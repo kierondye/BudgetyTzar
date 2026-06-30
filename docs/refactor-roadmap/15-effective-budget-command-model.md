@@ -85,6 +85,20 @@ effectiveBudgetRepository.Save(effectiveBudget);
 
 The success result should contain the modified `EffectiveBudget`.
 
+### Step 15 Completion Targets
+
+The earlier increments moved the command flow in the right direction, but Step 15 is not complete until the budgeting command-domain types involved in effective budget modification no longer expose mutable state as their public shape.
+
+Complete this step by making these types immutable in focused increments:
+
+- `Budget`
+- `BudgetAdjustment`
+- `BudgetItem`
+- `BudgetReallocation`
+- `EffectiveBudget`
+
+Also complete the persistence boundary direction by moving domain model population out of vertical slice handlers. Handlers may request the command model they need, such as `EffectiveBudget` or `Budget`, but query shape, EF projection, child collection loading, and hydration details should live behind data access abstractions.
+
 ### Architectural Naming
 
 When introducing new types, prefer established DDD, OO, and .NET architectural patterns over project-specific names.
@@ -302,6 +316,217 @@ Tests run:
 
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetAdjustmentsTests"` - passed, 17 tests.
 - `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 118 tests.
+
+### Increment 7 - Load Effective Budget Through Repository
+
+Status: planned.
+
+Goal: start moving domain model population out of handlers by moving effective-budget population and EF query shape behind the effective-budget repository boundary.
+
+- Add a repository load method for the temporal command model, preferably on `IEffectiveBudgetRepository`.
+- Preferred direction:
+
+```csharp
+var effectiveBudget = await effectiveBudgetRepository.GetEffectiveBudget(
+    budgetId,
+    budgetItemId,
+    date,
+    ct);
+```
+
+- The load boundary should know how to:
+  - verify the parent budget exists or otherwise report that it does not.
+  - load the target budget item needed by the command.
+  - calculate effective planned amounts as of the command date.
+  - hydrate `EffectiveBudget` with the item state needed for the command.
+- The handler should coordinate the use case:
+  - request the effective budget.
+  - validate raw command input such as positive money.
+  - call `RecordAdjustment(...)`.
+  - inspect `EffectiveBudgetResult` cases.
+  - save the successful command model.
+- The handler should not contain `HydrateEffectiveBudget(...)`, `EffectivePlannedAmount`, grouped EF queries, or EF projection details for effective planned amounts.
+- Preserve the existing 404 behavior for missing budgets and missing budget items.
+- Keep data access outside domain objects. Do not add database calls, repository dependencies, or service locators to `EffectiveBudget`, `Budget`, or child domain objects.
+- Prefer a closed load result only if needed to preserve handler behavior without exceptions for expected missing data.
+- Keep the load result small and named after repository/read concerns, not a generic service response.
+- Do not introduce event sourcing, a broad Unit of Work abstraction, or new application services.
+- Add focused tests around the repository load path and update handler/API tests only as needed to prove behavior is unchanged.
+
+Rationale:
+
+`EffectiveBudget` is the temporal command model, but calculating and hydrating that model from EF-backed storage is a data access concern. The adjustment handler should not know the persistence anatomy of effective planned amounts any more than it knows how pending adjustments and events are saved. This is the first domain-population cleanup increment; later increments should apply the same boundary to other command models such as `Budget`.
+
+Implementation notes:
+
+- Not started.
+
+Tests to run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetAdjustmentsTests"`
+- Run `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` if practical.
+
+### Increment 8 - Make Budget Item Immutable
+
+Status: planned.
+
+Goal: remove public mutation from `BudgetItem` while preserving existing archive behavior and event payloads.
+
+- Replace public setters or mutable initialization paths with constructors/factories that produce valid `BudgetItem` instances.
+- Keep identity, budget id, name, kind, and archive state as immutable properties.
+- Change archive behavior to return a modified `BudgetItem` rather than mutating the original instance where practical.
+- If EF compatibility requires a private constructor or backing fields, keep those details private to persistence.
+- Ensure existing call sites use the returned archived item where a state change is intended.
+- Preserve archive validation behavior and existing budget-item event names/payloads.
+- Do not introduce `FundingBudgetItem` or `ConsumptionBudgetItem` subclasses.
+- Do not touch transaction or allocation behavior.
+- Add focused domain tests proving archive operations do not mutate the original item and existing archive rejection behavior remains stable.
+
+Implementation notes:
+
+- Not started.
+
+Tests to run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetItem|FullyQualifiedName~BudgetItemsTests"`
+- Run broader budgeting tests if call sites change.
+
+### Increment 9 - Make Budget Immutable
+
+Status: planned.
+
+Goal: make `Budget` immutable at its public domain surface while preserving budget creation and budget-owned item behavior.
+
+- Remove public setters and mutable initialization requirements from `Budget` where practical.
+- Keep `Budget.Create(...)` as the valid public creation path.
+- Keep budget-owned item collection exposed as a read-only view.
+- Change `CreateBudgetItem(...)` to return a modified `Budget` and the created `BudgetItem`, or another small result shape if needed to preserve clarity.
+- Keep duplicate-name validation inside `Budget`.
+- Ensure the original `Budget` remains unchanged after creating a budget item.
+- Keep EF hydration concerns internal/private and outside vertical slice handlers.
+- Do not move transactions, historical adjustments, or reporting state into `Budget`.
+- Preserve existing budget and budget-item event names/payloads.
+- Add focused domain tests proving successful item creation returns modified budget state and duplicate-name rejection remains stable.
+
+Implementation notes:
+
+- Not started.
+
+Tests to run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetItemsTests"`
+- Run broader budgeting tests if repository or handler hydration changes.
+
+### Increment 10 - Load Budget Through Repository
+
+Status: planned.
+
+Goal: move `Budget` population, including budget-owned items, out of vertical slice handlers and behind a budget repository/data access boundary.
+
+- Add or extend a repository method for loading the command `Budget` shape needed by budget-item commands.
+- Preferred direction:
+
+```csharp
+var budget = await budgetRepository.GetBudgetWithItems(budgetId, ct);
+```
+
+- The load boundary should know how to:
+  - verify the budget exists or otherwise report that it does not.
+  - load budget-owned items needed for duplicate-name validation and command behavior.
+  - hydrate `Budget` using internal/private persistence-facing paths.
+- Handlers that create, archive, or otherwise modify budget items should not manually query budget items to assemble a `Budget`.
+- Handlers should coordinate the use case:
+  - request the `Budget` command model.
+  - call domain behavior such as `CreateBudgetItem(...)`.
+  - inspect expected result cases or map known domain rejections.
+  - persist the successful command model or created records through repository boundaries.
+- Preserve the existing API behavior for missing budgets, duplicate budget item names, archived items, and event payloads.
+- Keep data access outside `Budget` and `BudgetItem`.
+- Do not load transactions, historical adjustments, reporting read models, or projections into `Budget`.
+- Do not introduce service locators, event sourcing infrastructure, or a broad Unit of Work abstraction.
+- Add focused repository and handler/API tests proving behavior is unchanged while handler-side population is removed.
+
+Rationale:
+
+Once `Budget` owns its item collection, loading that owned collection is part of reconstructing the command model. That reconstruction belongs in data access code, not in each vertical slice handler that happens to need budget-item state.
+
+Implementation notes:
+
+- Not started.
+
+Tests to run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetItemsTests"`
+- Run broader budgeting tests if persistence mappings or handler flows change.
+
+### Increment 11 - Make Budget Adjustment Immutable
+
+Status: planned.
+
+Goal: ensure `BudgetAdjustment` is an immutable record of a planned budget change.
+
+- Remove public setters or mutable initialization paths from `BudgetAdjustment`.
+- Keep factory methods responsible for valid construction.
+- Preserve positive-money validation through `PositiveMoneyAmount` for expected command paths.
+- Preserve current `BudgetAdjustmentRecorded` event name and payload shape.
+- Keep reallocation id support as existing data, but do not refactor reallocation workflows in this increment.
+- Keep EF compatibility private/internal.
+- Add focused tests proving factory-created adjustments expose immutable state and event payloads remain unchanged.
+
+Implementation notes:
+
+- Not started.
+
+Tests to run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~BudgetAdjustmentsTests|FullyQualifiedName~EventContractTests"`
+- Run broader event tests if event construction changes.
+
+### Increment 12 - Make Budget Reallocation Immutable
+
+Status: planned.
+
+Goal: make `BudgetReallocation` immutable without expanding the scope into transactions, allocation logic, or reporting redesign.
+
+- Remove public setters or mutable initialization paths from `BudgetReallocation`.
+- Keep existing factories/constructors as the only valid creation paths, adjusting them as needed to return valid immutable instances.
+- Preserve existing reallocation event names, payloads, and persistence shape.
+- Keep any related budget adjustments as records created by the command flow; do not move transactions or allocations into `Budget`.
+- Keep EF compatibility private/internal.
+- Add focused tests around reallocation construction and any existing reallocation API behavior.
+
+Implementation notes:
+
+- Not started.
+
+Tests to run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetReallocation|FullyQualifiedName~Reallocation"`
+- Run broader budgeting tests if reallocation persistence mappings change.
+
+### Increment 13 - Finish Effective Budget Immutability Surface
+
+Status: planned.
+
+Goal: close remaining immutability gaps in `EffectiveBudget` after repository loading and child domain types have been tightened.
+
+- Keep `EffectiveBudget.RecordAdjustment(...)` returning `EffectiveBudgetResult.Success(EffectiveBudget Budget)`.
+- Ensure `EffectiveBudget` exposes no mutable collections or mutable child state through its public API.
+- Ensure pending adjustments and pending events are immutable snapshots from the caller's perspective.
+- Ensure all constructors/factories enforce valid state and keep hydration-only shapes internal.
+- Remove or narrow compatibility shims that are no longer needed after handlers use validated value objects and repositories load the command model.
+- Keep failure cases non-mutating.
+- Preserve existing save boundary behavior and event payloads.
+- Add focused public-surface tests that assert implementation details such as item state remain non-public.
+
+Implementation notes:
+
+- Not started.
+
+Tests to run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetAdjustmentsTests"`
+- Run `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` if practical.
 
 ## Validation Rules
 
