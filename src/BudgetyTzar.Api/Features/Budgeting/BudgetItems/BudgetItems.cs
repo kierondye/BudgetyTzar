@@ -39,7 +39,7 @@ public sealed class CreateBudgetItemHandler(BudgetDbContext db, DomainEventOutbo
             .AsNoTracking()
             .Where(x => x.BudgetId == budgetId)
             .ToListAsync(ct);
-        budget.LoadItems(existingItems);
+        budget = budget.WithItems(existingItems);
 
         var validationError = budget.ValidateBudgetItemName(name);
         if (validationError is not null)
@@ -50,7 +50,7 @@ public sealed class CreateBudgetItemHandler(BudgetDbContext db, DomainEventOutbo
             });
         }
 
-        var item = budget.CreateBudgetItem(name, kind);
+        var (_, item) = budget.CreateBudgetItem(name, kind);
         db.BudgetItems.Add(item);
         var eventId = events.Add(item.CreatedEvent());
         await db.SaveChangesAsync(ct);

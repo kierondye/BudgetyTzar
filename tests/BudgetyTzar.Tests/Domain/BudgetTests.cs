@@ -9,25 +9,33 @@ public sealed class BudgetTests
     {
         var budget = Budget.Create("UK", "GBP");
 
-        var item = budget.CreateBudgetItem(" Groceries ", BudgetItemKind.Consumption);
+        var (modifiedBudget, item) = budget.CreateBudgetItem(" Groceries ", BudgetItemKind.Consumption);
 
         Assert.Equal(budget.Id, item.BudgetId);
         Assert.Equal("Groceries", item.Name);
         Assert.Equal(BudgetItemKind.Consumption, item.Kind);
-        Assert.Same(item, Assert.Single(budget.Items));
+        Assert.Empty(budget.Items);
+        Assert.NotSame(budget, modifiedBudget);
+        Assert.Same(item, Assert.Single(modifiedBudget.Items));
+        Assert.Equal(budget.Id, modifiedBudget.Id);
+        Assert.Equal(budget.Name, modifiedBudget.Name);
+        Assert.Equal(budget.Currency, modifiedBudget.Currency);
+        Assert.Equal(budget.CreatedAt, modifiedBudget.CreatedAt);
     }
 
     [Fact]
     public void BudgetRejectsDuplicateBudgetItemName()
     {
         var budget = Budget.Create("UK", "GBP");
-        budget.CreateBudgetItem("Groceries", BudgetItemKind.Consumption);
+        var (modifiedBudget, _) = budget.CreateBudgetItem("Groceries", BudgetItemKind.Consumption);
 
-        var validationError = budget.ValidateBudgetItemName(" Groceries ");
+        var validationError = modifiedBudget.ValidateBudgetItemName(" Groceries ");
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            budget.CreateBudgetItem(" Groceries ", BudgetItemKind.Consumption));
+            modifiedBudget.CreateBudgetItem(" Groceries ", BudgetItemKind.Consumption));
 
         Assert.Equal(Budget.DuplicateBudgetItemNameMessage, validationError);
         Assert.Equal(Budget.DuplicateBudgetItemNameMessage, exception.Message);
+        Assert.Empty(budget.Items);
+        Assert.Single(modifiedBudget.Items);
     }
 }

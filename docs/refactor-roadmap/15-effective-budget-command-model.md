@@ -410,7 +410,7 @@ Tests run:
 
 ### Increment 9 - Make Budget Immutable
 
-Status: planned.
+Status: implemented, awaiting review.
 
 Goal: make `Budget` immutable at its public domain surface while preserving budget creation and budget-owned item behavior.
 
@@ -427,12 +427,23 @@ Goal: make `Budget` immutable at its public domain surface while preserving budg
 
 Implementation notes:
 
-- Not started.
+- Removed public mutation from `Budget` by replacing public setters and required object initialization with private setters, private EF construction, and factory construction.
+- Replaced mutable item loading with `Budget.WithItems(...)`, which returns a reconstructed budget with validated budget-owned items.
+- Changed `Budget.CreateBudgetItem(...)` to return the modified `Budget` and created `BudgetItem` instead of mutating the original budget's item collection.
+- Kept duplicate-name validation inside `Budget` and preserved the existing duplicate-name message.
+- Added an explicit JSON reconstruction constructor so existing API response deserialization remains compatible without reopening public setters.
+- Updated the budget-item creation handler to use the returned command model while preserving the current persistence shape and `BudgetItemCreated` event payload.
+- Kept transactions, adjustments, reallocations, and broader budget repository loading out of scope.
 
 Tests to run:
 
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetItemsTests"`
 - Run broader budgeting tests if repository or handler hydration changes.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetItemsTests"` - passed, 19 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 122 tests.
 
 ### Increment 10 - Load Budget Through Repository
 

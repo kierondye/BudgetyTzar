@@ -1,4 +1,5 @@
 using BudgetyTzar.Api.Contracts.Events;
+using System.Text.Json.Serialization;
 
 namespace BudgetyTzar.Api;
 
@@ -6,33 +7,53 @@ public sealed class Budget
 {
     public const string DuplicateBudgetItemNameMessage = "A budget item with this name already exists in this budget.";
 
-    private readonly List<BudgetItem> items = [];
+    private readonly IReadOnlyCollection<BudgetItem> items;
 
-    public Guid Id { get; init; } = Guid.NewGuid();
-    public required string Name { get; set; }
-    public required string Currency { get; set; }
-    public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+    private Budget()
+    {
+        items = [];
+    }
+
+    [JsonConstructor]
+    internal Budget(
+        Guid id,
+        string name,
+        string currency,
+        DateTimeOffset createdAt,
+        IReadOnlyCollection<BudgetItem> items)
+    {
+        Id = id;
+        Name = name;
+        Currency = currency;
+        CreatedAt = createdAt;
+        this.items = items;
+    }
+
+    public Guid Id { get; private set; } = Guid.NewGuid();
+    public string Name { get; private set; } = string.Empty;
+    public string Currency { get; private set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; private set; } = DateTimeOffset.UtcNow;
     public IReadOnlyCollection<BudgetItem> Items => items;
 
     public static Budget Create(string name, string currency) =>
-        new()
-        {
-            Name = name.Trim(),
-            Currency = new Currency(currency).Value
-        };
+        new(
+            Guid.NewGuid(),
+            name.Trim(),
+            new Currency(currency).Value,
+            DateTimeOffset.UtcNow,
+            []);
 
-    internal void LoadItems(IReadOnlyCollection<BudgetItem> budgetItems)
+    internal Budget WithItems(IReadOnlyCollection<BudgetItem> budgetItems)
     {
-        items.Clear();
         foreach (var item in budgetItems)
         {
             if (item.BudgetId != Id)
             {
                 throw new InvalidOperationException("Budget items must belong to the budget.");
             }
-
-            items.Add(item);
         }
+
+        return new Budget(Id, Name, Currency, CreatedAt, budgetItems.ToArray());
     }
 
     public string? ValidateBudgetItemName(string name)
@@ -41,7 +62,7 @@ public sealed class Budget
         return Items.Any(x => x.Name == trimmedName) ? DuplicateBudgetItemNameMessage : null;
     }
 
-    public BudgetItem CreateBudgetItem(string name, BudgetItemKind kind)
+    public (Budget Budget, BudgetItem Item) CreateBudgetItem(string name, BudgetItemKind kind)
     {
         var validationError = ValidateBudgetItemName(name);
         if (validationError is not null)
@@ -50,8 +71,7 @@ public sealed class Budget
         }
 
         var item = BudgetItem.Create(Id, name, kind);
-        items.Add(item);
-        return item;
+        return (new Budget(Id, Name, Currency, CreatedAt, items.Append(item).ToArray()), item);
     }
 
     public DomainEvent CreatedEvent() =>
