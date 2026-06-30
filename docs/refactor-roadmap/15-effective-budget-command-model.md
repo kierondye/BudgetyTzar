@@ -680,6 +680,30 @@ Tests run:
 
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetItemTests"` - passed, 21 tests.
 
+### Increment 17 - Verify Adjustment And Reallocation Public Construction
+
+Status: implemented, awaiting review.
+
+Goal: close the same public immutability verification gap for the remaining budgeting command-domain records in Step 15's completion target.
+
+- Add focused public-surface tests for `BudgetAdjustment`.
+- Add focused public-surface tests for `BudgetReallocation`.
+- Verify both types expose no public constructors and no public property setters.
+- Keep production behavior unchanged.
+- Keep transactions, allocations, effective-budget behavior, persistence, and event payloads out of scope.
+
+Implementation notes:
+
+- Extended `BudgetAdjustmentDoesNotExposePublicMutationOrConstruction` to assert there are no public constructors.
+- Extended `BudgetReallocationDoesNotExposePublicMutationOrConstruction` to assert there are no public constructors.
+- Left production domain and persistence code unchanged because the existing implementation already matched the public immutability target.
+- Preserved existing adjustment and reallocation behavior.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetAdjustmentTests|FullyQualifiedName~BudgetReallocationTests"` - passed, 9 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 130 tests.
+
 ## Validation Rules
 
 `EffectiveBudget.RecordAdjustment(...)` should validate:

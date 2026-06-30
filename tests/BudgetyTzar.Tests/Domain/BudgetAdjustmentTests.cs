@@ -6,14 +6,16 @@ namespace BudgetyTzar.Tests;
 public sealed class BudgetAdjustmentTests
 {
     [Fact]
-    public void BudgetAdjustmentDoesNotExposePublicMutation()
+    public void BudgetAdjustmentDoesNotExposePublicMutationOrConstruction()
     {
+        var publicConstructors = typeof(BudgetAdjustment).GetConstructors();
         var mutableProperties = typeof(BudgetAdjustment)
             .GetProperties()
             .Where(x => x.SetMethod?.IsPublic == true)
             .Select(x => x.Name)
             .ToList();
 
+        Assert.Empty(publicConstructors);
         Assert.Empty(mutableProperties);
     }
 
