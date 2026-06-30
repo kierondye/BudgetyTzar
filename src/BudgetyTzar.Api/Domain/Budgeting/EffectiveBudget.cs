@@ -1,6 +1,6 @@
 namespace BudgetyTzar.Api;
 
-public sealed record EffectiveBudgetItemState(BudgetItem BudgetItem, decimal PlannedAmount);
+internal sealed record EffectiveBudgetItemState(BudgetItem BudgetItem, decimal PlannedAmount);
 
 public abstract record EffectiveBudgetResult
 {
@@ -27,7 +27,7 @@ public sealed class EffectiveBudget
     private readonly List<BudgetAdjustment> pendingAdjustments = [];
     private readonly List<DomainEvent> pendingEvents = [];
 
-    public EffectiveBudget(Guid budgetId, DateOnly date, decimal netPlannedAmount, IReadOnlyCollection<EffectiveBudgetItemState> items)
+    internal EffectiveBudget(Guid budgetId, DateOnly date, decimal netPlannedAmount, IReadOnlyCollection<EffectiveBudgetItemState> items)
     {
         BudgetId = budgetId;
         Date = date;

@@ -210,11 +210,25 @@ Tests run:
 
 ### Increment 3 - Hide Effective Budget Item Details
 
-Status: next.
+Status: implemented, awaiting review.
 
 - Remove public item lookup flows if no remaining callers depend on them.
 - Make any item state wrapper private or internal if still useful.
 - Keep `EffectiveBudgetItemState` as an assembly-facing hydration input only if it remains the simplest repository/application boundary.
+
+Implementation notes:
+
+- Confirmed there are no remaining public item lookup flows on `EffectiveBudget`.
+- Kept the nested `EffectiveBudgetItem` private.
+- Made `EffectiveBudgetItemState` internal so it remains an assembly-facing hydration input rather than public command surface.
+- Made the `EffectiveBudget` hydration constructor internal because it depends on the internal hydration input.
+- Added test assembly internals access for focused domain tests without exposing the hydration shape publicly.
+- Added a focused public surface test to assert `EffectiveBudgetItemState` is not exported.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetAdjustmentsTests"` - passed, 15 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 112 tests.
 
 ### Increment 4 - Strengthen Money Input
 

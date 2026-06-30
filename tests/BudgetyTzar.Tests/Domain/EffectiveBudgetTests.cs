@@ -6,6 +6,14 @@ namespace BudgetyTzar.Tests;
 public sealed class EffectiveBudgetTests
 {
     [Fact]
+    public void EffectiveBudgetItemStateIsNotPartOfThePublicCommandSurface()
+    {
+        var exportedTypes = typeof(EffectiveBudget).Assembly.GetExportedTypes();
+
+        Assert.DoesNotContain(exportedTypes, x => x.Name == nameof(EffectiveBudgetItemState));
+    }
+
+    [Fact]
     public void EffectiveBudgetAllowsDebitAdjustmentWhenPlannedFundingCoversItByDate()
     {
         var budgetId = Guid.NewGuid();
