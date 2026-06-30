@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 namespace BudgetyTzar.Api;
 
 internal sealed record EffectiveBudgetItemState(BudgetItem BudgetItem, decimal PlannedAmount);
@@ -23,9 +25,9 @@ public sealed class EffectiveBudget
     public const string PositiveAmountRequiredMessage = MoneyAmount.PositiveAmountRequiredMessage;
     public const string MoneyScaleExceededMessage = MoneyAmount.MoneyScaleExceededMessage;
 
-    private readonly IReadOnlyDictionary<Guid, EffectiveBudgetItem> items;
-    private readonly IReadOnlyCollection<BudgetAdjustment> pendingAdjustments;
-    private readonly IReadOnlyCollection<DomainEvent> pendingEvents;
+    private readonly ReadOnlyDictionary<Guid, EffectiveBudgetItem> items;
+    private readonly ReadOnlyCollection<BudgetAdjustment> pendingAdjustments;
+    private readonly ReadOnlyCollection<DomainEvent> pendingEvents;
 
     internal EffectiveBudget(Guid budgetId, DateOnly date, decimal netPlannedAmount, IReadOnlyCollection<EffectiveBudgetItemState> items)
     {
@@ -36,9 +38,9 @@ public sealed class EffectiveBudget
         BudgetId = budgetId;
         Date = date;
         NetPlannedAmount = netPlannedAmount;
-        this.items = effectiveBudgetItems;
-        pendingAdjustments = [];
-        pendingEvents = [];
+        this.items = new ReadOnlyDictionary<Guid, EffectiveBudgetItem>(effectiveBudgetItems);
+        pendingAdjustments = Array.AsReadOnly(Array.Empty<BudgetAdjustment>());
+        pendingEvents = Array.AsReadOnly(Array.Empty<DomainEvent>());
     }
 
     private EffectiveBudget(
@@ -52,9 +54,9 @@ public sealed class EffectiveBudget
         BudgetId = budgetId;
         Date = date;
         NetPlannedAmount = netPlannedAmount;
-        this.items = items;
-        this.pendingAdjustments = pendingAdjustments;
-        this.pendingEvents = pendingEvents;
+        this.items = new ReadOnlyDictionary<Guid, EffectiveBudgetItem>(items.ToDictionary());
+        this.pendingAdjustments = ToReadOnlyCollection(pendingAdjustments);
+        this.pendingEvents = ToReadOnlyCollection(pendingEvents);
     }
 
     public Guid BudgetId { get; }
@@ -146,6 +148,9 @@ public sealed class EffectiveBudget
 
         return budgetItem.Id;
     }
+
+    private static ReadOnlyCollection<T> ToReadOnlyCollection<T>(IEnumerable<T> items) =>
+        Array.AsReadOnly(items.ToArray());
 
     private sealed class EffectiveBudgetItem
     {

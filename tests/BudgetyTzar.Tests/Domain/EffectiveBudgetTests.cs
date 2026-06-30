@@ -6,6 +6,20 @@ namespace BudgetyTzar.Tests;
 public sealed class EffectiveBudgetTests
 {
     [Fact]
+    public void EffectiveBudgetDoesNotExposePublicMutationOrConstruction()
+    {
+        var publicConstructors = typeof(EffectiveBudget).GetConstructors();
+        var mutableProperties = typeof(EffectiveBudget)
+            .GetProperties()
+            .Where(x => x.SetMethod?.IsPublic == true)
+            .Select(x => x.Name)
+            .ToList();
+
+        Assert.Empty(publicConstructors);
+        Assert.Empty(mutableProperties);
+    }
+
+    [Fact]
     public void EffectiveBudgetItemStateIsNotPartOfThePublicCommandSurface()
     {
         var exportedTypes = typeof(EffectiveBudget).Assembly.GetExportedTypes();
@@ -54,6 +68,36 @@ public sealed class EffectiveBudgetTests
         Assert.Equal(BudgetAdjustmentType.Debit, payload.Direction);
         Assert.Equal(date, payload.Date);
         Assert.Equal("Covered spending", payload.Notes);
+    }
+
+    [Fact]
+    public void EffectiveBudgetPendingChangesAreReadOnlySnapshots()
+    {
+        var budgetId = Guid.NewGuid();
+        var date = new DateOnly(2026, 7, 2);
+        var groceries = BudgetItem.Create(budgetId, "Groceries", BudgetItemKind.Consumption);
+        var effectiveBudget = new EffectiveBudget(
+            budgetId,
+            date,
+            100m,
+            [new EffectiveBudgetItemState(groceries, 0m)]);
+
+        var result = effectiveBudget.RecordAdjustment(groceries.Id, 25m, BudgetAdjustmentType.Debit, "Covered spending");
+
+        var success = Assert.IsType<EffectiveBudgetResult.Success>(result);
+        var adjustment = Assert.Single(success.Budget.PendingAdjustments);
+        var domainEvent = Assert.Single(success.Budget.PendingEvents);
+        Assert.IsAssignableFrom<IReadOnlyCollection<BudgetAdjustment>>(success.Budget.PendingAdjustments);
+        Assert.IsAssignableFrom<IReadOnlyCollection<DomainEvent>>(success.Budget.PendingEvents);
+
+        var adjustments = Assert.IsAssignableFrom<ICollection<BudgetAdjustment>>(success.Budget.PendingAdjustments);
+        var domainEvents = Assert.IsAssignableFrom<ICollection<DomainEvent>>(success.Budget.PendingEvents);
+        Assert.True(adjustments.IsReadOnly);
+        Assert.True(domainEvents.IsReadOnly);
+        Assert.Throws<NotSupportedException>(() => adjustments.Add(adjustment));
+        Assert.Throws<NotSupportedException>(() => domainEvents.Add(domainEvent));
+        Assert.Single(success.Budget.PendingAdjustments);
+        Assert.Single(success.Budget.PendingEvents);
     }
 
     [Fact]

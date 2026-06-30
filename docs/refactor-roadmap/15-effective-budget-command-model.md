@@ -565,7 +565,7 @@ Tests run:
 
 ### Increment 13 - Finish Effective Budget Immutability Surface
 
-Status: planned.
+Status: implemented, awaiting review.
 
 Goal: close remaining immutability gaps in `EffectiveBudget` after repository loading and child domain types have been tightened.
 
@@ -580,12 +580,24 @@ Goal: close remaining immutability gaps in `EffectiveBudget` after repository lo
 
 Implementation notes:
 
-- Not started.
+- Changed `EffectiveBudget` to store item state, pending adjustments, and pending events behind read-only collection wrappers.
+- Pending adjustments and pending events remain exposed as `IReadOnlyCollection<T>`, but callers can no longer mutate the returned collection through common collection casts.
+- Preserved `EffectiveBudgetResult.Success(EffectiveBudget Budget)` and the successful-command save boundary behavior.
+- Preserved failure cases as non-mutating result cases.
+- Confirmed `EffectiveBudget` exposes no public constructors or public property setters.
+- Kept `EffectiveBudgetItemState` internal and out of the exported command surface.
+- Retained the decimal `RecordAdjustment(...)` compatibility overload for this increment because it still preserves expected validation-result behavior and has focused coverage.
+- Preserved existing event names, payloads, API behavior, and persistence shape.
 
 Tests to run:
 
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetAdjustmentsTests"`
 - Run `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` if practical.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetAdjustmentsTests"` - passed, 22 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 128 tests.
 
 ## Validation Rules
 
