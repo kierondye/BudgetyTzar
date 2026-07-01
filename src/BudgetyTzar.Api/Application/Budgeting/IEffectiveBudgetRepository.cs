@@ -18,4 +18,4 @@ public abstract record EffectiveBudgetLoadResult
     public sealed record BudgetNotFound : EffectiveBudgetLoadResult;
 }
 
-public sealed record EffectiveBudgetSaveResult(BudgetAdjustment CreatedAdjustment, Guid? EventId);
+public sealed record EffectiveBudgetSaveResult(IReadOnlyList<Guid> EventIds);

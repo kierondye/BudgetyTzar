@@ -84,7 +84,10 @@ public sealed class RecordAdjustmentHandler(IEffectiveBudgetRepository effective
             throw new InvalidOperationException("Effective budget adjustment result was not handled.");
         }
 
+        var createdAdjustment = success.Budget.PendingAdjustments.Single();
+
         var saved = await effectiveBudgets.Save(success.Budget, ct);
-        return CommandResult<BudgetAdjustment>.Created(saved.CreatedAdjustment, saved.EventId);
+        var projectionEventId = saved.EventIds.Count > 0 ? saved.EventIds[0] : (Guid?)null;
+        return CommandResult<BudgetAdjustment>.Created(createdAdjustment, projectionEventId);
     }
 }

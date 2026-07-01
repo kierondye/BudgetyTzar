@@ -755,7 +755,7 @@ Tests run:
 
 ### Increment 20 - Record Reallocation Through Effective Budget
 
-Status: proposed.
+Status: implemented, awaiting review.
 
 Goal: make `EffectiveBudget` the temporal command model for budget reallocations as well as direct budget adjustments.
 
@@ -791,6 +791,22 @@ Tests to run:
 
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetReallocation|FullyQualifiedName~Reallocation"`
 - Run `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` if practical.
+
+Implementation notes:
+
+- Added `EffectiveBudget.RecordReallocation(...)` as the public behavior for recording date-scoped budget reallocations.
+- Added a validated-money reallocation command input so raw decimal validation remains outside the effective budget command model.
+- Successful reallocations now return a modified `EffectiveBudget` containing one pending `BudgetReallocation`, the linked pending `BudgetAdjustment` records, and the existing `BudgetReallocationRecorded` domain event.
+- `EffectiveBudget` updates affected item planned amounts after successful reallocations so later commands in the same unit of work see the modified state.
+- Extended the effective-budget save boundary to persist pending reallocations alongside pending adjustments and pending events.
+- Updated the reallocation handler to load the effective budget, validate raw money, call the domain command model, inspect result cases, and save through the effective-budget repository.
+- Preserved existing reallocation event name, payload shape, linked adjustment persistence, API response shape, and validation response fields.
+- Kept transactions, allocation logic, reporting read models, and `FinancialTransaction`/`TransactionAllocation` refactors out of scope.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetReallocation|FullyQualifiedName~Reallocation"` - passed, 34 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - failed, 138 passed and 1 failed. The failing test was `BudgetyTzar.Tests.BudgetSnapshotsTests.ProjectionBackedSnapshotReturnsZeroBalancesForBudgetItemsWithoutActivity`, which returned 404 for a projection-backed no-activity snapshot and also failed when rerun by itself.
 
 ## Validation Rules
 

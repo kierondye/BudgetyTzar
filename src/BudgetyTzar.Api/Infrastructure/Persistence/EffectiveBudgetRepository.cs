@@ -53,21 +53,22 @@ public sealed class EffectiveBudgetRepository(
 
     public async Task<EffectiveBudgetSaveResult> Save(EffectiveBudget budget, CancellationToken ct)
     {
-        var createdAdjustment = budget.PendingAdjustments.FirstOrDefault()
-            ?? throw new InvalidOperationException("An effective budget save requires at least one pending adjustment.");
+        if (budget.PendingAdjustments.Count == 0 && budget.PendingReallocations.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "An effective budget save requires at least one pending adjustment or reallocation.");
+        }
 
+        db.BudgetReallocations.AddRange(budget.PendingReallocations);
         db.BudgetAdjustments.AddRange(budget.PendingAdjustments);
 
-        Guid? firstEventId = null;
-        foreach (var domainEvent in budget.PendingEvents)
-        {
-            var eventId = events.Add(domainEvent);
-            firstEventId ??= eventId;
-        }
+        var eventIds = budget.PendingEvents
+            .Select(events.Add)
+            .ToArray();
 
         await db.SaveChangesAsync(ct);
 
-        return new EffectiveBudgetSaveResult(createdAdjustment, firstEventId);
+        return new EffectiveBudgetSaveResult(eventIds);
     }
 }
 

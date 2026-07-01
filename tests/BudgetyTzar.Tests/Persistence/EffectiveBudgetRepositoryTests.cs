@@ -135,7 +135,6 @@ public sealed class EffectiveBudgetRepositoryTests
             firstResult.Budget.RecordAdjustment(groceries.Id, Money(30m), BudgetAdjustmentType.Debit, "Second change"));
 
         var modifiedBudget = secondResult.Budget;
-        var firstPendingAdjustment = modifiedBudget.PendingAdjustments.First();
 
         using var scope = app.Services.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<IEffectiveBudgetRepository>();
@@ -143,11 +142,55 @@ public sealed class EffectiveBudgetRepositoryTests
 
         var saved = await repository.Save(modifiedBudget, CancellationToken.None);
 
-        Assert.Equal(firstPendingAdjustment.Id, saved.CreatedAdjustment.Id);
-        Assert.NotNull(saved.EventId);
+        Assert.Equal(2, saved.EventIds.Count);
         Assert.Equal(2, await db.BudgetAdjustments.CountAsync());
-        Assert.Equal(2, await db.OutboxMessages.CountAsync(x =>
-            x.EventType == "budgetytzar.budgeting.budget-adjustment-recorded.v1"));
+        var outboxEventIds = await db.OutboxMessages
+            .Where(x => x.EventType == "budgetytzar.budgeting.budget-adjustment-recorded.v1")
+            .Select(x => x.Id)
+            .ToListAsync();
+        Assert.Equal(2, outboxEventIds.Count);
+        Assert.All(saved.EventIds, eventId => Assert.Contains(eventId, outboxEventIds));
+    }
+
+    [Fact]
+    public async Task SavePersistsPendingReallocationsLinkedAdjustmentsAndEvents()
+    {
+        await using var app = new BudgetApiFactory();
+        await app.ResetDatabaseAsync();
+
+        var budgetId = Guid.NewGuid();
+        var dining = BudgetItem.Create(budgetId, "Dining", BudgetItemKind.Consumption);
+        var groceries = BudgetItem.Create(budgetId, "Groceries", BudgetItemKind.Consumption);
+        var effectiveBudget = new EffectiveBudget(
+            budgetId,
+            new DateOnly(2026, 6, 15),
+            0m,
+            [
+                new EffectiveBudgetItemState(dining, 0m),
+                new EffectiveBudgetItemState(groceries, 0m)
+            ]);
+
+        var result = Assert.IsType<EffectiveBudgetResult.Success>(
+            effectiveBudget.RecordReallocation(
+                [
+                    new EffectiveBudgetReallocationAdjustment(dining.Id, Money(25m), BudgetAdjustmentType.Credit),
+                    new EffectiveBudgetReallocationAdjustment(groceries.Id, Money(25m), BudgetAdjustmentType.Debit)
+                ],
+                "Move budget"));
+        var modifiedBudget = result.Budget;
+
+        using var scope = app.Services.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IEffectiveBudgetRepository>();
+        var db = scope.ServiceProvider.GetRequiredService<BudgetDbContext>();
+
+        var saved = await repository.Save(modifiedBudget, CancellationToken.None);
+
+        var eventId = Assert.Single(saved.EventIds);
+        Assert.Equal(1, await db.BudgetReallocations.CountAsync());
+        Assert.Equal(2, await db.BudgetAdjustments.CountAsync());
+        Assert.Equal(1, await db.OutboxMessages.CountAsync(x =>
+            x.Id == eventId &&
+            x.EventType == "budgetytzar.budgeting.budget-reallocation-recorded.v1"));
     }
 
     private static PositiveMoneyAmount Money(decimal amount) =>

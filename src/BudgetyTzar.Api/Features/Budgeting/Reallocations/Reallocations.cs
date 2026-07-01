@@ -1,7 +1,4 @@
-using BudgetyTzar.Api.Infrastructure.Events;
-using BudgetyTzar.Api.Infrastructure.Persistence;
 using FluentValidation;
-using Microsoft.EntityFrameworkCore;
 
 namespace BudgetyTzar.Api.Features;
 
@@ -31,10 +28,7 @@ public sealed class CreateBudgetItemReallocationValidator : AbstractValidator<Cr
     }
 }
 
-public sealed class RecordReallocationHandler(
-    BudgetDbContext db,
-    DomainEventOutboxWriter events,
-    BudgetItemEligibilityService eligibility)
+public sealed class RecordReallocationHandler(IEffectiveBudgetRepository effectiveBudgets)
 {
     public async Task<CommandResult<BudgetReallocation>> Handle(
         Guid budgetId,
@@ -43,63 +37,63 @@ public sealed class RecordReallocationHandler(
         IReadOnlyList<BudgetReallocationAdjustmentItem> adjustments,
         CancellationToken ct)
     {
-        if (!await db.Budgets.AnyAsync(x => x.Id == budgetId, ct))
+        var budgetResult = await effectiveBudgets.GetEffectiveBudget(budgetId, date, ct);
+        if (budgetResult is EffectiveBudgetLoadResult.BudgetNotFound)
         {
             return CommandResult<BudgetReallocation>.NotFound();
         }
 
-        var reallocationAdjustments = adjustments
-            .Select(x => new BudgetReallocationAdjustment(x.BudgetItemId, x.Amount, x.Direction))
-            .ToList();
-        var validationError = BudgetReallocation.ValidateAdjustments(reallocationAdjustments);
-        if (validationError is not null)
+        var moneyAdjustments = new List<EffectiveBudgetReallocationAdjustment>(adjustments.Count);
+        foreach (var adjustment in adjustments)
         {
-            return CommandResult<BudgetReallocation>.ValidationProblem(new Dictionary<string, string[]>
+            var amountResult = PositiveMoneyAmount.Create(adjustment.Amount);
+            if (amountResult is PositiveMoneyAmountResult.ValidationFailed moneyValidationProblem)
             {
-                [nameof(adjustments)] = [validationError]
-            });
+                return CommandResult<BudgetReallocation>.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [nameof(adjustments)] = [moneyValidationProblem.Error]
+                });
+            }
+
+            moneyAdjustments.Add(new EffectiveBudgetReallocationAdjustment(
+                adjustment.BudgetItemId,
+                ((PositiveMoneyAmountResult.Success)amountResult).Amount,
+                adjustment.Direction));
         }
 
-        var itemIds = adjustments.Select(x => x.BudgetItemId).Distinct().ToArray();
-        var items = await eligibility.GetBudgetItems(budgetId, itemIds, ct);
-        if (items.Count != itemIds.Length)
+        if (budgetResult is not EffectiveBudgetLoadResult.Success loaded)
+        {
+            throw new InvalidOperationException("Effective budget load result was not handled.");
+        }
+
+        var result = loaded.Budget.RecordReallocation(moneyAdjustments, notes);
+        if (result is EffectiveBudgetResult.ItemNotFound)
         {
             return CommandResult<BudgetReallocation>.NotFound();
         }
 
-        if (items.Any(x => !x.CanAcceptActivityOn(date)))
+        if (result is EffectiveBudgetResult.ItemArchived)
         {
             return CommandResult<BudgetReallocation>.ValidationProblem(BudgetItemValidationErrors.ArchivedBudgetItemErrors());
         }
 
-        var budgetItemValidationError = BudgetReallocation.ValidateBudgetItems(items);
-        if (budgetItemValidationError is not null)
+        if (result is EffectiveBudgetResult.ValidationFailed effectiveBudgetValidationProblem)
         {
             return CommandResult<BudgetReallocation>.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(adjustments)] = [budgetItemValidationError]
+                [nameof(adjustments)] = [effectiveBudgetValidationProblem.Error]
             });
         }
 
-        var reallocation = BudgetReallocation.Create(budgetId, date, notes);
-        var linkedAdjustmentsResult = reallocation.CreateLinkedAdjustments(reallocationAdjustments);
-        if (linkedAdjustmentsResult is CreateLinkedBudgetAdjustmentsResult.ValidationFailed linkedAdjustmentsValidationFailed)
+        if (result is not EffectiveBudgetResult.Success success)
         {
-            return CommandResult<BudgetReallocation>.ValidationProblem(new Dictionary<string, string[]>
-            {
-                [nameof(adjustments)] = [linkedAdjustmentsValidationFailed.Error]
-            });
+            throw new InvalidOperationException("Effective budget reallocation result was not handled.");
         }
 
-        if (linkedAdjustmentsResult is not CreateLinkedBudgetAdjustmentsResult.Success linkedAdjustmentsCreated)
-        {
-            throw new InvalidOperationException("Unexpected linked budget adjustments result.");
-        }
+        var createdReallocation = success.Budget.PendingReallocations.Single();
 
-        db.BudgetReallocations.Add(reallocation);
-        db.BudgetAdjustments.AddRange(linkedAdjustmentsCreated.Adjustments);
-        var eventId = events.Add(reallocation.RecordedEvent(reallocationAdjustments));
-        await db.SaveChangesAsync(ct);
-        return CommandResult<BudgetReallocation>.Created(reallocation, eventId);
+        var saved = await effectiveBudgets.Save(success.Budget, ct);
+        var projectionEventId = saved.EventIds.Count > 0 ? saved.EventIds[0] : (Guid?)null;
+        return CommandResult<BudgetReallocation>.Created(createdReallocation, projectionEventId);
     }
 }

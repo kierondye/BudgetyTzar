@@ -35,6 +35,24 @@ public sealed class EffectiveBudgetTests
     }
 
     [Fact]
+    public void EffectiveBudgetReallocationCommandsRequireValidatedMoney()
+    {
+        var recordReallocation = Assert.Single(
+            typeof(EffectiveBudget).GetMethods(),
+            x => x.Name == nameof(EffectiveBudget.RecordReallocation));
+        var adjustmentsParameter = Assert.Single(
+            recordReallocation.GetParameters(),
+            x => x.Name == "adjustments");
+
+        Assert.Equal(typeof(IReadOnlyCollection<EffectiveBudgetReallocationAdjustment>), adjustmentsParameter.ParameterType);
+        Assert.Equal(
+            typeof(PositiveMoneyAmount),
+            typeof(EffectiveBudgetReallocationAdjustment)
+                .GetProperty(nameof(EffectiveBudgetReallocationAdjustment.Amount))!
+                .PropertyType);
+    }
+
+    [Fact]
     public void EffectiveBudgetItemStateIsNotPartOfThePublicCommandSurface()
     {
         var exportedTypes = typeof(EffectiveBudget).Assembly.GetExportedTypes();
@@ -103,16 +121,194 @@ public sealed class EffectiveBudgetTests
         var adjustment = Assert.Single(success.Budget.PendingAdjustments);
         var domainEvent = Assert.Single(success.Budget.PendingEvents);
         Assert.IsAssignableFrom<IReadOnlyCollection<BudgetAdjustment>>(success.Budget.PendingAdjustments);
+        Assert.IsAssignableFrom<IReadOnlyCollection<BudgetReallocation>>(success.Budget.PendingReallocations);
         Assert.IsAssignableFrom<IReadOnlyCollection<DomainEvent>>(success.Budget.PendingEvents);
 
         var adjustments = Assert.IsAssignableFrom<ICollection<BudgetAdjustment>>(success.Budget.PendingAdjustments);
+        var reallocations = Assert.IsAssignableFrom<ICollection<BudgetReallocation>>(success.Budget.PendingReallocations);
         var domainEvents = Assert.IsAssignableFrom<ICollection<DomainEvent>>(success.Budget.PendingEvents);
         Assert.True(adjustments.IsReadOnly);
+        Assert.True(reallocations.IsReadOnly);
         Assert.True(domainEvents.IsReadOnly);
         Assert.Throws<NotSupportedException>(() => adjustments.Add(adjustment));
         Assert.Throws<NotSupportedException>(() => domainEvents.Add(domainEvent));
         Assert.Single(success.Budget.PendingAdjustments);
+        Assert.Empty(success.Budget.PendingReallocations);
         Assert.Single(success.Budget.PendingEvents);
+    }
+
+    [Fact]
+    public void EffectiveBudgetRecordsReallocationWithLinkedAdjustmentsAndEvent()
+    {
+        var budgetId = Guid.NewGuid();
+        var date = new DateOnly(2026, 7, 2);
+        var dining = BudgetItem.Create(budgetId, "Dining", BudgetItemKind.Consumption);
+        var groceries = BudgetItem.Create(budgetId, "Groceries", BudgetItemKind.Consumption);
+        var effectiveBudget = new EffectiveBudget(
+            budgetId,
+            date,
+            0m,
+            [
+                new EffectiveBudgetItemState(dining, 0m),
+                new EffectiveBudgetItemState(groceries, 0m)
+            ]);
+
+        var result = effectiveBudget.RecordReallocation(
+            [
+                new EffectiveBudgetReallocationAdjustment(dining.Id, Money(30m), BudgetAdjustmentType.Credit),
+                new EffectiveBudgetReallocationAdjustment(groceries.Id, Money(30m), BudgetAdjustmentType.Debit)
+            ],
+            "Move budget");
+
+        var success = Assert.IsType<EffectiveBudgetResult.Success>(result);
+        Assert.NotSame(effectiveBudget, success.Budget);
+        Assert.Empty(effectiveBudget.PendingAdjustments);
+        Assert.Empty(effectiveBudget.PendingReallocations);
+        Assert.Empty(effectiveBudget.PendingEvents);
+        Assert.Equal(0m, success.Budget.NetPlannedAmount);
+
+        var reallocation = Assert.Single(success.Budget.PendingReallocations);
+        Assert.Equal(budgetId, reallocation.BudgetId);
+        Assert.Equal(date, reallocation.Date);
+        Assert.Equal("Move budget", reallocation.Notes);
+
+        var linkedAdjustments = success.Budget.PendingAdjustments.OrderBy(x => x.BudgetItemId).ToList();
+        Assert.Equal(2, linkedAdjustments.Count);
+        Assert.All(linkedAdjustments, x => Assert.Equal(reallocation.Id, x.ReallocationId));
+        Assert.Contains(linkedAdjustments, x =>
+            x.BudgetItemId == dining.Id &&
+            x.Amount == 30m &&
+            x.Type == BudgetAdjustmentType.Credit);
+        Assert.Contains(linkedAdjustments, x =>
+            x.BudgetItemId == groceries.Id &&
+            x.Amount == 30m &&
+            x.Type == BudgetAdjustmentType.Debit);
+
+        var domainEvent = Assert.Single(success.Budget.PendingEvents);
+        Assert.Equal("BudgetReallocationRecorded", domainEvent.EventType);
+        Assert.Equal(budgetId, domainEvent.BudgetId);
+        Assert.Equal(nameof(BudgetReallocation), domainEvent.EntityType);
+        Assert.Equal(reallocation.Id, domainEvent.EntityId);
+        var payload = Assert.IsType<BudgetReallocationRecordedPayload>(domainEvent.Payload);
+        Assert.Equal(reallocation.Id, payload.BudgetReallocationId);
+        Assert.Equal(budgetId, payload.BudgetId);
+        Assert.Equal(date, payload.Date);
+        Assert.Equal("Move budget", payload.Notes);
+        Assert.Equal(2, payload.Adjustments.Count);
+    }
+
+    [Fact]
+    public void EffectiveBudgetRejectsReallocationForUnknownItem()
+    {
+        var effectiveBudget = new EffectiveBudget(
+            Guid.NewGuid(),
+            new DateOnly(2026, 6, 2),
+            0m,
+            []);
+        var unknownItemId = Guid.NewGuid();
+
+        var result = effectiveBudget.RecordReallocation(
+            [
+                new EffectiveBudgetReallocationAdjustment(unknownItemId, Money(25m), BudgetAdjustmentType.Credit),
+                new EffectiveBudgetReallocationAdjustment(Guid.NewGuid(), Money(25m), BudgetAdjustmentType.Debit)
+            ],
+            "Unknown item");
+
+        var notFound = Assert.IsType<EffectiveBudgetResult.ItemNotFound>(result);
+        Assert.Equal(unknownItemId, notFound.BudgetItemId);
+        Assert.Empty(effectiveBudget.PendingAdjustments);
+        Assert.Empty(effectiveBudget.PendingReallocations);
+        Assert.Empty(effectiveBudget.PendingEvents);
+    }
+
+    [Fact]
+    public void EffectiveBudgetRejectsReallocationForArchivedItemAfterArchiveDate()
+    {
+        var budgetId = Guid.NewGuid();
+        var dining = BudgetItem.Create(budgetId, "Dining", BudgetItemKind.Consumption)
+            .Archive(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+        var groceries = BudgetItem.Create(budgetId, "Groceries", BudgetItemKind.Consumption);
+        var effectiveBudget = new EffectiveBudget(
+            budgetId,
+            new DateOnly(2026, 6, 2),
+            0m,
+            [
+                new EffectiveBudgetItemState(dining, 0m),
+                new EffectiveBudgetItemState(groceries, 0m)
+            ]);
+
+        var result = effectiveBudget.RecordReallocation(
+            [
+                new EffectiveBudgetReallocationAdjustment(dining.Id, Money(25m), BudgetAdjustmentType.Credit),
+                new EffectiveBudgetReallocationAdjustment(groceries.Id, Money(25m), BudgetAdjustmentType.Debit)
+            ],
+            "After archive");
+
+        var archived = Assert.IsType<EffectiveBudgetResult.ItemArchived>(result);
+        Assert.Equal(dining.Id, archived.BudgetItemId);
+    }
+
+    [Fact]
+    public void EffectiveBudgetRejectsReallocationForFundingItem()
+    {
+        var budgetId = Guid.NewGuid();
+        var salary = BudgetItem.Create(budgetId, "Salary", BudgetItemKind.Funding);
+        var groceries = BudgetItem.Create(budgetId, "Groceries", BudgetItemKind.Consumption);
+        var effectiveBudget = new EffectiveBudget(
+            budgetId,
+            new DateOnly(2026, 6, 2),
+            0m,
+            [
+                new EffectiveBudgetItemState(salary, 0m),
+                new EffectiveBudgetItemState(groceries, 0m)
+            ]);
+
+        var result = effectiveBudget.RecordReallocation(
+            [
+                new EffectiveBudgetReallocationAdjustment(salary.Id, Money(25m), BudgetAdjustmentType.Credit),
+                new EffectiveBudgetReallocationAdjustment(groceries.Id, Money(25m), BudgetAdjustmentType.Debit)
+            ],
+            "Move funding");
+
+        var validationProblem = Assert.IsType<EffectiveBudgetResult.ValidationFailed>(result);
+        Assert.Equal(BudgetReallocation.ConsumptionItemsOnlyMessage, validationProblem.Error);
+    }
+
+    [Fact]
+    public void EffectiveBudgetUpdatesEffectivePlannedAmountsAfterSuccessfulReallocation()
+    {
+        var budgetId = Guid.NewGuid();
+        var date = new DateOnly(2026, 7, 2);
+        var dining = BudgetItem.Create(budgetId, "Dining", BudgetItemKind.Consumption);
+        var groceries = BudgetItem.Create(budgetId, "Groceries", BudgetItemKind.Consumption);
+        var effectiveBudget = new EffectiveBudget(
+            budgetId,
+            date,
+            0m,
+            [
+                new EffectiveBudgetItemState(dining, 0m),
+                new EffectiveBudgetItemState(groceries, 0m)
+            ]);
+
+        var reallocationResult = effectiveBudget.RecordReallocation(
+            [
+                new EffectiveBudgetReallocationAdjustment(dining.Id, Money(30m), BudgetAdjustmentType.Credit),
+                new EffectiveBudgetReallocationAdjustment(groceries.Id, Money(30m), BudgetAdjustmentType.Debit)
+            ],
+            "Move budget");
+        var reallocationSuccess = Assert.IsType<EffectiveBudgetResult.Success>(reallocationResult);
+
+        var result = reallocationSuccess.Budget.RecordAdjustment(
+            groceries.Id,
+            Money(31m),
+            BudgetAdjustmentType.Credit,
+            "Over-correction");
+
+        var validationProblem = Assert.IsType<EffectiveBudgetResult.ValidationFailed>(result);
+        Assert.Equal(BudgetItem.ConsumptionBudgetItemBecameFundingMessage, validationProblem.Error);
+        Assert.Empty(effectiveBudget.PendingAdjustments);
+        Assert.Empty(effectiveBudget.PendingReallocations);
+        Assert.Empty(effectiveBudget.PendingEvents);
     }
 
     [Fact]
