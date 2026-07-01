@@ -1,5 +1,11 @@
 # BudgetyTzar
 
+> NOTE: This project is under active development. It serves two purposes: replacing a budgeting spreadsheet that I have used for many years, and providing a place to explore software architecture, engineering practices and emerging technologies.
+> 
+> GenAI has been used extensively throughout the project to accelerate development and as a design and implementation aid. The project is currently undergoing a significant refactor as the architecture matures.
+> 
+> Planned improvements include improved observability, Kubernetes and cloud deployment, a more comprehensive test suite, better documentation, and continued refinement of the AI-assisted development workflow. Longer-term areas of exploration include event sourcing and AI-assisted workflows for investigating and resolving software defects.
+
 BudgetyTzar is a personal budgeting MVP that replaces a monthly spreadsheet with a PostgreSQL-backed HTTP API. The target domain model compares planned budget activity with actual transaction activity: budgets contain budget items, debit and credit budget adjustments, zero-sum reallocations, debit and credit transactions, transaction allocations, snapshots, and durable audit records. Phase 2 introduces Kafka-compatible local infrastructure, outbox publishing, and projection-backed snapshots/audit as the default local event-driven path.
 
 ## Phase 1 API
