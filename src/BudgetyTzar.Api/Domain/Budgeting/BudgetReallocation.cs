@@ -4,6 +4,17 @@ namespace BudgetyTzar.Api;
 
 public sealed record BudgetReallocationAdjustment(Guid BudgetItemId, decimal Amount, BudgetAdjustmentType Direction);
 
+public abstract record CreateLinkedBudgetAdjustmentsResult
+{
+    private CreateLinkedBudgetAdjustmentsResult()
+    {
+    }
+
+    public sealed record Success(IReadOnlyList<BudgetAdjustment> Adjustments) : CreateLinkedBudgetAdjustmentsResult;
+
+    public sealed record ValidationFailed(string Error) : CreateLinkedBudgetAdjustmentsResult;
+}
+
 public sealed class BudgetReallocation
 {
     public const string ConsumptionItemsOnlyMessage = "Budget reallocations can only move budget between consumption items.";
@@ -78,17 +89,19 @@ public sealed class BudgetReallocation
             ? null
             : ConsumptionItemsOnlyMessage;
 
-    public IReadOnlyList<BudgetAdjustment> CreateLinkedAdjustments(IReadOnlyCollection<BudgetReallocationAdjustment> adjustments)
+    public CreateLinkedBudgetAdjustmentsResult CreateLinkedAdjustments(IReadOnlyCollection<BudgetReallocationAdjustment> adjustments)
     {
         var validationError = ValidateAdjustments(adjustments);
         if (validationError is not null)
         {
-            throw new InvalidOperationException(validationError);
+            return new CreateLinkedBudgetAdjustmentsResult.ValidationFailed(validationError);
         }
 
-        return adjustments
+        var linkedAdjustments = adjustments
             .Select(x => BudgetAdjustment.Create(BudgetId, x.BudgetItemId, x.Amount, x.Direction, Date, Notes, Id))
             .ToList();
+
+        return new CreateLinkedBudgetAdjustmentsResult.Success(linkedAdjustments);
     }
 
     public DomainEvent RecordedEvent(IReadOnlyList<BudgetReallocationAdjustment> adjustments) =>

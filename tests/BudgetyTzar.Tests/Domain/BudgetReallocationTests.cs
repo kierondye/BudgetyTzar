@@ -41,6 +41,20 @@ public sealed class BudgetReallocationTests
     }
 
     [Fact]
+    public void ReallocationReturnsValidationResultWhenLinkedAdjustmentsAreInvalid()
+    {
+        var reallocation = BudgetReallocation.Create(Guid.NewGuid(), new DateOnly(2026, 6, 5), "Move budget");
+
+        var result = reallocation.CreateLinkedAdjustments([
+            new BudgetReallocationAdjustment(Guid.NewGuid(), 30m, BudgetAdjustmentType.Credit),
+            new BudgetReallocationAdjustment(Guid.NewGuid(), 20m, BudgetAdjustmentType.Debit)
+        ]);
+
+        var validationFailed = Assert.IsType<CreateLinkedBudgetAdjustmentsResult.ValidationFailed>(result);
+        Assert.Equal("Reallocation credits must equal reallocation debits.", validationFailed.Error);
+    }
+
+    [Fact]
     public void ReallocationRequiresConsumptionBudgetItems()
     {
         var budgetId = Guid.NewGuid();
@@ -61,10 +75,12 @@ public sealed class BudgetReallocationTests
         var date = new DateOnly(2026, 6, 5);
         var reallocation = BudgetReallocation.Create(budgetId, date, " Move budget ");
 
-        var adjustments = reallocation.CreateLinkedAdjustments([
+        var result = reallocation.CreateLinkedAdjustments([
             new BudgetReallocationAdjustment(firstItemId, 30m, BudgetAdjustmentType.Credit),
             new BudgetReallocationAdjustment(secondItemId, 30m, BudgetAdjustmentType.Debit)
         ]);
+        var success = Assert.IsType<CreateLinkedBudgetAdjustmentsResult.Success>(result);
+        var adjustments = success.Adjustments;
 
         Assert.Equal(2, adjustments.Count);
         Assert.All(adjustments, x =>

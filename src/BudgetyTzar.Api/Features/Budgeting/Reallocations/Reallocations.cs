@@ -82,10 +82,22 @@ public sealed class RecordReallocationHandler(
         }
 
         var reallocation = BudgetReallocation.Create(budgetId, date, notes);
-        var linkedAdjustments = reallocation.CreateLinkedAdjustments(reallocationAdjustments);
+        var linkedAdjustmentsResult = reallocation.CreateLinkedAdjustments(reallocationAdjustments);
+        if (linkedAdjustmentsResult is CreateLinkedBudgetAdjustmentsResult.ValidationFailed linkedAdjustmentsValidationFailed)
+        {
+            return CommandResult<BudgetReallocation>.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(adjustments)] = [linkedAdjustmentsValidationFailed.Error]
+            });
+        }
+
+        if (linkedAdjustmentsResult is not CreateLinkedBudgetAdjustmentsResult.Success linkedAdjustmentsCreated)
+        {
+            throw new InvalidOperationException("Unexpected linked budget adjustments result.");
+        }
 
         db.BudgetReallocations.Add(reallocation);
-        db.BudgetAdjustments.AddRange(linkedAdjustments);
+        db.BudgetAdjustments.AddRange(linkedAdjustmentsCreated.Adjustments);
         var eventId = events.Add(reallocation.RecordedEvent(reallocationAdjustments));
         await db.SaveChangesAsync(ct);
         return CommandResult<BudgetReallocation>.Created(reallocation, eventId);

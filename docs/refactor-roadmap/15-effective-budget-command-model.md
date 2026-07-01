@@ -728,6 +728,70 @@ Tests run:
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetRepositoryTests|FullyQualifiedName~BudgetTests|FullyQualifiedName~BudgetItemTests"` - passed, 28 tests.
 - `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 131 tests.
 
+### Increment 19 - Return Result For Linked Reallocation Adjustments
+
+Status: implemented, awaiting review.
+
+Goal: remove an expected reallocation validation rejection from the exception path without redesigning the reallocation workflow.
+
+- Add a closed result type for `BudgetReallocation.CreateLinkedAdjustments(...)`.
+- Return a validation result instead of throwing for invalid linked-adjustment input.
+- Keep successful linked adjustment creation, persistence shape, and `BudgetReallocationRecorded` event payload behavior unchanged.
+- Keep the handler's existing validation ordering and response shape.
+- Keep transactions, allocations, effective-budget behavior, and broader reallocation redesign out of scope.
+
+Implementation notes:
+
+- Added `CreateLinkedBudgetAdjustmentsResult` with success and validation-failed cases.
+- Changed `BudgetReallocation.CreateLinkedAdjustments(...)` to return the result type and preserve linked `BudgetAdjustment` creation on success.
+- Updated the reallocation handler to inspect the result while keeping the existing pre-validation path so API behavior remains stable.
+- Added focused domain coverage proving invalid linked adjustments return a validation result instead of throwing.
+- Preserved existing reallocation event names, payloads, persistence behavior, and API response behavior.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~BudgetReallocation|FullyQualifiedName~Reallocation"` - passed, 9 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - passed, 132 tests.
+
+### Increment 20 - Record Reallocation Through Effective Budget
+
+Status: proposed.
+
+Goal: make `EffectiveBudget` the temporal command model for budget reallocations as well as direct budget adjustments.
+
+- Add `EffectiveBudget.RecordReallocation(...)` as the public command method for reallocating planned budget between budget items at the effective date.
+- Keep the command input small and explicit, likely a collection of budget-item id, positive amount, and direction values plus optional notes.
+- Introduce or extend closed result cases for expected reallocation rejections:
+  - item not found.
+  - archived item.
+  - invalid reallocation balance.
+  - non-consumption budget item.
+  - effective planned-position validation failure if the reallocation changes item balances in an invalid way.
+- On success, return `EffectiveBudgetResult.Success(EffectiveBudget Budget)` containing a modified effective budget.
+- Successful reallocation should add one pending `BudgetReallocation`, the linked pending `BudgetAdjustment` records, and the existing `BudgetReallocationRecorded` domain event to the modified `EffectiveBudget`.
+- Update in-memory effective planned amounts for affected items after success so later commands in the same unit of work validate against the modified position.
+- Extend the effective-budget save boundary to persist pending reallocations in addition to pending adjustments and pending events.
+- Update the reallocation handler so it coordinates the use case:
+  - load the effective budget for the command date.
+  - validate raw money input before calling the domain command model.
+  - call `RecordReallocation(...)`.
+  - inspect result cases.
+  - save the successful effective budget through the repository boundary.
+- The handler should not know the persistence anatomy of a successful reallocation.
+- Preserve existing `BudgetReallocationRecorded` and linked adjustment event payload behavior unless a later contract increment explicitly changes it.
+- Keep transactions, allocation logic, reporting read-model redesign, and `FinancialTransaction`/`TransactionAllocation` refactors out of scope.
+- Do not move data access into `EffectiveBudget`, `BudgetReallocation`, or child domain objects.
+- Keep the increment small enough that existing validation response shapes and API behavior remain stable.
+
+Rationale:
+
+Reallocation is also a temporal budget modification at a specific date. It depends on the same command-state concerns as direct adjustments: budget item existence, archive status, budget item kind, point-in-time planned amounts, pending records, and domain events. Moving the behavior behind `EffectiveBudget` keeps vertical slice handlers from coordinating child domain operations and persistence details by hand, while preserving the existing EF-backed command model.
+
+Tests to run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetReallocation|FullyQualifiedName~Reallocation"`
+- Run `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` if practical.
+
 ## Validation Rules
 
 `EffectiveBudget.RecordAdjustment(...)` should validate:
