@@ -28,7 +28,7 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
     {
         var now = DateTimeOffset.UtcNow;
         await UpsertBudgetItemState(payload.BudgetItemId, payload.BudgetId, payload.Name, payload.Kind, isArchived: false, archivedAt: null, now, ct);
-        return await ApplyProjectionState(payload.BudgetId, DateOnly.FromDateTime(occurredAt.UtcDateTime), occurredAt, ct);
+        return await ApplyProjectionState(payload.BudgetId, fromDate: null, occurredAt, ct);
     }
 
     public async Task<ProjectionApplyResult> ApplyBudgetItemArchived(
@@ -396,6 +396,7 @@ public sealed class ReportingProjectionService(BudgetDbContext db)
 
         return adjustmentDates
             .Concat(transactionDates)
+            .Append(DateOnly.MinValue)
             .Append(eventDate)
             .Where(x => !fromDate.HasValue || x >= fromDate.Value)
             .Distinct()

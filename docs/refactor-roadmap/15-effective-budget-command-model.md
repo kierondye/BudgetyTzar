@@ -808,6 +808,32 @@ Tests run:
 - `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetReallocation|FullyQualifiedName~Reallocation"` - passed, 34 tests.
 - `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false` - failed, 138 passed and 1 failed. The failing test was `BudgetyTzar.Tests.BudgetSnapshotsTests.ProjectionBackedSnapshotReturnsZeroBalancesForBudgetItemsWithoutActivity`, which returned 404 for a projection-backed no-activity snapshot and also failed when rerun by itself.
 
+### Increment 21 - Preserve Projection-Backed No-Activity Snapshots
+
+Status: implemented, awaiting review.
+
+Goal: close the broader-suite failure recorded after Increment 20 without changing the effective-budget command model or transaction boundaries.
+
+- Preserve projection-backed snapshot behavior for active budget items that have no adjustments or transaction activity.
+- Keep projection-backed reads from rebuilding from the outbox at read time.
+- Keep the fix in reporting projection persistence/calculation code, not in domain command objects.
+- Preserve existing event names, payloads, and API response shapes.
+- Keep transactions, allocations, and reporting read-model redesign out of scope.
+
+Implementation notes:
+
+- Added a baseline projection snapshot date so projection-backed reports can return active budget items with zero balances before the first dated adjustment or transaction.
+- Changed budget-item-created projection handling to recalculate the snapshot timeline from the beginning because active item membership affects historical zero-balance snapshots in the same way as the direct snapshot calculator.
+- Preserved projection-backed read behavior: the endpoint still reads durable projection rows and does not rebuild from outbox at read time.
+- Left `EffectiveBudget`, reallocation command handling, event contracts, transactions, and allocation behavior unchanged.
+
+Tests run:
+
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false /p:UseAppHost=false --filter "FullyQualifiedName~ProjectionBackedSnapshotReturnsZeroBalancesForBudgetItemsWithoutActivity"` - passed, 1 test.
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false /p:UseAppHost=false --filter "FullyQualifiedName~ProjectionBackedSnapshot|FullyQualifiedName~ProjectionRebuildFromOutboxSupportsProjectionBackedSnapshots|FullyQualifiedName~ProjectionReadinessApiTests"` - passed, 9 tests.
+- `dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj --no-restore /nr:false /p:UseSharedCompilation=false /p:UseAppHost=false --filter "FullyQualifiedName~EffectiveBudgetTests|FullyQualifiedName~EffectiveBudgetRepositoryTests|FullyQualifiedName~BudgetReallocation|FullyQualifiedName~Reallocation"` - passed, 34 tests.
+- `dotnet test --no-restore /nr:false /p:UseSharedCompilation=false /p:UseAppHost=false` - passed, 139 tests.
+
 ## Validation Rules
 
 `EffectiveBudget.RecordAdjustment(...)` should validate:
