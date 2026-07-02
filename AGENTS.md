@@ -21,11 +21,11 @@ The bounded contexts and services described in `SPECIFICATION.md` define ownersh
 - `dotnet run --project src/BudgetyTzar.Api`: runs the API at `http://localhost:7070` with Swagger at `/swagger`.
 - `scripts/release.sh`: runs the local SemVer release tag flow.
 
-To run without Kafka locally, set `Outbox__PublisherEnabled=false`, `Projections__ConsumerEnabled=false`, and `Projections__UseProjectionBackedReports=false`. Keep secrets and machine-specific connection strings in environment variables, not source files.
-
 ## Coding Style & Naming Conventions
 
 Use C# with nullable reference types and implicit usings enabled. Keep four-space indentation, `PascalCase` for public types/members, `camelCase` for locals and parameters, and consistent suffixes such as `BudgetSnapshotsTests` or `TransactionEndpoints`. Preserve existing layering: domain logic in `Domain`, orchestration in `Application`, HTTP details in `Features`, and external concerns in `Infrastructure`.
+
+Structure domain classes using DDD patterns, but prefer a functional style. Domain types must be immutable whether they are entities or value objects. Mutating methods of an entity must return a new instance with the same ID. Vertical slice handlers and infrastructure code can be mutable.
 
 ## Testing Guidelines
 

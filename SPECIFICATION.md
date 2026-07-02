@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-BudgetyTzar is a personal budgeting application that replaces a manual spreadsheet with an auditable ledger-backed HTTP API. It tracks planned budget movements, real transactions, transaction allocations, budget reallocations, balances, snapshots, and historical reporting without relying on period resets.
+BudgetyTzar is a personal budgeting application that replaces a manual spreadsheet with an auditable ledger-backed HTTP API. It tracks planned budget movements, real transactions, transaction allocations, budget reallocations, balances, snapshots, and historical reporting.
 
 The core product model is intentionally small:
 
@@ -12,8 +12,6 @@ The core product model is intentionally small:
 - Budget reallocation.
 - Transaction.
 - Transaction allocation.
-
-The application is also intended to demonstrate senior software engineering capability through equivalent .NET and Go implementations that share the same product model, event contracts, test scenarios, container strategy, Kubernetes deployment model, and cloud architecture.
 
 ## 2. Goals
 
