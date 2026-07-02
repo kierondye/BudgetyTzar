@@ -2,14 +2,16 @@
 
 ## 1. Purpose
 
-BudgetyTzar is a personal budgeting application that replaces a manual spreadsheet with an auditable ledger-backed HTTP API. It tracks planned budget movements, real transactions, transaction allocations, budget reallocations, balances, snapshots, and historical reporting.
+BudgetyTzar is a personal budgeting application that helps users plan how they intend to use their money, record what actually happened, and understand the difference between the two.
+
+The application treats a budget as a financial plan. A budget defines planned funding and planned spending for a budgeting period, while financial transactions represent real-world activity that occurs independently of the plan. Transactions can be allocated to budget items to compare planned amounts with actual income and expenditure.
+
+The domain model aims to remain simple, expressive, and aligned with the ubiquitous language of personal budgeting. It should accurately represent the core concepts of budgeting while providing a solid foundation for future capabilities such as budget reallocations, historical budget versions, split transaction allocations, and richer reporting, without introducing unnecessary complexity into the initial model.
 
 The core product model is intentionally small:
 
 - Budget.
 - Budget item.
-- Budget adjustment.
-- Budget reallocation.
 - Transaction.
 - Transaction allocation.
 
@@ -17,207 +19,153 @@ The core product model is intentionally small:
 
 ### 2.1 Product Goals
 
-- Reduce manual budgeting effort.
-- Preserve transaction-level detail instead of flattening activity into period totals.
-- Model the budget as a dated ledger where every budget item can receive debit and credit adjustments and debit and credit transaction allocations.
-- Avoid period reset rules that lose track of funds.
-- Avoid separate cumulative/reset configuration on budget items.
-- Track expected income, expected spending, actual income, actual spending, reallocations, and unallocated transaction value.
-- Provide confidence that the budget is correct through audit trails, snapshots, and reconciliation views.
-- Support analysis across arbitrary date ranges, not just one sheet at a time.
+- Provide an intuitive way to create and manage personal budgets.
+- Help users compare planned income and expenditure with actual financial activity.
+- Make it easy to understand where money is expected to come from, where it is intended to be spent, and where it was actually spent.
 
 ### 2.2 Engineering Goals
 
-- Demonstrate event-driven architecture using Kafka.
-- Demonstrate containerised services.
-- Demonstrate Kubernetes deployment.
-- Demonstrate cloud-readiness.
-- Demonstrate equivalent service design in .NET and Go.
-- Demonstrate clean domain modelling, testing, observability, and operational thinking.
-
-## 3. Non-Goals
-
-- Direct bank integration is not required for the first version.
-- Real-time Open Banking synchronisation is not required for the first version.
-- Multi-user household budgeting is not required for the first version.
-- Mobile applications are not required for the first version.
-- Investment portfolio tracking is not required.
-- Mixed-currency budgets are not required for the first version.
-- Scheduled and recurring adjustments are not required for the first version, though the domain should not prevent adding them later.
+- Build a maintainable, well-structured codebase with clear architectural boundaries and high cohesion.
+- Model the budgeting domain using expressive ubiquitous language and domain-driven design principles.
+- Keep the domain model simple while making business invariants explicit and illegal states difficult to represent.
+- Evolve the architecture incrementally through small, reviewable changes rather than large-scale redesigns.
+- Prefer clarity and correctness over unnecessary abstraction or premature optimisation.
+- Design for observability so that the application's behaviour can be understood through logging, metrics, tracing, and health monitoring.
+- Design for reliability and resilience through appropriate validation, error handling, idempotency, and testing.
+- Design the application so that future capabilities can be introduced without requiring fundamental changes to the core domain model.
 
 ## 4. Target User
 
-The primary user is an individual who budgets from a spreadsheet-like ledger, records planned adjustments, reviews bank transactions, allocates those transactions to budget items, moves budget between items, and wants clear historical analysis.
-
-The secondary audience is prospective employers reviewing the project as evidence of engineering capability.
+Individuals who want to proactively plan their finances by creating budgets and comparing planned income and expenditure with actual financial activity.
 
 ## 5. Core Concepts
 
 ### 5.0 Ubiquitous Language
 
-The budget is the user's plan. The domain should describe changes as budget adjustments, budget reallocations, transaction allocations, and BudgetLedger activity rather than as a separate planning model.
+Budget
+: A financial plan for a budgeting period. A budget defines the planned funding and planned consumption for that period. It does not own transactions, which represent real-world financial activity.
 
-BudgetLedger
-: The dated record of budget adjustments, budget reallocations, transactions, and transaction allocations that explains budget state over time.
-
-BudgetItemKind
-: The semantic role of a budget item. Kind is not the same as debit/credit movement direction. A budget item keeps its kind even when corrections, refunds, reversals, underpayments, or overpayments move value in the opposite direction.
+Budget Item
+: A named element of a budget representing either a source of funding or an area of planned consumption. Each budget item has a planned amount.
 
 Funding
-: A budget item kind for items that create BudgetCapacity, such as salary, bonus, or other funding sources. A funding item remains funding whether actual funding is above, equal to, or below budget.
+: A budget item representing expected income or other sources of funds, such as salary, bonuses, interest, or transfers.
 
 Consumption
-: A budget item kind for items that consume BudgetCapacity, such as groceries, mortgage, petrol, eating out, incidentals, holiday funds, car maintenance, or Christmas. A consumption item remains consumption whether actual spending is above, equal to, or below budget.
+: A budget item representing planned expenditure, such as groceries, mortgage, utilities, transport, entertainment, or savings goals.
 
-BudgetCapacity
-: Value created by funding items and available to be assigned to consumption items through budget adjustments and budget reallocations.
+Planned Amount
+: The amount assigned to a budget item when the budget is created or updated. Funding planned amounts represent expected funding. Consumption planned amounts represent planned spending.
 
-AvailableBudget
-: The budget still available to move away from or spend from a consumption item as of a specific date. The exact command-side calculation must be defined before enforcing reallocation availability.
+Actual Amount
+: The total value of transactions allocated to a budget item within the budgeting period.
 
-Correction, refund, reversal, underpayment, and overpayment
-: Movements interpreted against the budget item's kind. They can reduce or increase the item's balance, but they do not change the item's kind.
+Remaining Amount
+: The difference between a budget item's planned amount and its actual amount.
 
-### 5.1 Budget
+Transaction
+: A record of real-world financial activity, independent of any budget. A transaction represents money received or spent.
 
-A budget is the root container for budget items, budget adjustments, budget reallocations, transactions, transaction allocations, snapshots, and reports.
+Transaction Allocation
+: The association between a transaction and a budget item. Allocations allow actual financial activity to be compared with the original budget plan.
+
+Budget Summary
+: A report that compares the planned amounts in a budget with the actual values derived from allocated transactions. It presents funding and consumption separately and highlights the remaining planned amounts and overall budget position.
+
+## 5.1 Budget
+
+A budget represents a financial plan for a budgeting period.
+
+A budget contains one or more budget items that define the planned funding and planned consumption for that period. Transactions are not owned by a budget and represent real-world financial activity independently of the budget.
 
 A budget has:
 
 - Name.
 - Currency.
+- Budget items.
 
-All child amounts in a budget use the budget currency. Multi-currency budgets, exchange rates, and currency conversion are out of scope for the first version.
+The total planned funding must always be greater than or equal to the total planned consumption.
 
-### 5.2 Budget Item
+All monetary values within a budget use the same currency. Multi-currency budgeting is out of scope for the initial version.
 
-A budget item is a named ledger bucket within a budget.
+## 5.2 Budget Item
 
-Examples:
+A budget item represents a planned source of funding or a planned area of consumption within a budget.
 
-- Salary.
-- Bonus.
-- Mortgage.
-- Groceries.
-- Petrol.
-- Eating out.
-- Holiday fund.
-- Car maintenance.
-- Christmas.
+Examples include:
 
-Each budget item has a `BudgetItemKind`:
+- Salary
+- Bonus
+- Mortgage
+- Groceries
+- Utilities
+- Transport
+- Entertainment
+- Holiday
+- Car Maintenance
 
-- `Funding`: creates BudgetCapacity, such as Salary or Bonus.
-- `Consumption`: consumes BudgetCapacity, such as Groceries, Mortgage, Petrol, Eating out, Holiday fund, Car maintenance, Christmas, or Incidentals.
+Each budget item has:
 
-`Financing` is deferred until the domain has explicit borrowing, repayment, account, liability, or transfer semantics. It must not be introduced as a placeholder kind.
+- A name.
+- A kind (`Funding` or `Consumption`).
+- A planned amount.
 
-Budget items do not have a fixed debit/credit direction. A single budget item can receive:
+The kind determines the semantic purpose of the budget item and never changes as a result of actual financial activity. Refunds, corrections, underpayments, and overpayments affect the item's actual amount but do not change its kind.
 
-- Debit budget adjustments.
-- Credit budget adjustments.
-- Debit transaction allocations.
-- Credit transaction allocations.
+## 5.3 Transaction
 
-Debit/credit direction is not the same as budget item kind. Transaction allocations never change or flip a budget item's kind. A funding item remains funding whether actual funding is above or below budget. A consumption item remains consumption whether actual spending is above or below budget. Corrections, refunds, reversals, underpayments, and overpayments are interpreted against the item's kind rather than changing the item's kind.
+A transaction represents a real-world financial event.
 
-Budget items do not have a reset/cumulative setting. All budget item balances are cumulative by default and are derived from dated ledger entries.
+Transactions exist independently of budgets and record money received or money spent. They may later be allocated to budget items to compare actual financial activity with the original budget.
 
-Budget items may be active or archived. Archived budget items remain visible in historical snapshots and reports where they had activity.
-
-### 5.3 Budget Adjustment
-
-A budget adjustment is a dated movement on one budget item. It changes the BudgetLedger without representing a bank transaction.
-
-Examples:
-
-- Credit Salary by 2,500.00 for expected income.
-- Debit Groceries by 500.00 for planned grocery spending.
-- Debit Mortgage by 800.00 for planned mortgage spending.
-- Credit Groceries by 50.00 to reduce planned grocery need.
-
-A budget adjustment has:
-
-- Budget item.
-- Amount.
-- Type: debit or credit.
-- Date.
-- Notes.
-
-Amounts are positive. The type determines whether the adjustment is a debit or a credit.
-
-### 5.4 Budget Reallocation
-
-A budget reallocation is a grouped set of budget adjustments that moves budget between two or more budget items without representing a bank transaction.
-
-A reallocation must:
-
-- Contain two or more budget adjustments.
-- Sum to zero.
-- Belong to one budget.
-- Have a shared reallocation identifier for auditability.
-- Have a date and notes.
-
-Example:
-
-- Credit Eating out by 30.00.
-- Debit Groceries by 30.00.
-
-This records that budget was moved from Eating out to Groceries. It does not alter actual transaction totals.
-
-Budget reallocations should initially move budget between consumption items. Moving budget away from a consumption item must not exceed that item's AvailableBudget as of the reallocation date once AvailableBudget is precisely defined.
-
-### 5.5 Transaction
-
-A transaction is a manually entered financial movement in the current implementation. Future transaction ingestion may add CSV import, bank feeds, and other bulk sources.
-
-A transaction has:
+Each transaction has:
 
 - Amount.
-- Type: debit or credit.
-- Date.
-- Description or notes.
-- Source account, if available.
-- External reference, if available.
-Amounts are positive. The type determines whether the transaction is a debit or a credit.
+- Type (`Credit` or `Debit`).
+- Transaction date.
+- Description.
 
-Transactions belong to a budget. Transactions may be unallocated, partially allocated, fully allocated, or ignored.
+Transaction amounts are always positive. The transaction type determines whether the transaction represents money received or money spent.
 
-### 5.6 Transaction Allocation
+## 5.4 Transaction Allocation
 
-A transaction allocation assigns part of a transaction to a budget item.
+A transaction allocation associates a transaction with a budget item.
 
-A transaction allocation has:
+Allocations provide the relationship between real-world financial activity and the budget plan, allowing planned amounts to be compared with actual amounts.
 
-- Transaction.
-- Budget item.
-- Amount.
-- Notes.
+Initially, a transaction may be allocated to at most one budget item. Support for split allocations may be introduced in a future version.
 
-Amounts are positive. The transaction type determines whether the allocation contributes a debit or credit movement to the budget item. For example, a credit salary transaction allocated to Salary increases the Salary item's credit activity; a debit correction allocated to Salary reduces that item's net credit position.
+## 5.5 Budget Summary
 
-The sum of allocations for a transaction must not exceed the transaction amount. A transaction can remain partially allocated, with the unallocated amount appearing in snapshots.
+The Budget Summary compares the planned amounts defined by a budget with the actual amounts derived from allocated transactions.
 
-### 5.7 Snapshot
+The summary presents funding and consumption separately.
 
-A snapshot is the calculated state of a budget as of a date. Budget item balances are planned-vs-actual positions, not pure accounting ledger balances.
+Each funding and consumption item includes:
 
-A snapshot includes:
+- Name.
+- Planned amount.
+- Actual amount.
+- Remaining amount.
 
-- One row per budget item with its balance as of the snapshot date.
-- Unbudgeted or unallocated balance.
-- Total transaction balance.
-- Optional activity totals for a selected date range.
+Where:
 
-Balance calculation compares the BudgetLedger with the actual transaction ledger:
+- **Planned Amount** is the amount defined by the budget.
+- **Actual Amount** is the total value of allocated transactions for the budget item.
+- **Remaining Amount** is the difference between the planned amount and the actual amount.
 
-- Planned credits represent expected incoming value for a budget item.
-- Planned debits represent expected outgoing value or planned funding need for a budget item.
-- Actual credits come from credit transactions allocated to the budget item.
-- Actual debits come from debit transactions allocated to the budget item.
-- Snapshot item balance is calculated as actual credits minus planned credits plus planned debits minus actual debits.
+The summary also includes:
 
-A negative balance means expected credit has not yet arrived or planned debit has been exceeded. A positive balance means actual credit has exceeded expectation or planned debit remains available.
+- Total planned funding.
+- Total actual funding.
+- Total remaining funding.
+- Total planned consumption.
+- Total actual consumption.
+- Total remaining consumption.
+- Overall planned surplus.
+- Overall actual surplus.
+
+The Budget Summary provides the primary view of progress against a budget by comparing the financial plan with actual financial activity.
 
 ## 6. Functional Requirements
 
