@@ -32,6 +32,9 @@ The core product model is intentionally small:
 - Prefer clarity and correctness over unnecessary abstraction or premature optimisation.
 - Design for observability so that the application's behaviour can be understood through logging, metrics, tracing, and health monitoring.
 - Design for reliability and resilience through appropriate validation, error handling, idempotency, and testing.
+- Use test-driven development where practical, especially for new user-facing behaviours and business rules.
+- Prefer API-level behaviour tests as the primary regression safety net, so supported use cases can be exercised through the public HTTP API without inspecting backend SQL state.
+- Use lower-level unit tests selectively where they provide clearer or faster feedback for domain calculations, invariants, or edge cases that are awkward to express through the API.
 - Design the application so that future capabilities can be introduced without requiring fundamental changes to the core domain model.
 
 ## 3. Target User
@@ -922,49 +925,84 @@ Release requirements:
 
 ## 14. Testing Strategy
 
-### 14.1 Unit Tests
+The testing strategy should support test-driven development and protect future refactoring. The most important regression protection should come from tests that exercise supported user-facing behaviours through the public HTTP API.
 
-Cover:
+Tests should verify externally observable application behaviour rather than implementation details. For product behaviour, tests should drive the application through API requests and assert against API responses, including status codes, validation errors, resource representations, and reporting results. They should not verify behaviour by directly inspecting backend SQL state.
 
-- Budget creation validation.
-- Budget item creation validation.
-- Budget item planned amount validation.
-- Budget item kind immutability.
-- Total planned funding versus total planned consumption validation.
-- Transaction creation validation.
-- Transaction amount validation.
-- Transaction type validation.
-- Transaction allocation validation.
-- Prevention of allocation to a missing budget item.
-- Prevention of allocation where transaction currency does not match budget currency.
-- Prevention of more than one allocation for a transaction.
+Database-level assertions are appropriate only for persistence-specific concerns such as schema shape, migration behaviour, decimal precision, provider-specific query behaviour, indexes, or constraints that cannot be adequately verified through the public API.
+
+### 14.1 Test-Driven Development
+
+New user-facing behaviours and business rules should be implemented using test-driven development where practical.
+
+The preferred workflow is:
+
+1. Express the expected behaviour as a failing API-level behaviour test.
+2. Implement the smallest change that satisfies the test.
+3. Refactor while preserving the public API behaviour.
+
+This does not require every implementation detail to be developed through tests. The intent is to make the externally observable behaviour explicit before or alongside implementation, especially where the behaviour represents a use case, business rule, validation rule, or reporting calculation.
+
+### 14.2 API Behaviour Tests
+
+API behaviour tests are the primary automated test suite for domain use cases and regression protection.
+
+These tests should exercise the application through HTTP/JSON APIs and verify behaviour through public API responses. They should be able to run against a realistic application composition, including PostgreSQL via Testcontainers where practical.
+
+API behaviour tests should cover:
+
+- Budget creation, retrieval, and renaming.
+- Budget item creation, retrieval, renaming, planned amount changes, deletion, and validation.
+- Rejection of budget item changes that would make total planned consumption exceed total planned funding.
+- Rejection of attempts to change a budget item's kind after creation.
+- Rejection of budget item deletion while transactions are allocated to it.
+- Transaction recording and retrieval.
+- Transaction allocation and allocation removal.
+- Rejection of allocation to a missing budget item.
+- Rejection of allocation when the transaction currency does not match the budget currency.
+- Rejection of more than one allocation for a transaction.
 - Full-amount allocation semantics.
-- Prevention of budget item deletion while transactions are allocated to it.
+- Unallocated transactions not affecting budget actuals, remaining amounts, or Budget Summary totals.
 - Actual amount calculation for funding items.
 - Actual amount calculation for consumption items.
 - Remaining amount calculation.
 - Negative actual and remaining amount scenarios.
-- Budget Summary calculation.
-
-### 14.2 Integration Tests
-
-Integration tests should cover:
-
-- PostgreSQL persistence.
-- PostgreSQL-backed API integration tests for provider-specific schema, precision, query, and index behaviour.
-- Budget creation and retrieval.
-- Budget item creation, update, deletion, and validation.
-- Transaction recording and retrieval.
-- Transaction allocation and allocation removal.
-- Currency matching between transactions and budget items.
-- Budget Summary queries.
+- Budget Summary response shape and calculations.
 - Runtime version endpoint and OpenAPI version metadata.
+
+API behaviour tests should be written at the level of use cases and business rules. They should remain stable across internal refactoring as long as the public API behaviour remains stable.
+
+### 14.3 Unit Tests
+
+Unit tests are supplementary. They should be used where they provide clearer, faster, or more focused feedback than API behaviour tests.
+
+Unit tests are appropriate for:
+
+- Pure domain calculations.
+- Value object behaviour.
+- Business rules that can be expressed without infrastructure.
+- Edge cases that would be awkward or overly verbose to exercise through the API.
+- Complex mapping or calculation logic where a focused test improves maintainability.
+
+Unit tests should not become the main specification of user-facing behaviour when the same behaviour is better expressed through the public API.
+
+### 14.4 PostgreSQL Integration Tests
+
+PostgreSQL integration tests should cover persistence-specific behaviour that cannot be adequately protected by API behaviour tests alone.
+
+Cover:
+
+- Schema and migration behaviour.
+- Decimal precision for monetary values.
+- Provider-specific query behaviour.
+- Indexes and constraints where relevant.
+- Persistence behaviour that differs materially from SQLite or in-memory stores.
 
 Use Testcontainers where practical.
 
 SQLite or in-memory tests may be used for fast feedback, but they do not replace PostgreSQL integration coverage for persistence requirements.
 
-### 14.3 Contract Tests
+### 14.5 Contract Tests
 
 Cover:
 
@@ -972,7 +1010,9 @@ Cover:
 - Reporting API response contracts consumed by the frontend.
 - Backward-compatible API evolution.
 
-### 14.4 End-to-End Tests
+### 14.6 End-to-End Tests
+
+End-to-end tests should cover representative user workflows through the UI and API together. They should be fewer in number than API behaviour tests and should focus on confidence that the application works as a whole.
 
 Cover:
 
@@ -1075,7 +1115,8 @@ The repository should include:
 - SemVer release tags.
 - Changelog or release notes grouped by SemVer.
 - Visible runtime version metadata.
-- Test coverage summary.
+- API behaviour test coverage summary.
+- Supplementary unit, integration, contract, and end-to-end test coverage summary.
 - Observability documentation.
 
 Suggested project narrative:
