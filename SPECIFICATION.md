@@ -1081,4 +1081,4 @@ The repository should include:
 
 Suggested project narrative:
 
-> BudgetyTzar replaces an error-prone spreadsheet budgeting workflow with a maintainable budgeting application that separates financial planning from real-world transaction activity. It models budgets as financial plans, transactions as independent financial facts, and allocations as the link between the two. The architecture uses clear domain boundaries, PostgreSQL-backed persistence, reporting read models, strong automated testing, observability, and deployment discipline.
+> BudgetyTzar replaces an error-prone spreadsheet budgeting workflow with a maintainable budgeting application that separates financial planning from real-world transaction activity. It models budgets as financial plans, transactions as independent financial facts, and allocations as the link between the two. The architecture uses clear domain boundaries, SQL-backed persistence, reporting read models, strong automated testing, observability, and deployment discipline.
