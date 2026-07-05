@@ -366,7 +366,7 @@ Actual surplus is calculated as:
 TotalActualFunding - TotalActualConsumption
 ```
 
-The budget summary is a read model. It does not need to mirror the aggregate structure exactly, but it must remain consistent with the domain language.
+The Budget Summary is shaped for reporting. It does not need to mirror the internal aggregate structure exactly, but it must remain consistent with the domain language.
 
 ## 6. Example User Journeys
 
@@ -517,15 +517,16 @@ The Transactions boundary may need to query or reference budget item and budget 
 
 Responsibilities:
 
-- Budget Summary read models.
+- Budget Summary queries.
 - Budget-level reporting based on budgets, budget items, transactions, and allocations.
-- Read models shaped for user workflows.
+- Reporting responses shaped for user workflows.
 
 Owns:
 
-- Reporting read models.
+- Budget Summary query behaviour.
+- Report response shapes.
 
-The Reporting boundary should treat the Budget Summary as the primary read model. It does not need to mirror the aggregate structure exactly, but it must remain consistent with the ubiquitous language.
+The Reporting boundary should treat the Budget Summary as the primary reporting view. It does not need to mirror the internal aggregate structure exactly, but it must remain consistent with the ubiquitous language.
 
 ### 7.5 Audit Boundary
 
@@ -555,7 +556,7 @@ Responsibilities:
 - Reporting views.
 - Audit timeline views, where implemented.
 
-The frontend should use API read models shaped for user workflows rather than exposing internal aggregate structure directly.
+The frontend should use API responses shaped for user workflows rather than exposing internal aggregate structure directly.
 
 ### 7.7 Logical Architecture Diagram
 
@@ -579,7 +580,7 @@ The frontend should use API read models shaped for user workflows rather than ex
           |                  |                  |
           v                  v                  v
    +-------------+    +--------------+    +-------------+
-   | Budget Data |    | Transaction  |    | Read Models |
+   | Budget Data |    | Transaction  |    | Reports     |
    |             |    | Data         |    |             |
    +-------------+    +--------------+    +-------------+
                              |
@@ -597,7 +598,6 @@ The diagram describes logical ownership. It does not require separate processes,
 Recommended storage:
 
 - PostgreSQL for operational data.
-- PostgreSQL for read models unless there is a clear reason to use another store.
 
 Storage rules:
 
@@ -605,7 +605,6 @@ Storage rules:
 - Floating point types must not be used for monetary values.
 - Logical boundaries should have clear table ownership.
 - Cross-boundary writes should be avoided.
-- Reporting read models may duplicate data from budget, budget item, transaction, and allocation records.
 - Transactions are stored independently of budgets.
 - Transaction allocations store the association between a transaction and a budget item.
 
@@ -698,7 +697,7 @@ The allocation applies the full transaction amount.
 GET /api/budgets/{budgetId}/summary
 ```
 
-The Budget Summary is the primary reporting read model.
+The Budget Summary is the primary reporting view.
 
 ### 9.5 Example Budget Summary Response
 
@@ -970,7 +969,7 @@ SQLite or in-memory tests may be used for fast feedback, but they do not replace
 Cover:
 
 - Public API contracts between frontend and backend.
-- Reporting read model contracts consumed by the frontend.
+- Reporting API response contracts consumed by the frontend.
 - Backward-compatible API evolution.
 
 ### 14.4 End-to-End Tests
@@ -1081,4 +1080,4 @@ The repository should include:
 
 Suggested project narrative:
 
-> BudgetyTzar replaces an error-prone spreadsheet budgeting workflow with a maintainable budgeting application that separates financial planning from real-world transaction activity. It models budgets as financial plans, transactions as independent financial facts, and allocations as the link between the two. The architecture uses clear domain boundaries, SQL-backed persistence, reporting read models, strong automated testing, observability, and deployment discipline.
+> BudgetyTzar replaces an error-prone spreadsheet budgeting workflow with a maintainable budgeting application that separates financial planning from real-world transaction activity. It models budgets as financial plans, transactions as independent financial facts, and allocations as the link between the two. The architecture uses clear domain boundaries, SQL-backed persistence, reporting views, strong automated testing, observability, and deployment discipline.
