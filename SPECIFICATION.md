@@ -32,9 +32,8 @@ The core product model is intentionally small:
 - Prefer clarity and correctness over unnecessary abstraction or premature optimisation.
 - Design for observability so that the application's behaviour can be understood through logging, metrics, tracing, and health monitoring.
 - Design for reliability and resilience through appropriate validation, error handling, idempotency, and testing.
-- Use test-driven development where practical, especially for new user-facing behaviours and business rules.
-- Prefer API-level behaviour tests as the primary regression safety net, so supported use cases can be exercised through the public HTTP API without inspecting backend SQL state.
-- Use lower-level unit tests selectively where they provide clearer or faster feedback for domain calculations, invariants, or edge cases that are awkward to express through the API.
+- Ensure supported use cases can be verified through automated API-level behaviour tests that exercise the public HTTP API without inspecting backend SQL state.
+- Prefer API-level behaviour tests as the primary regression safety net for public behaviour, while using lower-level unit tests selectively where they provide clearer or faster feedback for domain calculations, invariants, or edge cases that are awkward to express through the API.
 - Design the application so that future capabilities can be introduced without requiring fundamental changes to the core domain model.
 
 ## 3. Target User
@@ -925,25 +924,13 @@ Release requirements:
 
 ## 14. Testing Strategy
 
-The testing strategy should support test-driven development and protect future refactoring. The most important regression protection should come from tests that exercise supported user-facing behaviours through the public HTTP API.
+The testing strategy should protect future refactoring by making supported user-facing behaviour observable through automated tests. The most important regression protection should come from tests that exercise supported use cases through the public HTTP API.
 
 Tests should verify externally observable application behaviour rather than implementation details. For product behaviour, tests should drive the application through API requests and assert against API responses, including status codes, validation errors, resource representations, and reporting results. They should not verify behaviour by directly inspecting backend SQL state.
 
 Database-level assertions are appropriate only for persistence-specific concerns such as schema shape, migration behaviour, decimal precision, provider-specific query behaviour, indexes, or constraints that cannot be adequately verified through the public API.
 
-### 14.1 Test-Driven Development
-
-New user-facing behaviours and business rules should be implemented using test-driven development where practical.
-
-The preferred workflow is:
-
-1. Express the expected behaviour as a failing API-level behaviour test.
-2. Implement the smallest change that satisfies the test.
-3. Refactor while preserving the public API behaviour.
-
-This does not require every implementation detail to be developed through tests. The intent is to make the externally observable behaviour explicit before or alongside implementation, especially where the behaviour represents a use case, business rule, validation rule, or reporting calculation.
-
-### 14.2 API Behaviour Tests
+### 14.1 API Behaviour Tests
 
 API behaviour tests are the primary automated test suite for domain use cases and regression protection.
 
@@ -972,7 +959,7 @@ API behaviour tests should cover:
 
 API behaviour tests should be written at the level of use cases and business rules. They should remain stable across internal refactoring as long as the public API behaviour remains stable.
 
-### 14.3 Unit Tests
+### 14.2 Unit Tests
 
 Unit tests are supplementary. They should be used where they provide clearer, faster, or more focused feedback than API behaviour tests.
 
@@ -986,7 +973,7 @@ Unit tests are appropriate for:
 
 Unit tests should not become the main specification of user-facing behaviour when the same behaviour is better expressed through the public API.
 
-### 14.4 PostgreSQL Integration Tests
+### 14.3 PostgreSQL Integration Tests
 
 PostgreSQL integration tests should cover persistence-specific behaviour that cannot be adequately protected by API behaviour tests alone.
 
@@ -1002,7 +989,7 @@ Use Testcontainers where practical.
 
 SQLite or in-memory tests may be used for fast feedback, but they do not replace PostgreSQL integration coverage for persistence requirements.
 
-### 14.5 Contract Tests
+### 14.4 Contract Tests
 
 Cover:
 
@@ -1010,7 +997,7 @@ Cover:
 - Reporting API response contracts consumed by the frontend.
 - Backward-compatible API evolution.
 
-### 14.6 End-to-End Tests
+### 14.5 End-to-End Tests
 
 End-to-end tests should cover representative user workflows through the UI and API together. They should be fewer in number than API behaviour tests and should focus on confidence that the application works as a whole.
 
