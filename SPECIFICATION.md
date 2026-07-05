@@ -307,7 +307,7 @@ RemainingAmount = PlannedAmount - ActualAmount
 
 For `Funding` items, the remaining amount represents expected funding that has not yet been received.
 
-For `Consumption` items, the remaining amount represents planned spending capacity that has not yet been consumed.
+For `Consumption` items, the remaining amount represents planned consumption that has not yet occurred.
 
 A negative remaining amount is allowed.
 
@@ -353,8 +353,6 @@ The budget summary must show overall budget-level values, including:
 
 * Planned surplus.
 * Actual surplus.
-* Remaining funding.
-* Remaining consumption capacity.
 
 Planned surplus is calculated as:
 
@@ -454,8 +452,14 @@ The important design concern is ownership of data, rules, and language. Physical
 Responsibilities:
 
 - User authentication.
-- User profile.
-- User ownership of budgets and transactions, even if only one user exists initially.
+- User profile identity information.
+- Identity claims required by application services.
+
+Does not own:
+
+- The ownership model for budgets.
+- The ownership model for transactions.
+- Domain-specific access rules for budgets, transactions, or allocations.
 
 Suggested implementation:
 
@@ -468,6 +472,7 @@ Responsibilities:
 
 - Budget creation and management.
 - Budget item creation and management.
+- Budget access rules, including any ownership model chosen for budgets.
 - Budget item planned amount validation.
 - Budget item kind validation.
 - Enforcement of the rule that total planned funding must be greater than or equal to total planned consumption.
@@ -489,6 +494,7 @@ Responsibilities:
 
 - Transaction recording.
 - Transaction retrieval.
+- Transaction access rules, including any ownership model chosen for transactions.
 - Transaction allocation.
 - Transaction allocation removal.
 - Enforcement that a transaction may be allocated to at most one budget item.
@@ -731,9 +737,7 @@ The Budget Summary is the primary reporting read model.
   },
   "overall": {
     "plannedSurplus": "2600.00",
-    "actualSurplus": "2750.00",
-    "remainingFunding": "0.00",
-    "remainingConsumptionCapacity": "150.00"
+    "actualSurplus": "2750.00"
   }
 }
 ```
