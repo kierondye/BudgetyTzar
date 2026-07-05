@@ -169,116 +169,206 @@ The Budget Summary provides the primary view of progress against a budget by com
 
 ## 6. Functional Requirements
 
-### 6.1 Budget Setup
+### 6.1 Budget Management
 
-The user can:
+The system must allow a user to create a budget.
 
-- Create a budget.
-- Create budget items.
-- Archive budget items that are no longer used.
-- Record dated debit and credit budget adjustments.
-- Record budget reallocations as grouped zero-sum adjustments.
+A budget must have:
 
-Acceptance criteria:
+* A name.
+* A currency.
 
-- A budget item is created with a name and `BudgetItemKind`; it does not require a debit/credit direction or rollover type.
-- Initial budget item kinds are `Funding` and `Consumption`.
-- `Financing` is deferred until the domain explicitly models borrowing, repayment, account, liability, or transfer semantics.
-- Archived budget items remain visible in historical snapshots and reports where they had activity.
-- Archived budget items can still be used for retrospective corrections when needed for audit accuracy.
-- Budget state can be recalculated from dated adjustments, reallocations, transactions, and transaction allocations.
+A budget represents a financial plan. It does not represent a bank account, ledger, or transaction history.
 
-### 6.2 Budget Adjustments and Reallocations
+The system must allow a user to view a list of budgets.
 
-The user can:
+The system must allow a user to view the details of a single budget, including its budget items and budget summary.
 
-- Record a debit or credit adjustment against any budget item.
-- Record expected income as credit adjustments.
-- Record expected spending as debit adjustments.
-- Move budget between items through a reallocation.
-- Add notes explaining adjustments and reallocations.
+The system must allow a user to rename a budget.
 
-Acceptance criteria:
+All planned amounts within a budget use the budget currency.
 
-- Adjustment amounts must be positive.
-- Adjustment type must be debit or credit.
-- Net planned spending must not exceed net planned income for the budget as of the relevant date: budget adjustment credits minus budget adjustment debits must be greater than or equal to zero.
-- A consumption item must not become a funding source through budget adjustments. Credit budget adjustments on consumption items are allowed as reductions or corrections only when interpreted against existing consumption budget.
-- A funding item must not become a consumption item through budget adjustments. Debit budget adjustments on funding items are allowed as reductions, reversals, or corrections only when interpreted against existing funding budget.
-- Reallocations must contain at least two adjustments.
-- Reallocation adjustments must sum to zero: reallocation credits must equal reallocation debits.
-- Reallocations must not change actual transaction totals.
-- Reallocations must not move more budget away from a consumption item than its AvailableBudget as of the reallocation date. This invariant must be enforced only after AvailableBudget is precisely defined.
+### 6.2 Budget Item Management
 
-### 6.3 Transaction Entry and Allocation
+The system must allow a user to add budget items to a budget.
 
-The user can:
+Each budget item must have:
 
-- Manually add transactions.
-- Allocate transactions to budget items.
-- Split a single transaction across multiple budget items.
-- Leave transactions unallocated or partially allocated until they are classified.
-- Mark transactions as ignored when they are not relevant to the budget.
+* A name.
+* A kind.
+* A planned amount.
 
-Acceptance criteria:
+A budget item kind must be either:
 
-- Transaction amounts must be positive.
-- Transaction type must be debit or credit.
-- Transaction allocations can be empty or can allocate a transaction to one or more budget items.
-- The sum of transaction allocations must not exceed the transaction amount.
-- Debit and credit transactions can be allocated to any budget item.
-- Transaction allocations never change a budget item's kind.
-- A credit transaction allocation to a consumption item is interpreted as a refund, rebate, overpayment correction, or other consumption-side correction.
-- A debit transaction allocation to a funding item is interpreted as a reversal, underpayment correction, or other funding-side correction.
+* `Funding`
+* `Consumption`
 
-### 6.4 Budget Tracking
+A `Funding` item represents expected funding, such as salary, bonus, interest, or other income.
 
-The user can:
+A `Consumption` item represents planned spending, such as groceries, mortgage, transport, eating out, holidays, or subscriptions.
 
-- View a budget snapshot as of a date.
-- View item balances derived from all activity up to that date.
-- View unallocated transaction value.
-- View total transaction balance.
-- See a clear distinction between real transactions, budget adjustments, reallocations, and unallocated amounts.
+A budget item planned amount must be positive.
 
-Acceptance criteria:
+The system must allow a user to rename a budget item.
 
-- A snapshot can be recalculated from persisted ledger entries.
-- Budget item balances are cumulative by default.
-- No reset operation is required to start a new month or planning cycle.
-- Snapshot and audit views do not require period reset state.
+The system must allow a user to change a budget item planned amount.
 
-### 6.5 Audit Trail
+A budget item kind must not change after the budget item has been created.
 
-The user can:
+The system must allow a user to delete a budget item from a budget.
 
-- View the history of changes affecting a budget.
-- See when transactions were imported, allocated, edited, or ignored.
-- See when budget was adjusted or reallocated.
-- See why adjustments and reallocations were made.
+The system must prevent a budget item from being deleted while any transaction is allocated to it.
 
-Acceptance criteria:
+Refunds, corrections, reversals, underpayments, and overpayments must not change the kind of a budget item.
 
-- The current budget state can be explained from recorded events.
-- Phase 1 stores durable local audit records before Kafka-backed audit events are introduced.
-- The user can understand an old snapshot without relying on spreadsheet context.
+The system must ensure that total planned funding is greater than or equal to total planned consumption.
 
-### 6.6 Later Reporting and Analysis
+Deficit budgets are out of scope for the first version.
 
-Later phases may allow the user to:
+### 6.3 Transaction Management
 
-- Compare spending across months or custom date ranges.
-- View trends by budget item.
-- View expected income against actual income.
-- View expected spending against actual spending.
-- Export data to CSV.
+The system must allow a user to record transactions.
 
-Acceptance criteria:
+A transaction must have:
 
-- The user can answer: "What was my grocery activity over the last 12 months?"
-- The user can answer: "Which budget items consistently need more planned funding?"
-- The user can answer: "Did actual income match expected income over the last year?"
-- Reports can present period-style summaries as read models over the ledger, not as separate period state.
+* A description.
+* A type.
+* A transaction date.
+* An amount.
+* A currency.
+
+A transaction type must be either:
+
+* `Credit`
+* `Debit`
+
+A transaction amount must be positive.
+
+The transaction type records the direction of real-world financial activity. It does not determine whether the transaction is funding or consumption.
+
+Transactions are independent of budgets.
+
+A transaction may exist without being allocated to a budget item.
+
+Unallocated transactions must not affect budget actuals, remaining amounts, or budget summary totals.
+
+### 6.4 Transaction Allocation
+
+The system must allow a user to allocate a transaction to a budget item.
+
+A transaction allocation links a transaction to a budget item.
+
+For the first version, a transaction may be allocated to at most one budget item.
+
+For the first version, an allocation applies the full transaction amount to the selected budget item.
+
+Partial allocations and split allocations are out of scope for the first version.
+
+The system must allow a user to remove a transaction allocation.
+
+The system must prevent a transaction from being allocated to more than one budget item.
+
+The system must prevent a transaction from being allocated to a budget item that does not exist.
+
+The system must prevent a transaction from being allocated to a budget item if the transaction currency does not match the budget currency.
+
+### 6.5 Actual Amount Calculation
+
+Actual amounts are derived from allocated transactions.
+
+Actual amounts must be calculated using both:
+
+* The budget item kind.
+* The transaction type.
+
+For `Funding` items:
+
+* `Credit` transactions increase actual funding.
+* `Debit` transactions decrease actual funding.
+
+For `Consumption` items:
+
+* `Debit` transactions increase actual consumption.
+* `Credit` transactions decrease actual consumption.
+
+This allows refunds, corrections, reversals, underpayments, and overpayments to be represented without changing the budget item kind.
+
+Actual amounts may be less than zero where reversals or corrections exceed the original allocated amount.
+
+Actual amounts may exceed planned amounts.
+
+### 6.6 Remaining Amount Calculation
+
+Remaining amounts are calculated as:
+
+```text
+RemainingAmount = PlannedAmount - ActualAmount
+```
+
+For `Funding` items, the remaining amount represents expected funding that has not yet been received.
+
+For `Consumption` items, the remaining amount represents planned spending capacity that has not yet been consumed.
+
+A negative remaining amount is allowed.
+
+For `Funding` items, a negative remaining amount means more funding was received than planned.
+
+For `Consumption` items, a negative remaining amount means spending exceeded the planned amount.
+
+### 6.7 Budget Summary
+
+The system must provide a budget summary for a budget.
+
+The budget summary is the primary reporting view.
+
+The budget summary must present funding and consumption separately.
+
+For each funding item, the budget summary must show:
+
+* Name.
+* Planned amount.
+* Actual amount.
+* Remaining amount.
+
+For each consumption item, the budget summary must show:
+
+* Name.
+* Planned amount.
+* Actual amount.
+* Remaining amount.
+
+The budget summary must show funding totals:
+
+* Total planned funding.
+* Total actual funding.
+* Total remaining funding.
+
+The budget summary must show consumption totals:
+
+* Total planned consumption.
+* Total actual consumption.
+* Total remaining consumption.
+
+The budget summary must show overall budget-level values, including:
+
+* Planned surplus.
+* Actual surplus.
+* Remaining funding.
+* Remaining consumption capacity.
+
+Planned surplus is calculated as:
+
+```text
+TotalPlannedFunding - TotalPlannedConsumption
+```
+
+Actual surplus is calculated as:
+
+```text
+TotalActualFunding - TotalActualConsumption
+```
+
+The budget summary is a read model. It does not need to mirror the aggregate structure exactly, but it must remain consistent with the domain language.
 
 ## 7. Example User Journeys
 
