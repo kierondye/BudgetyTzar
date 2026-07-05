@@ -34,13 +34,13 @@ The core product model is intentionally small:
 - Design for reliability and resilience through appropriate validation, error handling, idempotency, and testing.
 - Design the application so that future capabilities can be introduced without requiring fundamental changes to the core domain model.
 
-## 4. Target User
+## 3. Target User
 
 Individuals who want to proactively plan their finances by creating budgets and comparing planned income and expenditure with actual financial activity.
 
-## 5. Core Concepts
+## 4. Core Concepts
 
-### 5.0 Ubiquitous Language
+### 4.0 Ubiquitous Language
 
 Budget
 : A financial plan for a budgeting period. A budget defines the planned funding and planned consumption for that period. It does not own transactions, which represent real-world financial activity.
@@ -72,7 +72,7 @@ Transaction Allocation
 Budget Summary
 : A report that compares the planned amounts in a budget with the actual values derived from allocated transactions. It presents funding and consumption separately and highlights the remaining planned amounts and overall budget position.
 
-## 5.1 Budget
+## 4.1 Budget
 
 A budget represents a financial plan for a budgeting period.
 
@@ -88,7 +88,7 @@ The total planned funding must always be greater than or equal to the total plan
 
 All monetary values within a budget use the same currency. Multi-currency budgeting is out of scope for the initial version.
 
-## 5.2 Budget Item
+## 4.2 Budget Item
 
 A budget item represents a planned source of funding or a planned area of consumption within a budget.
 
@@ -112,7 +112,7 @@ Each budget item has:
 
 The kind determines the semantic purpose of the budget item and never changes as a result of actual financial activity. Refunds, corrections, underpayments, and overpayments affect the item's actual amount but do not change its kind.
 
-## 5.3 Transaction
+## 4.3 Transaction
 
 A transaction represents a real-world financial event.
 
@@ -121,13 +121,14 @@ Transactions exist independently of budgets and record money received or money s
 Each transaction has:
 
 - Amount.
+- Currency
 - Type (`Credit` or `Debit`).
 - Transaction date.
 - Description.
 
 Transaction amounts are always positive. The transaction type determines whether the transaction represents money received or money spent.
 
-## 5.4 Transaction Allocation
+## 4.4 Transaction Allocation
 
 A transaction allocation associates a transaction with a budget item.
 
@@ -135,7 +136,7 @@ Allocations provide the relationship between real-world financial activity and t
 
 Initially, a transaction may be allocated to at most one budget item. Support for split allocations may be introduced in a future version.
 
-## 5.5 Budget Summary
+## 4.5 Budget Summary
 
 The Budget Summary compares the planned amounts defined by a budget with the actual amounts derived from allocated transactions.
 
@@ -167,9 +168,9 @@ The summary also includes:
 
 The Budget Summary provides the primary view of progress against a budget by comparing the financial plan with actual financial activity.
 
-## 6. Functional Requirements
+## 5. Functional Requirements
 
-### 6.1 Budget Management
+### 5.1 Budget Management
 
 The system must allow a user to create a budget.
 
@@ -188,7 +189,7 @@ The system must allow a user to rename a budget.
 
 All planned amounts within a budget use the budget currency.
 
-### 6.2 Budget Item Management
+### 5.2 Budget Item Management
 
 The system must allow a user to add budget items to a budget.
 
@@ -225,7 +226,7 @@ The system must ensure that total planned funding is greater than or equal to to
 
 Deficit budgets are out of scope for the first version.
 
-### 6.3 Transaction Management
+### 5.3 Transaction Management
 
 The system must allow a user to record transactions.
 
@@ -252,7 +253,7 @@ A transaction may exist without being allocated to a budget item.
 
 Unallocated transactions must not affect budget actuals, remaining amounts, or budget summary totals.
 
-### 6.4 Transaction Allocation
+### 5.4 Transaction Allocation
 
 The system must allow a user to allocate a transaction to a budget item.
 
@@ -272,7 +273,7 @@ The system must prevent a transaction from being allocated to a budget item that
 
 The system must prevent a transaction from being allocated to a budget item if the transaction currency does not match the budget currency.
 
-### 6.5 Actual Amount Calculation
+### 5.5 Actual Amount Calculation
 
 Actual amounts are derived from allocated transactions.
 
@@ -297,7 +298,7 @@ Actual amounts may be less than zero where reversals or corrections exceed the o
 
 Actual amounts may exceed planned amounts.
 
-### 6.6 Remaining Amount Calculation
+### 5.6 Remaining Amount Calculation
 
 Remaining amounts are calculated as:
 
@@ -315,7 +316,7 @@ For `Funding` items, a negative remaining amount means more funding was received
 
 For `Consumption` items, a negative remaining amount means spending exceeded the planned amount.
 
-### 6.7 Budget Summary
+### 5.7 Budget Summary
 
 The system must provide a budget summary for a budget.
 
@@ -406,124 +407,6 @@ The budget summary is a read model. It does not need to mirror the aggregate str
 2. User records a reallocation containing a credit adjustment to Eating out and a debit adjustment to Groceries.
 3. System validates that the grouped adjustments sum to zero.
 4. Actual transaction totals remain unchanged.
-
-## 8. Domain Events
-
-The system should use domain events as the source of integration between services. Event names should be stable and versioned.
-
-### 8.1 Event Naming
-
-Recommended format:
-
-```text
-budgetytzar.<bounded-context>.<event-name>.v1
-```
-
-Examples:
-
-- `budgetytzar.budgeting.budget-created.v1`
-- `budgetytzar.budgeting.budget-item-created.v1`
-- `budgetytzar.budgeting.budget-adjustment-recorded.v1`
-- `budgetytzar.budgeting.budget-reallocation-recorded.v1`
-- `budgetytzar.transactions.transaction-created.v1`
-- `budgetytzar.transactions.transaction-allocations-replaced.v1`
-
-### 8.2 Core Events
-
-Budgeting events:
-
-- `BudgetCreated`
-- `BudgetItemCreated`
-- `BudgetItemArchived`
-- `BudgetAdjustmentRecorded`
-- `BudgetReallocationRecorded`
-
-Transaction events:
-
-- `TransactionManuallyCreated`
-- `TransactionAllocationsReplaced`
-- `TransactionAllocationsCleared`
-- `TransactionIgnored`
-- `TransactionEdited`
-
-Reporting events:
-
-- `BudgetSnapshotCalculated`
-- `BudgetProjectionUpdated`
-- `BudgetItemTrendCalculated`
-
-### 8.3 Event Envelope
-
-All events should share a common envelope:
-
-```json
-{
-  "eventId": "uuid",
-  "eventType": "budgetytzar.transactions.transaction-manually-created.v1",
-  "occurredAt": "2026-06-15T10:30:00Z",
-  "correlationId": "uuid",
-  "causationId": "uuid",
-  "aggregateId": "uuid",
-  "aggregateType": "Transaction",
-  "schemaVersion": 1,
-  "payload": {}
-}
-```
-
-### 8.4 Example Event Payloads
-
-#### BudgetAdjustmentRecorded
-
-```json
-{
-  "budgetAdjustmentId": "uuid",
-  "budgetId": "uuid",
-  "budgetItemId": "uuid",
-  "amount": "500.00",
-  "type": "Debit",
-  "date": "2026-06-18T00:00:00Z",
-  "notes": "Initial budget for groceries."
-}
-```
-
-#### BudgetReallocationRecorded
-
-```json
-{
-  "budgetReallocationId": "uuid",
-  "budgetId": "uuid",
-  "date": "2026-06-20T00:00:00Z",
-  "notes": "Move planned budget to groceries.",
-  "adjustments": [
-    {
-      "budgetItemId": "uuid",
-      "amount": "30.00",
-      "type": "Credit"
-    },
-    {
-      "budgetItemId": "uuid",
-      "amount": "30.00",
-      "type": "Debit"
-    }
-  ]
-}
-```
-
-#### TransactionAllocationsReplaced
-
-```json
-{
-  "transactionId": "uuid",
-  "budgetId": "uuid",
-  "transactionAmount": 150.00,
-  "allocations": [
-    {
-      "budgetItemId": "uuid",
-      "amount": 150.00
-    }
-  ]
-}
-```
 
 ## 9. Bounded Contexts and Services
 
@@ -663,28 +546,10 @@ Suggested implementation:
 Recommended storage:
 
 - PostgreSQL for service-owned operational data.
-- Kafka for event streaming.
-- Optional Redis for caching or background workflow state.
-- Object storage for imported CSV files, if a future import workflow preserves originals.
-
-Each service should own its database schema. Cross-service access should happen through APIs or events, not direct table reads.
-
-## 11. Read Models
-
-The reporting service should build query-optimised read models from events.
-
-Suggested read models:
-
-- `budget_snapshot`
-- `budget_item_balance`
-- `budget_item_activity_summary`
-- `transaction_allocation_summary`
-- `unallocated_transaction_summary`
-- `budget_audit_timeline`
 
 ## 12. APIs
 
-APIs should be HTTP/JSON for user-driven commands and queries. Kafka should be used for asynchronous integration.
+APIs should be HTTP/JSON for user-driven commands and queries.
 
 ### 12.1 Example Budgeting API
 
@@ -865,45 +730,6 @@ This view exists to answer: "Is this date range correct?"
                              +-------------+
 ```
 
-### 16.2 Event-Driven Pattern
-
-Recommended pattern:
-
-- Commands arrive over HTTP.
-- The owning service validates the command.
-- The service writes state changes and outbox records in one database transaction.
-- An outbox publisher publishes events to Kafka.
-- Other services consume events and update their own state or projections.
-
-This avoids losing events when a service updates its database successfully but fails to publish to Kafka.
-
-### 16.3 Kafka Topics
-
-Suggested topics:
-
-- `budgetytzar.budgeting.events`
-- `budgetytzar.transactions.events`
-- `budgetytzar.reporting.events`
-
-Use consumer groups per service:
-
-- `budgeting-service`
-- `transaction-service`
-- `reporting-service`
-
-### 16.4 Event Schema Management
-
-Use JSON Schema for event contracts.
-
-Reasons:
-
-- It is quick to understand and inspect.
-- It works naturally with JSON event payloads.
-- It demonstrates schema ownership, versioning, validation, and compatibility without pretending to have operated a large enterprise schema platform.
-- It keeps the project focused on showing practical understanding and delivery speed.
-
-The system should store event schemas in source control and validate events in tests. A schema registry can be added later if it becomes useful, but it is not required for the first implementation.
-
 ## 17. Product Versioning
 
 BudgetyTzar should use one product-wide semantic version for the repository and released application, following SemVer 2.0.0:
@@ -935,109 +761,6 @@ Release requirements:
 - Generated version metadata and generated release-note files should be excluded from source control.
 - Local development should provide a versioned commit-message hook that validates Conventional Commits without requiring Node tooling.
 
-## 18. Implementation Strategy
-
-### 18.1 Phase 1: Domain and Local MVP
-
-Build one implementation first, preferably .NET because it matches existing experience.
-
-Deliver:
-
-- Budgets.
-- Budget items.
-- Archived budget item history.
-- Budget adjustments with debit/credit type, date, and notes.
-- Budget reallocations as grouped zero-sum adjustments.
-- Manual transactions.
-- Transaction allocations.
-- Partial transaction allocation and unallocated value.
-- Durable local audit records for transaction creation, allocations, ignores, reallocations, adjustments, and budget item archival.
-- Snapshot by date.
-- Audit timeline.
-- PostgreSQL persistence.
-- Unit and integration tests.
-
-### 18.2 Phase 2: Event-Driven Services
-
-Introduce:
-
-- Kafka.
-- Outbox pattern.
-- Domain-contract-shaped events.
-- Projection-backed snapshots and audit timelines.
-- Docker Compose for local infrastructure.
-- Scheduled and recurring adjustments or reallocations, if still needed.
-
-### 18.3 Phase 2.5: Semantic Versioning and Release Metadata
-
-Introduce semantic versioning before containerisation and Kubernetes work begins.
-
-Deliver:
-
-- Product-wide SemVer source of truth.
-- Git release tag convention.
-- Runtime version endpoint.
-- OpenAPI version metadata.
-- Build validation that rejects invalid SemVer values.
-- Conventional Commits documentation and local commit-message validation.
-
-Phase 2.5 must be complete before Phase 3 so Docker image tags, Kubernetes manifests, deployment documentation, and future cloud release artefacts can use stable version identity without requiring GitHub Releases.
-
-### 18.4 Phase 3: Containerisation and Kubernetes
-
-Introduce:
-
-- Dockerfiles for each service.
-- Kubernetes manifests or Helm charts.
-- Explicit SemVer image tags for release builds.
-- Local Kubernetes support with kind, k3d, or Docker Desktop Kubernetes.
-- Health checks.
-- Readiness probes.
-- Liveness probes.
-
-### 18.5 Phase 3.5: Release Automation
-
-Introduce release automation after containerisation establishes the releasable artefacts.
-
-Deliver:
-
-- GitHub Release notes workflow.
-
-### 18.6 Phase 4: Cloud Deployment
-
-Deploy to one cloud provider.
-
-Recommended options:
-
-- Azure Kubernetes Service, especially for a .NET-oriented portfolio.
-- AWS Elastic Kubernetes Service.
-- Google Kubernetes Engine.
-
-Include:
-
-- Managed PostgreSQL.
-- Managed Kafka or Kafka-compatible service.
-- Container registry.
-- Infrastructure as Code.
-- CI/CD pipeline.
-
-### 18.7 Phase 5: Go Implementation
-
-Build Go services that implement the same contracts as the .NET services.
-
-Approach options:
-
-- Reimplement one service first, such as Transactions, in Go.
-- Reimplement all backend services in Go.
-- Run .NET and Go services side by side using the same Kafka contracts.
-
-For job-search value, a side-by-side architecture is compelling:
-
-- .NET Budgeting Service.
-- Go Transaction Service.
-- Shared event contracts.
-- Shared Kubernetes deployment.
-
 ## 19. Technology Choices
 
 ### 19.1 .NET Stack
@@ -1051,16 +774,6 @@ For job-search value, a side-by-side architecture is compelling:
 - xUnit or NUnit.
 - Testcontainers.
 - OpenTelemetry.
-
-### 19.2 Go Stack
-
-- Current stable Go version.
-- chi, Gin, Echo, or standard `net/http`.
-- pgx for PostgreSQL.
-- segmentio/kafka-go or Confluent Kafka Go client.
-- testify.
-- testcontainers-go.
-- OpenTelemetry Go.
 
 ### 19.3 Frontend Stack
 
@@ -1080,7 +793,6 @@ For job-search value, a side-by-side architecture is compelling:
 - Terraform or Pulumi.
 - GitHub Actions.
 - PostgreSQL.
-- Kafka.
 - OpenTelemetry Collector.
 - Prometheus and Grafana, or cloud-native monitoring.
 
@@ -1142,17 +854,13 @@ The application should include:
 - Structured logging.
 - Correlation IDs.
 - Distributed tracing with OpenTelemetry.
-- Metrics for API requests, Kafka publishing, Kafka consuming, projection lag, and failed imports.
+- Metrics for API requests.
 - Health endpoints.
 - Dashboard for service health.
 
 Important signals:
 
-- Kafka consumer lag.
-- Failed event handling.
-- Outbox backlog.
 - API error rate.
-- Projection freshness.
 
 ## 22. Security and Privacy
 
@@ -1171,8 +879,6 @@ Important signals:
 Use Docker Compose for:
 
 - PostgreSQL.
-- Kafka.
-- Schema registry, if used.
 - Backend services.
 - Frontend.
 
@@ -1196,7 +902,6 @@ Use Infrastructure as Code to provision:
 - Kubernetes cluster.
 - Container registry.
 - PostgreSQL.
-- Kafka or Kafka-compatible event streaming.
 - DNS.
 - TLS certificates.
 - Monitoring.
@@ -1207,12 +912,9 @@ The repository should include:
 
 - Clear README with architecture diagram.
 - Local quick-start instructions.
-- Screenshots or short demo video.
 - API documentation.
-- Event contract documentation.
-- Explanation of .NET and Go implementations.
+- Explanation of implementation.
 - Deployment guide.
-- Architecture decision records.
 - CI/CD workflow.
 - SemVer release tags.
 - Changelog or release notes grouped by SemVer.
@@ -1222,38 +924,3 @@ The repository should include:
 Suggested portfolio narrative:
 
 > BudgetyTzar replaces an error-prone spreadsheet budgeting workflow with an event-driven, auditable budgeting platform. It models personal budgets as dated ledger entries, uses Kafka for asynchronous service integration, PostgreSQL for service-owned data, Kubernetes for deployment, and equivalent .NET and Go implementations to demonstrate language versatility and cloud-native engineering practice.
-
-## 25. Minimum Viable Product Scope
-
-The smallest useful version should include:
-
-- Create a budget.
-- Create budget items.
-- Preserve historical reporting for archived budget items.
-- Allow audited retrospective corrections for archived budget items where needed.
-- Record debit and credit budget adjustments.
-- Record budget reallocations as grouped zero-sum adjustments.
-- Manually add transactions.
-- Allocate transactions to budget items.
-- Leave transactions unallocated or partially allocated until classification.
-- View snapshot by date.
-- View transaction-level detail.
-- View durable local audit history for transaction creation, allocations, ignores, reallocations, adjustments, and archival.
-
-## 26. Future Enhancements
-
-- CSV transaction import with preview, commit, column mapping, and selectable rows.
-- Duplicate detection for manual entry, bulk import, and external transaction feeds.
-- Scheduled and recurring adjustments.
-- Scheduled and recurring reallocations.
-- Bank feed integration through Open Banking.
-- Automatic budget item suggestions.
-- Recurring transaction detection.
-- Forecasting.
-- Multi-account support.
-- Household sharing.
-- Mobile-friendly PWA.
-- Receipt attachment.
-- Rules engine for transaction allocation.
-- Anomaly detection.
-- Scenario planning.
