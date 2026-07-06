@@ -86,11 +86,11 @@ A budget has:
 - Currency.
 - Budget items.
 
-The total planned funding must always be greater than or equal to the total planned consumption.
+Total planned funding may be greater than, equal to, or less than total planned consumption. A budget with planned consumption greater than planned funding represents a planned deficit. The system should make that condition visible in budget and summary views rather than preventing the budget from being created or updated.
 
 The model does not assign a start date or end date to a budget. Budgets may overlap in real-world time, such as separate household and business budgets for the same calendar month. A transaction's date does not restrict whether it can be allocated to a budget item.
 
-All monetary values within a budget use the same currency. The model supports one currency per budget and does not perform exchange-rate conversion.
+All monetary values within a budget use the same currency. The model supports one currency per budget and does not perform exchange-rate conversion. Currency codes use uppercase ISO 4217 alphabetic codes such as `GBP`, `EUR`, or `USD`.
 
 ## 4.2 Budget Item
 
@@ -142,7 +142,7 @@ Allocations provide the relationship between real-world financial activity and t
 
 A transaction may be allocated to at most one budget item. An allocation applies the full transaction amount to the selected budget item.
 
-Allocations are owned by the Transactions boundary because allocation state is part of transaction usage: a transaction may be unallocated, allocated to one budget item, or have its allocation removed.
+Allocations are owned by the Transaction Allocations boundary because allocation state is a distinct relationship between transaction usage and budget planning: a transaction may be unallocated, allocated to one budget item, or have its allocation removed.
 
 ## 4.5 Budget Summary
 
@@ -230,9 +230,9 @@ The system must prevent a budget item from being deleted while any transaction i
 
 Refunds, corrections, reversals, underpayments, and overpayments must not change the kind of a budget item.
 
-The system must ensure that total planned funding is greater than or equal to total planned consumption.
+The system must allow total planned consumption to exceed total planned funding.
 
-The system must reject budget item changes that would make total planned consumption exceed total planned funding.
+The system must make planned deficits visible in budget and summary views.
 
 ### 5.3 Transaction Management
 
@@ -398,7 +398,7 @@ The Budget Summary is shaped for reporting. It does not need to mirror the inter
 4. User adds a `Consumption` budget item named `Groceries` with a planned amount of `400.00`.
 5. User adds a `Consumption` budget item named `Transport` with a planned amount of `150.00`.
 6. User adds a `Consumption` budget item named `Incidentals` with a planned amount of `250.00`.
-7. System validates that total planned funding of `3,000.00` is greater than total planned consumption of `2,000.00`.
+7. System calculates a planned surplus of `1,000.00`.
 8. User views the Budget Summary.
 9. The Budget Summary shows planned funding and planned consumption separately, with zero actual amounts until transactions are allocated.
 
@@ -461,6 +461,7 @@ The logical boundaries are:
 - Identity.
 - Budgeting.
 - Transactions.
+- Transaction Allocations.
 - Reporting.
 - Audit.
 - Web application.
@@ -479,9 +480,8 @@ Responsibilities:
 Does not own:
 
 - Authorisation decisions for domain resources.
-- The ownership model for budgets.
-- The ownership model for transactions.
-- Domain-specific access rules for budgets, transactions, or allocations.
+- Domain resource ownership enforcement.
+- Domain-specific access rules for budgets, transactions, allocations, or audit records.
 
 Suggested implementation:
 
@@ -490,16 +490,17 @@ Suggested implementation:
 
 Authorisation is a separate concern from authentication. The Identity boundary authenticates the user and supplies identity claims. Domain boundaries use the authenticated identity to enforce ownership and access rules for their own resources.
 
+Budgets, transactions, transaction allocations, and audit records are scoped to an individual authenticated identity. A user must not be able to access, mutate, allocate, report on, or audit resources scoped to another identity.
+
 ### 7.2 Budgeting Boundary
 
 Responsibilities:
 
 - Budget creation and management.
 - Budget item creation and management.
-- Budget access rules, including any ownership model chosen for budgets.
+- Budget access rules for budgets scoped to an individual authenticated identity.
 - Budget item planned amount validation.
 - Budget item kind validation.
-- Enforcement of the rule that total planned funding must be greater than or equal to total planned consumption.
 - Prevention of budget item deletion while transactions are allocated to the budget item.
 
 Owns:
@@ -518,28 +519,48 @@ Responsibilities:
 
 - Transaction recording.
 - Transaction retrieval.
-- Transaction access rules, including any ownership model chosen for transactions.
-- Transaction allocation.
-- Transaction allocation removal.
-- Enforcement that a transaction may be allocated to at most one budget item.
-- Enforcement that an allocation applies the full transaction amount.
-- Enforcement that transaction currency matches the selected budget item's budget currency.
+- Transaction access rules for transactions scoped to an individual authenticated identity.
 
 Owns:
 
 - Transactions.
+
+Does not own:
+
+- Budgets.
+- Budget items.
+- Transaction allocations.
+
+### 7.4 Transaction Allocations Boundary
+
+The Transaction Allocations boundary is its own bounded context.
+
+Responsibilities:
+
+- Transaction allocation.
+- Transaction allocation retrieval.
+- Transaction allocation removal.
+- Transaction allocation access rules for allocations scoped to an individual authenticated identity.
+- Enforcement that a transaction may be allocated to at most one budget item.
+- Enforcement that an allocation applies the full transaction amount.
+- Enforcement that the transaction and budget item belong to the same authenticated identity.
+- Enforcement that transaction currency matches the selected budget item's budget currency.
+
+Owns:
+
 - Transaction allocations.
 
 Does not own:
 
 - Budgets.
 - Budget items.
+- Transactions.
 
-The Transactions boundary may need to query or reference budget item and budget currency information in order to validate allocations. That dependency should be explicit and should not make transactions children of budgets.
+The Transaction Allocations boundary may need to query or reference transaction, budget item, and budget currency information in order to validate allocations. Those dependencies should be explicit and should not make transactions children of budgets or budget items children of transactions.
 
-The Reporting boundary needs allocation data to calculate budget summaries, and the Budgeting boundary needs allocation existence checks to prevent deletion of allocated budget items. Those read dependencies must be explicit. They must not move allocation ownership out of the Transactions boundary.
+The Reporting boundary needs allocation data to calculate budget summaries, and the Budgeting boundary needs allocation existence checks to prevent deletion of allocated budget items. Those read dependencies must be explicit. They must not move allocation ownership out of the Transaction Allocations boundary.
 
-### 7.4 Reporting Boundary
+### 7.5 Reporting Boundary
 
 Responsibilities:
 
@@ -554,7 +575,7 @@ Owns:
 
 The Reporting boundary should treat the Budget Summary as the primary reporting view. It does not need to mirror the internal aggregate structure exactly, but it must remain consistent with the ubiquitous language.
 
-### 7.5 Audit Boundary
+### 7.6 Audit Boundary
 
 Responsibilities:
 
@@ -566,6 +587,8 @@ Owns:
 
 - Audit records.
 
+Audit records are scoped to the authenticated identity that owns the affected resource.
+
 Each audit record must include enough information to understand:
 
 - When the change occurred.
@@ -576,7 +599,7 @@ Each audit record must include enough information to understand:
 
 The Audit boundary is an architectural concern. It should not introduce additional domain concepts into the core budgeting model.
 
-### 7.6 Web Application
+### 7.7 Web Application
 
 Responsibilities:
 
@@ -588,11 +611,11 @@ Responsibilities:
 - Transaction allocation workflow.
 - Budget Summary views.
 - Reporting views.
-- Audit timeline views, where implemented.
+- Audit timeline views.
 
 The frontend should use API responses shaped for user workflows rather than exposing internal aggregate structure directly.
 
-### 7.7 Logical Architecture Diagram
+### 7.8 Logical Architecture Diagram
 
 ```text
                     +------------------+
@@ -604,25 +627,22 @@ The frontend should use API responses shaped for user workflows rather than expo
                     |     HTTP API     |
                     +--------+---------+
                              |
-          +------------------+------------------+
-          |                  |                  |
-          v                  v                  v
-   +-------------+    +--------------+    +-------------+
-   | Budgeting   |    | Transactions |    | Reporting   |
-   | Boundary    |    | Boundary     |    | Boundary    |
-   +------+------+    +------+-------+    +------+------+ 
-          |                  |                  |
-          v                  v                  v
-   +-------------+    +--------------+    +-------------+
-   | Budget Data |    | Transaction  |    | Reports     |
-   |             |    | Data         |    |             |
-   +-------------+    +--------------+    +-------------+
-                             |
-                             v
-                       +-----------+
-                       |   Audit   |
-                       | Boundary  |
-                       +-----------+
+       +-------------+   +--------------+   +------------------+   +-------------+
+       | Budgeting   |   | Transactions |   | Transaction      |   | Reporting   |
+       | Boundary    |   | Boundary     |   | Allocations      |   | Boundary    |
+       +------+------+   +------+-------+   | Boundary         |   +------+------+
+              |                 |           +---------+--------+          |
+              v                 v                     v                   v
+       +-------------+   +--------------+     +----------------+   +-------------+
+       | Budget Data |   | Transaction  |     | Allocation     |   | Reports     |
+       |             |   | Data         |     | Data           |   |             |
+       +-------------+   +--------------+     +----------------+   +-------------+
+                                      |
+                                      v
+                                +-----------+
+                                |   Audit   |
+                                | Boundary  |
+                                +-----------+
 ```
 
 The diagram describes logical ownership. It does not require separate processes, separate databases, or asynchronous integration.
@@ -662,6 +682,9 @@ Storage rules:
 - The money scale is two decimal places.
 - Stored input monetary amounts, such as budget item planned amounts and transaction amounts, must support values from `0.00` to `99999999.99`.
 - Budget item planned amounts and transaction amounts must be greater than `0.00`.
+- Monetary API fields must be represented as decimal strings with exactly two decimal places.
+- Monetary input with more than two decimal places must be rejected rather than rounded.
+- Currency values must use uppercase ISO 4217 alphabetic codes.
 - Derived values, including actual amounts, remaining amounts, and reporting totals, may be zero or negative where permitted by the calculation rules.
 - The model does not require rounding rules because reporting calculations only sum stored monetary values.
 - Logical boundaries should have clear table ownership.
@@ -674,6 +697,10 @@ Storage rules:
 APIs should be HTTP/JSON for user-driven commands and queries.
 
 The routes below define the supported public API contract for the application.
+
+API request and response patterns may evolve as the application is developed. Once a pattern emerges for status codes, validation errors, problem responses, pagination, filtering, sorting, identifiers, date formats, monetary values, or other reusable API concerns, that pattern must be recorded in this specification so that other developers follow the same contract.
+
+API monetary values must be represented as strings with exactly two decimal places. API currency values must use uppercase ISO 4217 alphabetic codes.
 
 ### 10.1 Budgeting API
 
@@ -825,7 +852,7 @@ The Budget Summary is the primary reporting view.
 - Transaction entry.
 - Transaction allocation workflow.
 - Reports.
-- Audit timeline, where implemented.
+- Audit timeline.
 
 ### 11.2 Budget Detail
 
@@ -905,6 +932,9 @@ This section summarises the rules defined throughout the functional requirements
 - Monetary values must use decimal types, never floating point.
 - Monetary values use two decimal places.
 - Stored input monetary amounts must be within the range `0.00` to `99999999.99`.
+- Monetary API fields use decimal strings with exactly two decimal places.
+- Monetary input with more than two decimal places must be rejected rather than rounded.
+- Currency values use uppercase ISO 4217 alphabetic codes.
 - Each budget has one currency.
 - A budget may exist without budget items.
 - A budget does not have a date range.
@@ -917,8 +947,8 @@ This section summarises the rules defined throughout the functional requirements
 - A budget item kind must be either `Funding` or `Consumption`.
 - A budget item kind must not change after the budget item has been created.
 - Refunds, corrections, reversals, underpayments, and overpayments must not change the kind of a budget item.
-- Total planned funding must be greater than or equal to total planned consumption.
-- The system must reject budget item changes that would make total planned consumption exceed total planned funding.
+- Total planned consumption may exceed total planned funding.
+- Planned deficits must be visible in budget and summary views.
 - A transaction type must be either `Credit` or `Debit`.
 - Transaction type records the direction of real-world financial activity.
 - Transaction type does not determine whether a transaction is funding or consumption.
@@ -1016,6 +1046,10 @@ Development should follow test-driven development where practical:
 5. Refactor while keeping the tests passing.
 6. Update this specification and related repository documentation where the increment clarifies, changes, or adds product, domain, API, observability, security, privacy, audit, operational, or documentation requirements.
 
+As API implementation patterns emerge, developers must record the reusable pattern in this specification. This includes patterns for status codes, validation errors, problem responses, pagination, filtering, sorting, identifiers, date formats, monetary values, and other public contract concerns.
+
+As understanding of the application becomes more detailed, this specification should be updated appropriately. New features, major behavioural changes, significant architecture changes, and important changes to product expectations must be reflected in this specification as part of the same development flow.
+
 Before implementing each feature slice or smaller increment, the developer must explicitly review whether the increment requires changes to:
 
 - Domain rules and invariants.
@@ -1056,7 +1090,8 @@ API behaviour tests should cover:
 - Budget creation, retrieval, and renaming.
 - Budget creation without budget items.
 - Budget item creation, retrieval, renaming, planned amount changes, deletion, and validation.
-- Rejection of budget item changes that would make total planned consumption exceed total planned funding.
+- Budget item changes that make total planned consumption exceed total planned funding.
+- Planned deficit visibility in budget and summary views.
 - Rejection of attempts to change a budget item's kind after creation.
 - Rejection of budget item deletion while transactions are allocated to it.
 - Transaction recording and retrieval.
@@ -1164,6 +1199,7 @@ Important signals:
 - Use HTTPS in deployed environments.
 - Protect APIs with authentication.
 - Enforce domain resource authorisation using the authenticated identity supplied by the Identity boundary.
+- Scope budgets, transactions, transaction allocations, and audit records to an individual authenticated identity.
 - Store secrets outside source control.
 - Avoid logging full bank transaction descriptions if they may contain sensitive information.
 - Avoid logging unnecessary financial details.
