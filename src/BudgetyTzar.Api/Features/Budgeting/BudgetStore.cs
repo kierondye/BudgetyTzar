@@ -36,6 +36,22 @@ public sealed class BudgetStore
             return budgetsById.GetValueOrDefault(budgetId);
         }
     }
+
+    public Budget? Rename(Guid budgetId, string name)
+    {
+        lock (syncRoot)
+        {
+            if (!budgetsById.TryGetValue(budgetId, out var budget))
+            {
+                return null;
+            }
+
+            var renamedBudget = budget with { Name = name };
+            budgetsById[budgetId] = renamedBudget;
+
+            return renamedBudget;
+        }
+    }
 }
 
 public sealed record Budget(Guid BudgetId, string Name, CurrencyCode Currency);

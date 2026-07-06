@@ -22,6 +22,9 @@ public static class BudgetEndpoints
         budgets.MapGet("/{budgetId:guid}", GetBudget)
             .WithName("GetBudget");
 
+        budgets.MapPut("/{budgetId:guid}/name", RenameBudget)
+            .WithName("RenameBudget");
+
         return endpoints;
     }
 
@@ -58,19 +61,42 @@ public static class BudgetEndpoints
             : Results.Ok(BudgetResponse.FromBudget(budget));
     }
 
+    private static IResult RenameBudget(Guid budgetId, RenameBudgetRequest request, BudgetStore store)
+    {
+        var errors = ValidateName(request.Name);
+
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var budget = store.Rename(budgetId, request.Name.Trim());
+
+        return budget is null
+            ? Results.NotFound()
+            : Results.Ok(BudgetResponse.FromBudget(budget));
+    }
+
     private static Dictionary<string, string[]> Validate(CreateBudgetRequest request, out CurrencyCode currency)
     {
-        var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        var errors = ValidateName(request.Name);
         currency = CurrencyCode.Empty;
-
-        if (string.IsNullOrWhiteSpace(request.Name))
-        {
-            errors["name"] = ["Budget name is required."];
-        }
 
         if (!CurrencyCode.TryCreate(request.Currency, out currency))
         {
             errors["currency"] = ["Currency must be an uppercase ISO 4217 alphabetic code."];
+        }
+
+        return errors;
+    }
+
+    private static Dictionary<string, string[]> ValidateName(string name)
+    {
+        var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            errors["name"] = ["Budget name is required."];
         }
 
         return errors;
