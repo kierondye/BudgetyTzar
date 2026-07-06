@@ -765,6 +765,33 @@ Example change budget item planned amount request:
 }
 ```
 
+Example create budget item request:
+
+```json
+{
+  "name": "Salary",
+  "kind": "Funding",
+  "plannedAmount": "3000.00"
+}
+```
+
+Creating a budget item returns `201 Created`, a `Location` header for the created budget item resource, and the created budget item representation. Creating a budget item for a budget that does not exist returns `404 Not Found`.
+
+Example budget item response:
+
+```json
+{
+  "budgetItemId": "budget-item-guid",
+  "name": "Salary",
+  "kind": "Funding",
+  "plannedAmount": "3000.00"
+}
+```
+
+Listing budget items returns the budget items in the order they were created. Retrieving a budget item that does not exist returns `404 Not Found`.
+
+Budget item creation rejects an empty name, a kind other than `Funding` or `Consumption`, and planned amount values that are not positive decimal strings with exactly two decimal places up to `99999999.99`. Validation failures return `400 Bad Request` with a problem details response containing field-level errors.
+
 The Budgeting API should not expose transaction entry as a child operation of a budget, because transactions are independent of budgets.
 
 ### 10.2 Transaction API
