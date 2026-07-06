@@ -6,7 +6,7 @@ public sealed class BudgetStore
     private readonly Dictionary<Guid, Budget> budgetsById = [];
     private readonly List<Guid> budgetIds = [];
 
-    public Budget Create(string name, string currency)
+    public Budget Create(string name, CurrencyCode currency)
     {
         var budget = new Budget(Guid.NewGuid(), name, currency);
 
@@ -38,4 +38,4 @@ public sealed class BudgetStore
     }
 }
 
-public sealed record Budget(Guid BudgetId, string Name, string Currency);
+public sealed record Budget(Guid BudgetId, string Name, CurrencyCode Currency);

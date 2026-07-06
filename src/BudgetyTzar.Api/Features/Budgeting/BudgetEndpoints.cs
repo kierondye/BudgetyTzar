@@ -1,8 +1,6 @@
-using System.Text.RegularExpressions;
-
 namespace BudgetyTzar.Api.Features.Budgeting;
 
-public static partial class BudgetEndpoints
+public static class BudgetEndpoints
 {
     public static IServiceCollection AddBudgeting(this IServiceCollection services)
     {
@@ -29,14 +27,14 @@ public static partial class BudgetEndpoints
 
     private static IResult CreateBudget(CreateBudgetRequest request, BudgetStore store)
     {
-        var errors = Validate(request);
+        var errors = Validate(request, out var currency);
 
         if (errors.Count > 0)
         {
             return Results.ValidationProblem(errors);
         }
 
-        var budget = store.Create(request.Name.Trim(), request.Currency.Trim());
+        var budget = store.Create(request.Name.Trim(), currency);
         var response = BudgetResponse.FromBudget(budget);
 
         return Results.Created($"/api/budgets/{budget.BudgetId}", response);
@@ -60,23 +58,21 @@ public static partial class BudgetEndpoints
             : Results.Ok(BudgetResponse.FromBudget(budget));
     }
 
-    private static Dictionary<string, string[]> Validate(CreateBudgetRequest request)
+    private static Dictionary<string, string[]> Validate(CreateBudgetRequest request, out CurrencyCode currency)
     {
         var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        currency = CurrencyCode.Empty;
 
         if (string.IsNullOrWhiteSpace(request.Name))
         {
             errors["name"] = ["Budget name is required."];
         }
 
-        if (!CurrencyCodePattern().IsMatch(request.Currency ?? string.Empty))
+        if (!CurrencyCode.TryCreate(request.Currency, out currency))
         {
             errors["currency"] = ["Currency must be an uppercase ISO 4217 alphabetic code."];
         }
 
         return errors;
     }
-
-    [GeneratedRegex("^[A-Z]{3}$")]
-    private static partial Regex CurrencyCodePattern();
 }
