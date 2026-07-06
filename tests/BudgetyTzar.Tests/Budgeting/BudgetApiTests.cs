@@ -132,6 +132,136 @@ public sealed class BudgetApiTests
         Assert.Contains("name", problem.Errors.Keys);
     }
 
+    [Fact]
+    public async Task Create_budget_item_returns_created_budget_item()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+
+        using var response = await server.Client.PostAsJsonAsync(
+            $"/api/budgets/{budget.BudgetId}/budget-items",
+            new CreateBudgetItemRequest("Salary", "Funding", "3000.00"));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var budgetItem = await response.Content.ReadFromJsonAsync<BudgetItemResponse>();
+
+        Assert.NotNull(budgetItem);
+        Assert.NotEqual(Guid.Empty, budgetItem.BudgetItemId);
+        Assert.Equal("Salary", budgetItem.Name);
+        Assert.Equal("Funding", budgetItem.Kind);
+        Assert.Equal("3000.00", budgetItem.PlannedAmount);
+        Assert.Equal(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{budgetItem.BudgetItemId}",
+            response.Headers.Location?.OriginalString);
+    }
+
+    [Fact]
+    public async Task Get_budget_includes_created_budget_items()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+        var salary = await CreateBudgetItemAsync(server, budget.BudgetId, "Salary", "Funding", "3000.00");
+        var groceries = await CreateBudgetItemAsync(server, budget.BudgetId, "Groceries", "Consumption", "400.00");
+
+        var budgetDetails = await server.Client.GetFromJsonAsync<BudgetResponse>($"/api/budgets/{budget.BudgetId}");
+
+        Assert.NotNull(budgetDetails);
+        Assert.Collection(
+            budgetDetails.BudgetItems,
+            budgetItem => Assert.Equal(salary.BudgetItemId, budgetItem.BudgetItemId),
+            budgetItem => Assert.Equal(groceries.BudgetItemId, budgetItem.BudgetItemId));
+    }
+
+    [Fact]
+    public async Task List_budget_items_returns_created_budget_items()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+        var salary = await CreateBudgetItemAsync(server, budget.BudgetId, "Salary", "Funding", "3000.00");
+        var groceries = await CreateBudgetItemAsync(server, budget.BudgetId, "Groceries", "Consumption", "400.00");
+
+        var budgetItems = await server.Client.GetFromJsonAsync<IReadOnlyList<BudgetItemResponse>>(
+            $"/api/budgets/{budget.BudgetId}/budget-items");
+
+        Assert.NotNull(budgetItems);
+        Assert.Collection(
+            budgetItems,
+            budgetItem => Assert.Equal(salary.BudgetItemId, budgetItem.BudgetItemId),
+            budgetItem => Assert.Equal(groceries.BudgetItemId, budgetItem.BudgetItemId));
+    }
+
+    [Fact]
+    public async Task Get_budget_item_returns_budget_item()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+        var createdBudgetItem = await CreateBudgetItemAsync(server, budget.BudgetId, "Groceries", "Consumption", "400.00");
+
+        var budgetItem = await server.Client.GetFromJsonAsync<BudgetItemResponse>(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{createdBudgetItem.BudgetItemId}");
+
+        Assert.NotNull(budgetItem);
+        Assert.Equal(createdBudgetItem.BudgetItemId, budgetItem.BudgetItemId);
+        Assert.Equal("Groceries", budgetItem.Name);
+        Assert.Equal("Consumption", budgetItem.Kind);
+        Assert.Equal("400.00", budgetItem.PlannedAmount);
+    }
+
+    [Fact]
+    public async Task Create_budget_item_returns_not_found_when_budget_does_not_exist()
+    {
+        await using var server = await TestApiServer.StartAsync();
+
+        using var response = await server.Client.PostAsJsonAsync(
+            $"/api/budgets/{Guid.NewGuid()}/budget-items",
+            new CreateBudgetItemRequest("Salary", "Funding", "3000.00"));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_budget_item_returns_not_found_when_budget_item_does_not_exist()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+
+        using var response = await server.Client.GetAsync(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{Guid.NewGuid()}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("", "Funding", "3000.00", "name")]
+    [InlineData("Salary", "", "3000.00", "kind")]
+    [InlineData("Salary", "Income", "3000.00", "kind")]
+    [InlineData("Salary", "Funding", "", "plannedAmount")]
+    [InlineData("Salary", "Funding", "0.00", "plannedAmount")]
+    [InlineData("Salary", "Funding", "-1.00", "plannedAmount")]
+    [InlineData("Salary", "Funding", "1.001", "plannedAmount")]
+    [InlineData("Salary", "Funding", "100000000.00", "plannedAmount")]
+    public async Task Create_budget_item_rejects_invalid_input(
+        string name,
+        string kind,
+        string plannedAmount,
+        string expectedErrorKey)
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+
+        using var response = await server.Client.PostAsJsonAsync(
+            $"/api/budgets/{budget.BudgetId}/budget-items",
+            new CreateBudgetItemRequest(name, kind, plannedAmount));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemResponse>();
+
+        Assert.NotNull(problem);
+        Assert.Contains(expectedErrorKey, problem.Errors.Keys);
+    }
+
     [Theory]
     [InlineData("", "GBP", "name")]
     [InlineData("UK", "", "currency")]
@@ -165,9 +295,28 @@ public sealed class BudgetApiTests
         return budget ?? throw new InvalidOperationException("Create budget response was empty.");
     }
 
+    private static async Task<BudgetItemResponse> CreateBudgetItemAsync(
+        TestApiServer server,
+        Guid budgetId,
+        string name,
+        string kind,
+        string plannedAmount)
+    {
+        using var response = await server.Client.PostAsJsonAsync(
+            $"/api/budgets/{budgetId}/budget-items",
+            new CreateBudgetItemRequest(name, kind, plannedAmount));
+
+        response.EnsureSuccessStatusCode();
+
+        var budgetItem = await response.Content.ReadFromJsonAsync<BudgetItemResponse>();
+        return budgetItem ?? throw new InvalidOperationException("Create budget item response was empty.");
+    }
+
     private sealed record CreateBudgetRequest(string Name, string Currency);
 
     private sealed record RenameBudgetRequest(string Name);
+
+    private sealed record CreateBudgetItemRequest(string Name, string Kind, string PlannedAmount);
 
     private sealed record BudgetResponse(Guid BudgetId, string Name, string Currency, IReadOnlyList<BudgetItemResponse> BudgetItems);
 
