@@ -142,7 +142,7 @@ public sealed record Budget(Guid BudgetId, string Name, CurrencyCode Currency, I
 
 public sealed record BudgetItem(Guid BudgetItemId, string Name, BudgetItemKind Kind, PositiveMoneyAmount PlannedAmount);
 
-public sealed record BudgetItemReference(Guid BudgetId, CurrencyCode Currency, BudgetItem BudgetItem);
+public sealed record BudgetItemReference(Guid BudgetId, CurrencyCode BudgetCurrency, BudgetItem BudgetItem);
 
 public abstract record CreateBudgetResult
 {

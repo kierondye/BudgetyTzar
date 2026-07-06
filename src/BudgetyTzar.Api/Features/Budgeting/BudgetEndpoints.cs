@@ -1,5 +1,5 @@
 using BudgetyTzar.Api.Features.Common;
-using BudgetyTzar.Api.Features.TransactionAllocations;
+using BudgetyTzar.Api.Features.Transactions;
 
 namespace BudgetyTzar.Api.Features.Budgeting;
 
