@@ -798,7 +798,26 @@ GET /api/budgets/{budgetId}/summary
 
 The Budget Summary is the primary reporting view.
 
-### 10.5 Example Budget Summary Response
+### 10.5 Runtime Version API
+
+```http
+GET /api/version
+```
+
+The Runtime Version API exposes product version metadata separately from health status.
+
+Example version response:
+
+```json
+{
+  "productVersion": "0.1.0-preview.1",
+  "informationalVersion": "0.1.0-preview.1+abc1234"
+}
+```
+
+OpenAPI metadata must use the same product SemVer value as the runtime version response.
+
+### 10.6 Example Budget Summary Response
 
 ```json
 {

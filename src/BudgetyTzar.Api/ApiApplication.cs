@@ -1,4 +1,3 @@
-using System.Reflection;
 using Microsoft.OpenApi.Models;
 
 namespace BudgetyTzar.Api;
@@ -32,23 +31,5 @@ public static class ApiApplication
             .WithName("GetVersion");
 
         return app;
-    }
-}
-
-public sealed record RuntimeVersion(string ProductVersion, string InformationalVersion)
-{
-    public static RuntimeVersion Current { get; } = Create();
-
-    private static RuntimeVersion Create()
-    {
-        var assembly = typeof(RuntimeVersion).Assembly;
-        var informationalVersion =
-            assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-            ?? assembly.GetName().Version?.ToString()
-            ?? "0.0.0";
-
-        var productVersion = informationalVersion.Split('+', 2)[0];
-
-        return new RuntimeVersion(productVersion, informationalVersion);
     }
 }
