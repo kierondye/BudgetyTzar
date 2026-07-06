@@ -6,7 +6,7 @@ public sealed class BudgetStore
     private readonly Dictionary<Guid, Budget> budgetsById = [];
     private readonly List<Guid> budgetIds = [];
 
-    public Budget? Create(string name, CurrencyCode currency)
+    public CreateBudgetResult Create(string name, CurrencyCode currency)
     {
         var budget = new Budget(Guid.NewGuid(), name, currency, []);
 
@@ -14,14 +14,14 @@ public sealed class BudgetStore
         {
             if (budgetsById.Values.Any(existingBudget => existingBudget.Name == name))
             {
-                return null;
+                return new CreateBudgetResult(CreateBudgetStatus.DuplicateName, null);
             }
 
             budgetsById[budget.BudgetId] = budget;
             budgetIds.Add(budget.BudgetId);
         }
 
-        return budget;
+        return new CreateBudgetResult(CreateBudgetStatus.Created, budget);
     }
 
     public IReadOnlyList<Budget> GetAll()
@@ -99,6 +99,14 @@ public sealed class BudgetStore
 public sealed record Budget(Guid BudgetId, string Name, CurrencyCode Currency, IReadOnlyList<BudgetItem> BudgetItems);
 
 public sealed record BudgetItem(Guid BudgetItemId, string Name, BudgetItemKind Kind, AbsoluteMoneyAmount PlannedAmount);
+
+public sealed record CreateBudgetResult(CreateBudgetStatus Status, Budget? Budget);
+
+public enum CreateBudgetStatus
+{
+    Created,
+    DuplicateName
+}
 
 public sealed record RenameBudgetResult(RenameBudgetStatus Status, Budget? Budget);
 

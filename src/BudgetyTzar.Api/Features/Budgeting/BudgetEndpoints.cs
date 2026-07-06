@@ -46,16 +46,16 @@ public static class BudgetEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        var budget = store.Create(request.Name.Trim(), currency);
+        var result = store.Create(request.Name.Trim(), currency);
 
-        if (budget is null)
+        if (result.Status == CreateBudgetStatus.DuplicateName)
         {
             return Results.Conflict();
         }
 
-        var response = BudgetResponse.FromBudget(budget);
+        var response = BudgetResponse.FromBudget(result.Budget!);
 
-        return Results.Created($"/api/budgets/{budget.BudgetId}", response);
+        return Results.Created($"/api/budgets/{result.Budget!.BudgetId}", response);
     }
 
     private static IResult GetBudgets(BudgetStore store)
@@ -104,7 +104,7 @@ public static class BudgetEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        var result = store.AddBudgetItem(budgetId, request.Name.Trim(), kind, plannedAmount);
+        var result = store.AddBudgetItem(budgetId, request.Name.Trim(), kind, plannedAmount!);
 
         return result.Status switch
         {
@@ -157,11 +157,11 @@ public static class BudgetEndpoints
     private static Dictionary<string, string[]> Validate(
         CreateBudgetItemRequest request,
         out BudgetItemKind kind,
-        out AbsoluteMoneyAmount plannedAmount)
+        out AbsoluteMoneyAmount? plannedAmount)
     {
         var errors = ValidateName(request.Name, "Budget item name is required.");
         kind = BudgetItemKind.Empty;
-        plannedAmount = AbsoluteMoneyAmount.Empty;
+        plannedAmount = null;
 
         if (!BudgetItemKind.TryCreate(request.Kind, out kind))
         {

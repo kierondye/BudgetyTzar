@@ -3,11 +3,9 @@ using System.Text.RegularExpressions;
 
 namespace BudgetyTzar.Api.Features.Budgeting;
 
-public readonly partial record struct AbsoluteMoneyAmount
+public sealed partial record AbsoluteMoneyAmount
 {
     private const decimal MaximumValue = 99999999.99m;
-
-    public static AbsoluteMoneyAmount Empty { get; } = new(0.00m);
 
     private AbsoluteMoneyAmount(decimal value)
     {
@@ -18,7 +16,7 @@ public readonly partial record struct AbsoluteMoneyAmount
 
     public string FormattedValue => Value.ToString("0.00", CultureInfo.InvariantCulture);
 
-    public static bool TryCreate(string? value, out AbsoluteMoneyAmount amount)
+    public static bool TryCreate(string? value, out AbsoluteMoneyAmount? amount)
     {
         var trimmedValue = value?.Trim() ?? string.Empty;
 
@@ -27,7 +25,7 @@ public readonly partial record struct AbsoluteMoneyAmount
             || parsedValue <= 0.00m
             || parsedValue > MaximumValue)
         {
-            amount = Empty;
+            amount = null;
             return false;
         }
 
