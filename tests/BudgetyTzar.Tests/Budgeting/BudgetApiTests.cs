@@ -236,6 +236,174 @@ public sealed class BudgetApiTests
     }
 
     [Fact]
+    public async Task Rename_budget_item_updates_budget_item_name()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+        var salary = await CreateBudgetItemAsync(server, budget.BudgetId, "Salary", "Funding", "3000.00");
+
+        using var renameResponse = await server.Client.PutAsJsonAsync(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{salary.BudgetItemId}/name",
+            new RenameBudgetItemRequest("Pay"));
+
+        Assert.Equal(HttpStatusCode.OK, renameResponse.StatusCode);
+
+        var renamedBudgetItem = await renameResponse.Content.ReadFromJsonAsync<BudgetItemResponse>();
+        var budgetDetails = await server.Client.GetFromJsonAsync<BudgetResponse>($"/api/budgets/{budget.BudgetId}");
+        var budgetItems = await server.Client.GetFromJsonAsync<IReadOnlyList<BudgetItemResponse>>(
+            $"/api/budgets/{budget.BudgetId}/budget-items");
+        var retrievedBudgetItem = await server.Client.GetFromJsonAsync<BudgetItemResponse>(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{salary.BudgetItemId}");
+
+        Assert.NotNull(renamedBudgetItem);
+        Assert.Equal(salary.BudgetItemId, renamedBudgetItem.BudgetItemId);
+        Assert.Equal("Pay", renamedBudgetItem.Name);
+        Assert.Equal("Funding", renamedBudgetItem.Kind);
+        Assert.Equal("3000.00", renamedBudgetItem.PlannedAmount);
+        Assert.Equal("Pay", Assert.Single(budgetDetails?.BudgetItems ?? []).Name);
+        Assert.Equal("Pay", Assert.Single(budgetItems ?? []).Name);
+        Assert.Equal("Pay", retrievedBudgetItem?.Name);
+    }
+
+    [Fact]
+    public async Task Rename_budget_item_rejects_empty_name()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+        var salary = await CreateBudgetItemAsync(server, budget.BudgetId, "Salary", "Funding", "3000.00");
+
+        using var response = await server.Client.PutAsJsonAsync(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{salary.BudgetItemId}/name",
+            new RenameBudgetItemRequest(""));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemResponse>();
+
+        Assert.NotNull(problem);
+        Assert.Contains("name", problem.Errors.Keys);
+    }
+
+    [Fact]
+    public async Task Rename_budget_item_returns_not_found_when_budget_does_not_exist()
+    {
+        await using var server = await TestApiServer.StartAsync();
+
+        using var response = await server.Client.PutAsJsonAsync(
+            $"/api/budgets/{Guid.NewGuid()}/budget-items/{Guid.NewGuid()}/name",
+            new RenameBudgetItemRequest("Pay"));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Rename_budget_item_returns_not_found_when_budget_item_does_not_exist()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+
+        using var response = await server.Client.PutAsJsonAsync(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{Guid.NewGuid()}/name",
+            new RenameBudgetItemRequest("Pay"));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Rename_budget_item_returns_conflict_when_budget_item_name_already_exists()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+        var salary = await CreateBudgetItemAsync(server, budget.BudgetId, "Salary", "Funding", "3000.00");
+        await CreateBudgetItemAsync(server, budget.BudgetId, "Groceries", "Consumption", "400.00");
+
+        using var response = await server.Client.PutAsJsonAsync(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{salary.BudgetItemId}/name",
+            new RenameBudgetItemRequest("Groceries"));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Change_budget_item_planned_amount_updates_budget_item_planned_amount()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+        var groceries = await CreateBudgetItemAsync(server, budget.BudgetId, "Groceries", "Consumption", "400.00");
+
+        using var updateResponse = await server.Client.PutAsJsonAsync(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{groceries.BudgetItemId}/planned-amount",
+            new ChangeBudgetItemPlannedAmountRequest("450.00"));
+
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+
+        var updatedBudgetItem = await updateResponse.Content.ReadFromJsonAsync<BudgetItemResponse>();
+        var budgetDetails = await server.Client.GetFromJsonAsync<BudgetResponse>($"/api/budgets/{budget.BudgetId}");
+        var budgetItems = await server.Client.GetFromJsonAsync<IReadOnlyList<BudgetItemResponse>>(
+            $"/api/budgets/{budget.BudgetId}/budget-items");
+        var retrievedBudgetItem = await server.Client.GetFromJsonAsync<BudgetItemResponse>(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{groceries.BudgetItemId}");
+
+        Assert.NotNull(updatedBudgetItem);
+        Assert.Equal(groceries.BudgetItemId, updatedBudgetItem.BudgetItemId);
+        Assert.Equal("Groceries", updatedBudgetItem.Name);
+        Assert.Equal("Consumption", updatedBudgetItem.Kind);
+        Assert.Equal("450.00", updatedBudgetItem.PlannedAmount);
+        Assert.Equal("450.00", Assert.Single(budgetDetails?.BudgetItems ?? []).PlannedAmount);
+        Assert.Equal("450.00", Assert.Single(budgetItems ?? []).PlannedAmount);
+        Assert.Equal("450.00", retrievedBudgetItem?.PlannedAmount);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("0.00")]
+    [InlineData("-1.00")]
+    [InlineData("1.001")]
+    [InlineData("100000000.00")]
+    public async Task Change_budget_item_planned_amount_rejects_invalid_money_values(string plannedAmount)
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+        var groceries = await CreateBudgetItemAsync(server, budget.BudgetId, "Groceries", "Consumption", "400.00");
+
+        using var response = await server.Client.PutAsJsonAsync(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{groceries.BudgetItemId}/planned-amount",
+            new ChangeBudgetItemPlannedAmountRequest(plannedAmount));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemResponse>();
+
+        Assert.NotNull(problem);
+        Assert.Contains("plannedAmount", problem.Errors.Keys);
+    }
+
+    [Fact]
+    public async Task Change_budget_item_planned_amount_returns_not_found_when_budget_does_not_exist()
+    {
+        await using var server = await TestApiServer.StartAsync();
+
+        using var response = await server.Client.PutAsJsonAsync(
+            $"/api/budgets/{Guid.NewGuid()}/budget-items/{Guid.NewGuid()}/planned-amount",
+            new ChangeBudgetItemPlannedAmountRequest("450.00"));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Change_budget_item_planned_amount_returns_not_found_when_budget_item_does_not_exist()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+
+        using var response = await server.Client.PutAsJsonAsync(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{Guid.NewGuid()}/planned-amount",
+            new ChangeBudgetItemPlannedAmountRequest("450.00"));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Create_budget_item_returns_not_found_when_budget_does_not_exist()
     {
         await using var server = await TestApiServer.StartAsync();
@@ -358,6 +526,10 @@ public sealed class BudgetApiTests
     private sealed record RenameBudgetRequest(string Name);
 
     private sealed record CreateBudgetItemRequest(string Name, string Kind, string PlannedAmount);
+
+    private sealed record RenameBudgetItemRequest(string Name);
+
+    private sealed record ChangeBudgetItemPlannedAmountRequest(string PlannedAmount);
 
     private sealed record BudgetResponse(Guid BudgetId, string Name, string Currency, IReadOnlyList<BudgetItemResponse> BudgetItems);
 

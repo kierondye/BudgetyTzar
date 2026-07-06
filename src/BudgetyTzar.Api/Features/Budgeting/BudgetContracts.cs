@@ -6,6 +6,10 @@ public sealed record RenameBudgetRequest(string Name);
 
 public sealed record CreateBudgetItemRequest(string Name, string Kind, string PlannedAmount);
 
+public sealed record RenameBudgetItemRequest(string Name);
+
+public sealed record ChangeBudgetItemPlannedAmountRequest(string PlannedAmount);
+
 public sealed record BudgetResponse(Guid BudgetId, string Name, string Currency, IReadOnlyList<BudgetItemResponse> BudgetItems)
 {
     public static BudgetResponse FromBudget(Budget budget)

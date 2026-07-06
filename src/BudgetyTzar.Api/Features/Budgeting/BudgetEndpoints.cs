@@ -36,6 +36,12 @@ public static class BudgetEndpoints
         budgets.MapGet("/{budgetId:guid}/budget-items/{budgetItemId:guid}", GetBudgetItem)
             .WithName("GetBudgetItem");
 
+        budgets.MapPut("/{budgetId:guid}/budget-items/{budgetItemId:guid}/name", RenameBudgetItem)
+            .WithName("RenameBudgetItem");
+
+        budgets.MapPut("/{budgetId:guid}/budget-items/{budgetItemId:guid}/planned-amount", ChangeBudgetItemPlannedAmount)
+            .WithName("ChangeBudgetItemPlannedAmount");
+
         return endpoints;
     }
 
@@ -144,6 +150,54 @@ public static class BudgetEndpoints
         return budgetItem is null
             ? Results.NotFound()
             : Results.Ok(BudgetItemResponse.FromBudgetItem(budgetItem));
+    }
+
+    private static IResult RenameBudgetItem(
+        Guid budgetId,
+        Guid budgetItemId,
+        RenameBudgetItemRequest request,
+        BudgetStore store)
+    {
+        var errors = ValidateName(request.Name, "Budget item name is required.");
+
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var result = store.RenameBudgetItem(budgetId, budgetItemId, request.Name.Trim());
+
+        return result switch
+        {
+            RenameBudgetItemResult.NotFound => Results.NotFound(),
+            RenameBudgetItemResult.DuplicateName => Results.Conflict(),
+            RenameBudgetItemResult.Renamed renamed => Results.Ok(BudgetItemResponse.FromBudgetItem(renamed.BudgetItem)),
+            _ => throw new InvalidOperationException("Unexpected rename budget item result.")
+        };
+    }
+
+    private static IResult ChangeBudgetItemPlannedAmount(
+        Guid budgetId,
+        Guid budgetItemId,
+        ChangeBudgetItemPlannedAmountRequest request,
+        BudgetStore store)
+    {
+        if (!PositiveMoneyAmount.TryCreate(request.PlannedAmount, out var plannedAmount))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                ["plannedAmount"] = ["Planned amount must be greater than 0.00, no more than 99999999.99, and use exactly two decimal places."]
+            });
+        }
+
+        var result = store.ChangeBudgetItemPlannedAmount(budgetId, budgetItemId, plannedAmount!);
+
+        return result switch
+        {
+            ChangeBudgetItemPlannedAmountResult.NotFound => Results.NotFound(),
+            ChangeBudgetItemPlannedAmountResult.Changed changed => Results.Ok(BudgetItemResponse.FromBudgetItem(changed.BudgetItem)),
+            _ => throw new InvalidOperationException("Unexpected change budget item planned amount result.")
+        };
     }
 
     private static Dictionary<string, string[]> Validate(CreateBudgetRequest request, out CurrencyCode currency)
