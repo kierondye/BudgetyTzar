@@ -755,6 +755,8 @@ Example rename budget request:
 }
 ```
 
+Renaming a budget returns `200 OK` with the updated budget representation. Renaming a budget that does not exist returns `404 Not Found`. Rename requests with an empty name return `400 Bad Request` with a problem details response containing field-level errors.
+
 Example change budget item planned amount request:
 
 ```json

@@ -2,6 +2,8 @@ namespace BudgetyTzar.Api.Features.Budgeting;
 
 public sealed record CreateBudgetRequest(string Name, string Currency);
 
+public sealed record RenameBudgetRequest(string Name);
+
 public sealed record BudgetResponse(Guid BudgetId, string Name, string Currency, IReadOnlyList<BudgetItemResponse> BudgetItems)
 {
     public static BudgetResponse FromBudget(Budget budget)
