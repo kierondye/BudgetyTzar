@@ -77,11 +77,23 @@ public static class TransactionEndpoints
             : Results.Ok(TransactionResponse.FromTransaction(transaction));
     }
 
-    private static IResult DeleteTransaction(Guid transactionId, TransactionStore store)
+    private static IResult DeleteTransaction(
+        Guid transactionId,
+        TransactionStore store,
+        TransactionAllocationStore allocationStore)
     {
-        return store.Delete(transactionId)
-            ? Results.NoContent()
-            : Results.NotFound();
+        if (store.Get(transactionId) is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (allocationStore.HasAllocationForTransaction(transactionId))
+        {
+            return Results.Conflict();
+        }
+
+        store.Delete(transactionId);
+        return Results.NoContent();
     }
 
     private static IResult AllocateTransaction(
