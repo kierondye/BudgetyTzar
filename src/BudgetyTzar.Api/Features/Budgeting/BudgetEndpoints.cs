@@ -99,13 +99,13 @@ public static class BudgetEndpoints
     {
         var validation = Validate(request);
 
-        if (validation.Errors.Count > 0)
+        if (validation is BudgetItemValidationResult.Invalid invalid)
         {
-            return Results.ValidationProblem(validation.Errors);
+            return Results.ValidationProblem(invalid.Errors);
         }
 
-        var amount = ((PositiveMoneyAmountCreationResult.Created)validation.PlannedAmount).Amount;
-        var result = store.AddBudgetItem(budgetId, request.Name.Trim(), validation.Kind, amount);
+        var valid = (BudgetItemValidationResult.Valid)validation;
+        var result = store.AddBudgetItem(budgetId, request.Name.Trim(), valid.Kind, valid.PlannedAmount);
 
         return result.Status switch
         {
@@ -165,14 +165,16 @@ public static class BudgetEndpoints
             errors["kind"] = ["Budget item kind must be Funding or Consumption."];
         }
 
-        var plannedAmount = PositiveMoneyAmount.TryCreate(request.PlannedAmount);
+        var hasPlannedAmount = PositiveMoneyAmount.TryCreate(request.PlannedAmount, out var plannedAmount);
 
-        if (plannedAmount is PositiveMoneyAmountCreationResult.Invalid)
+        if (!hasPlannedAmount)
         {
             errors["plannedAmount"] = ["Planned amount must be greater than 0.00, no more than 99999999.99, and use exactly two decimal places."];
         }
 
-        return new BudgetItemValidationResult(errors, kind, plannedAmount);
+        return errors.Count > 0
+            ? new BudgetItemValidationResult.Invalid(errors)
+            : new BudgetItemValidationResult.Valid(kind, plannedAmount!);
     }
 
     private static Dictionary<string, string[]> ValidateName(string name, string message)
@@ -187,8 +189,10 @@ public static class BudgetEndpoints
         return errors;
     }
 
-    private sealed record BudgetItemValidationResult(
-        Dictionary<string, string[]> Errors,
-        BudgetItemKind Kind,
-        PositiveMoneyAmountCreationResult PlannedAmount);
+    private abstract record BudgetItemValidationResult
+    {
+        public sealed record Valid(BudgetItemKind Kind, PositiveMoneyAmount PlannedAmount) : BudgetItemValidationResult;
+
+        public sealed record Invalid(Dictionary<string, string[]> Errors) : BudgetItemValidationResult;
+    }
 }

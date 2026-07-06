@@ -16,7 +16,7 @@ public sealed partial record PositiveMoneyAmount
 
     public string FormattedValue => Value.ToString("0.00", CultureInfo.InvariantCulture);
 
-    public static PositiveMoneyAmountCreationResult TryCreate(string? value)
+    public static bool TryCreate(string? value, out PositiveMoneyAmount? amount)
     {
         var trimmedValue = value?.Trim() ?? string.Empty;
 
@@ -25,30 +25,14 @@ public sealed partial record PositiveMoneyAmount
             || parsedValue <= 0.00m
             || parsedValue > MaximumValue)
         {
-            return PositiveMoneyAmountCreationResult.Invalid.Instance;
+            amount = null;
+            return false;
         }
 
-        return new PositiveMoneyAmountCreationResult.Created(new PositiveMoneyAmount(parsedValue));
+        amount = new PositiveMoneyAmount(parsedValue);
+        return true;
     }
 
     [GeneratedRegex(@"^\d{1,8}\.\d{2}$")]
     private static partial Regex AmountPattern();
-}
-
-public abstract record PositiveMoneyAmountCreationResult
-{
-    private PositiveMoneyAmountCreationResult()
-    {
-    }
-
-    public sealed record Created(PositiveMoneyAmount Amount) : PositiveMoneyAmountCreationResult;
-
-    public sealed record Invalid : PositiveMoneyAmountCreationResult
-    {
-        public static Invalid Instance { get; } = new();
-
-        private Invalid()
-        {
-        }
-    }
 }
