@@ -60,7 +60,7 @@ Planned Amount
 : The amount assigned to a budget item when the budget is created or updated. Funding planned amounts represent expected funding. Consumption planned amounts represent planned spending.
 
 Actual Amount
-: The total value of transactions allocated to a budget item.
+: The effective total derived from transactions allocated to a budget item. The calculation depends on both the budget item kind and the transaction type.
 
 Remaining Amount
 : The difference between a budget item's planned amount and its actual amount.
@@ -114,7 +114,7 @@ Each budget item has:
 - A kind (`Funding` or `Consumption`).
 - A planned amount.
 
-The kind determines the semantic purpose of the budget item and never changes as a result of actual financial activity. Refunds, corrections, underpayments, and overpayments affect the item's actual amount but do not change its kind.
+The kind determines the semantic purpose of the budget item and never changes as a result of actual financial activity. Refunds, corrections, reversals, underpayments, and overpayments affect the item's actual amount but do not change its kind.
 
 ## 4.3 Transaction
 
@@ -142,7 +142,7 @@ Allocations provide the relationship between real-world financial activity and t
 
 A transaction may be allocated to at most one budget item. An allocation applies the full transaction amount to the selected budget item.
 
-Allocations are owned by the Transactions boundary because the transaction must control whether its amount has already been allocated.
+Allocations are owned by the Transactions boundary because allocation state is part of transaction usage: a transaction may be unallocated, allocated to one budget item, or have its allocation removed.
 
 ## 4.5 Budget Summary
 
@@ -160,7 +160,7 @@ Each funding and consumption item includes:
 Where:
 
 - **Planned Amount** is the amount defined by the budget.
-- **Actual Amount** is the total value of allocated transactions for the budget item.
+- **Actual Amount** is the effective total derived from allocated transactions for the budget item. The calculation depends on both the budget item kind and the transaction type.
 - **Remaining Amount** is the difference between the planned amount and the actual amount.
 
 The summary also includes:
@@ -566,14 +566,13 @@ Owns:
 
 - Audit records.
 
-Each audit record must include:
+Each audit record must include enough information to understand:
 
-- Timestamp.
-- Operation.
-- Target ID.
-- Old value.
-- New value.
-- User.
+- When the change occurred.
+- Who performed the change.
+- What operation was performed.
+- What resource was affected.
+- The meaningful before and after state, where applicable.
 
 The Audit boundary is an architectural concern. It should not introduce additional domain concepts into the core budgeting model.
 
@@ -628,7 +627,29 @@ The frontend should use API responses shaped for user workflows rather than expo
 
 The diagram describes logical ownership. It does not require separate processes, separate databases, or asynchronous integration.
 
-## 8. Data Storage
+## 8. Application Architecture
+
+The application should use Vertical Slice Architecture as its primary application structure.
+
+Vertical Slice Architecture organises code around user-facing features and use cases rather than around horizontal technical layers. Each slice should contain the application logic, validation, request and response models, persistence interaction, and tests needed to support that feature.
+
+The purpose of this structure is to make features easier to understand, change, test, and review independently.
+
+BudgetyTzar is currently simple enough that a less structured approach could also work. Vertical Slice Architecture is still preferred because it is a lightweight, well-understood pattern that supports future growth without requiring a major architectural refactor.
+
+The application should use lightweight domain-driven design principles within slices where they improve the model. This means:
+
+- Use ubiquitous language consistently.
+- Make business invariants explicit.
+- Prefer domain concepts over primitive data structures where doing so improves correctness.
+- Keep illegal states difficult to represent.
+- Keep domain behaviour close to the concepts that own the rules.
+
+The application does not require a full tactical domain-driven design implementation. Aggregates, value objects, domain services, repositories, events, and other domain-driven design patterns should be introduced only where they solve a clear problem in the current model.
+
+Vertical slices and logical boundaries are complementary. Vertical slices organise feature implementation. Logical boundaries define ownership of data, rules, and language. A slice may coordinate across boundaries where required by a use case, but it must not blur ownership between boundaries.
+
+## 9. Data Storage
 
 Recommended storage:
 
@@ -639,22 +660,22 @@ Storage rules:
 - Monetary values must use decimal-compatible database types.
 - Floating point types must not be used for monetary values.
 - The money scale is two decimal places.
-- Monetary values must support values from `0.00` to `99999999.99`.
+- Stored input monetary amounts, such as budget item planned amounts and transaction amounts, must support values from `0.00` to `99999999.99`.
 - Budget item planned amounts and transaction amounts must be greater than `0.00`.
-- Derived totals, actual amounts, and remaining amounts may be `0.00`.
+- Derived values, including actual amounts, remaining amounts, and reporting totals, may be zero or negative where permitted by the calculation rules.
 - The model does not require rounding rules because reporting calculations only sum stored monetary values.
 - Logical boundaries should have clear table ownership.
 - Cross-boundary writes should be avoided.
 - Transactions are stored independently of budgets.
 - Transaction allocations store the association between a transaction and a budget item.
 
-## 9. APIs
+## 10. APIs
 
 APIs should be HTTP/JSON for user-driven commands and queries.
 
 The routes below define the supported public API contract for the application.
 
-### 9.1 Budgeting API
+### 10.1 Budgeting API
 
 ```http
 POST   /api/budgets
@@ -691,7 +712,7 @@ Example change budget item planned amount request:
 
 The Budgeting API should not expose transaction entry as a child operation of a budget, because transactions are independent of budgets.
 
-### 9.2 Transaction API
+### 10.2 Transaction API
 
 ```http
 POST /api/transactions
@@ -709,7 +730,7 @@ The `allocationStatus` query parameter supports `allocated`, `unallocated`, and 
 
 Deleting a transaction must be rejected while the transaction is allocated to a budget item.
 
-### 9.3 Transaction Allocation API
+### 10.3 Transaction Allocation API
 
 ```http
 PUT    /api/transactions/{transactionId}/allocation
@@ -742,7 +763,7 @@ If the transaction is already allocated to the requested budget item, `PUT /api/
 
 If the transaction is already allocated to a different budget item, `PUT /api/transactions/{transactionId}/allocation` must reject the request.
 
-### 9.4 Reporting API
+### 10.4 Reporting API
 
 ```http
 GET /api/budgets/{budgetId}/summary
@@ -750,7 +771,7 @@ GET /api/budgets/{budgetId}/summary
 
 The Budget Summary is the primary reporting view.
 
-### 9.5 Example Budget Summary Response
+### 10.5 Example Budget Summary Response
 
 ```json
 {
@@ -792,9 +813,9 @@ The Budget Summary is the primary reporting view.
 }
 ```
 
-## 10. User Interface
+## 11. User Interface
 
-### 10.1 Main Views
+### 11.1 Main Views
 
 - Budget list.
 - Budget detail.
@@ -806,7 +827,7 @@ The Budget Summary is the primary reporting view.
 - Reports.
 - Audit timeline, where implemented.
 
-### 10.2 Budget Detail
+### 11.2 Budget Detail
 
 The Budget Detail view should show:
 
@@ -819,7 +840,7 @@ The Budget Detail view should show:
 
 The UI should present funding and consumption clearly and separately where doing so improves understanding.
 
-### 10.3 Budget Summary
+### 11.3 Budget Summary
 
 The Budget Summary should show:
 
@@ -846,7 +867,7 @@ Negative remaining amounts should be visible and understandable:
 - Negative remaining funding means more funding was received than planned.
 - Negative remaining consumption means spending exceeded the planned amount.
 
-### 10.4 Transaction Allocation Workflow
+### 11.4 Transaction Allocation Workflow
 
 The allocation workflow should show:
 
@@ -864,7 +885,7 @@ The allocation workflow must make it clear that:
 - An allocation applies the full transaction amount.
 - Transaction type and budget item kind are different concepts.
 
-### 10.5 Reports
+### 11.5 Reports
 
 Reports should include:
 
@@ -877,11 +898,13 @@ Reports should include:
 
 Reports should use the same terms as the domain model.
 
-## 11. Business Rules
+## 12. Domain Invariants and Business Rule Summary
+
+This section summarises the rules defined throughout the functional requirements. If there is a conflict, the more detailed functional requirement should be treated as authoritative.
 
 - Monetary values must use decimal types, never floating point.
 - Monetary values use two decimal places.
-- Monetary values must be within the range `0.00` to `99999999.99`.
+- Stored input monetary amounts must be within the range `0.00` to `99999999.99`.
 - Each budget has one currency.
 - A budget may exist without budget items.
 - A budget does not have a date range.
@@ -919,7 +942,7 @@ Reports should use the same terms as the domain model.
 - Actual amounts may exceed planned amounts.
 - Remaining amounts may be negative.
 
-## 12. Product Versioning
+## 13. Product Versioning
 
 BudgetyTzar should use one product-wide semantic version for the repository and released application, following SemVer 2.0.0:
 
@@ -948,9 +971,9 @@ Release requirements:
 - Generated version metadata and generated release-note files should be excluded from source control.
 - Local development should provide a versioned commit-message hook that validates Conventional Commits without requiring Node tooling.
 
-## 13. Technology Choices
+## 14. Technology Choices
 
-### 13.1 Backend Stack
+### 14.1 Backend Stack
 
 - .NET current LTS or agreed project version.
 - ASP.NET Core Web API.
@@ -961,7 +984,7 @@ Release requirements:
 - Testcontainers.
 - OpenTelemetry.
 
-### 13.2 Frontend Stack
+### 14.2 Frontend Stack
 
 - TypeScript.
 - React, Next.js, Blazor, or another agreed frontend framework.
@@ -969,7 +992,7 @@ Release requirements:
 - A charting library such as Recharts, if richer reporting charts are implemented.
 - Playwright for end-to-end tests.
 
-### 13.3 Infrastructure
+### 14.3 Infrastructure
 
 - Docker.
 - Docker Compose.
@@ -978,7 +1001,43 @@ Release requirements:
 - OpenTelemetry Collector.
 - Prometheus and Grafana.
 
-## 14. Testing Strategy
+## 15. Development Process
+
+Development should proceed incrementally using feature slices or smaller reviewable changes.
+
+Each increment should be small enough to understand, test, and review independently. A feature slice may be split into smaller increments where that reduces risk or improves clarity.
+
+Development should follow test-driven development where practical:
+
+1. Define the externally observable behaviour required by the increment.
+2. Review the relevant domain, API, observability, security, privacy, audit, and operational requirements before implementation begins.
+3. Add or update failing tests that describe the required behaviour.
+4. Implement the smallest change needed to make the tests pass.
+5. Refactor while keeping the tests passing.
+6. Update this specification where the increment clarifies, changes, or adds product, domain, API, observability, security, privacy, audit, or operational requirements.
+
+Before implementing each feature slice or smaller increment, the developer must explicitly review whether the increment requires changes to:
+
+- Domain rules and invariants.
+- API behaviour and response shapes.
+- Validation and error handling.
+- Authorisation and ownership rules.
+- Audit requirements.
+- Structured logging.
+- Metrics.
+- Distributed tracing.
+- Health checks.
+- Sensitive data handling.
+- Privacy requirements.
+- Documentation.
+
+Observability and security requirements must be considered at the beginning of each increment, not after implementation. If the increment introduces new endpoints, commands, queries, failure modes, background processing, cross-boundary dependencies, sensitive data handling, or operationally important behaviour, the relevant observability, security, privacy, and audit requirements must be refined in this specification as part of the same increment.
+
+The result of this review may be that no specification change is required. That decision should be deliberate rather than accidental.
+
+Implementation should not introduce architectural patterns, abstractions, infrastructure, observability mechanisms, or security mechanisms that are not justified by the current increment or by an explicit requirement in this specification.
+
+## 16. Testing Strategy
 
 The testing strategy should protect refactoring by making supported user-facing behaviour observable through automated tests. The most important regression protection should come from tests that exercise supported use cases through the public HTTP API.
 
@@ -986,7 +1045,7 @@ Tests should verify externally observable application behaviour rather than impl
 
 Database-level assertions are appropriate only for persistence-specific concerns such as schema shape, migration behaviour, decimal precision, provider-specific query behaviour, indexes, or constraints that cannot be adequately verified through the public API.
 
-### 14.1 API Behaviour Tests
+### 16.1 API Behaviour Tests
 
 API behaviour tests are the primary automated test suite for domain use cases and regression protection.
 
@@ -1022,7 +1081,7 @@ API behaviour tests should cover:
 
 API behaviour tests should be written at the level of use cases and business rules. They should remain stable across internal refactoring as long as the public API behaviour remains stable.
 
-### 14.2 Unit Tests
+### 16.2 Unit Tests
 
 Unit tests are supplementary. They should be used where they provide clearer, faster, or more focused feedback than API behaviour tests.
 
@@ -1036,7 +1095,7 @@ Unit tests are appropriate for:
 
 Unit tests should not become the main specification of user-facing behaviour when the same behaviour is better expressed through the public API.
 
-### 14.3 PostgreSQL Integration Tests
+### 16.3 PostgreSQL Integration Tests
 
 PostgreSQL integration tests should cover persistence-specific behaviour that cannot be adequately protected by API behaviour tests alone.
 
@@ -1052,7 +1111,7 @@ Use Testcontainers where practical.
 
 SQLite or in-memory tests may be used for fast feedback, but they do not replace PostgreSQL integration coverage for persistence requirements.
 
-### 14.4 Contract Tests
+### 16.4 Contract Tests
 
 Cover:
 
@@ -1060,7 +1119,7 @@ Cover:
 - Reporting API response contracts consumed by the frontend.
 - Backward-compatible API evolution.
 
-### 14.5 End-to-End Tests
+### 16.5 End-to-End Tests
 
 End-to-end tests should cover representative user workflows through the UI and API together. They should be fewer in number than API behaviour tests and should focus on confidence that the application works as a whole.
 
@@ -1080,7 +1139,7 @@ Cover:
 - View unallocated transactions.
 - Validate that a budget item with allocations cannot be deleted.
 
-## 15. Observability
+## 17. Observability
 
 The application should include:
 
@@ -1100,7 +1159,7 @@ Important signals:
 - Budget Summary query latency.
 - Database connection and query health.
 
-## 16. Security and Privacy
+## 18. Security and Privacy
 
 - Use HTTPS in deployed environments.
 - Protect APIs with authentication.
@@ -1111,9 +1170,9 @@ Important signals:
 - Support data export.
 - Support full data deletion for the user.
 
-## 17. Deployment
+## 19. Deployment
 
-### 17.1 Local Development
+### 19.1 Local Development
 
 Use Docker Compose for:
 
@@ -1122,13 +1181,13 @@ Use Docker Compose for:
 - Frontend.
 - Observability dependencies, where useful.
 
-### 17.2 Containerised Deployment
+### 19.2 Containerised Deployment
 
 The application should provide container images for deployable components.
 
 Container image tags should include explicit SemVer tags such as `budgetytzar-api:0.2.0`; `latest` may exist only as a convenience tag and must not be the release identity.
 
-## 18. Documentation and Repository Expectations
+## 20. Documentation and Repository Expectations
 
 The repository should include:
 
