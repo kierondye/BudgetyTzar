@@ -41,13 +41,20 @@ public sealed class TransactionStore
         return new CreateTransactionResult.Created(transaction);
     }
 
-    public IReadOnlyList<Transaction> GetAll()
+    public IReadOnlyList<Transaction> GetAll(
+        TransactionFilters? filters = null,
+        Func<Guid, bool>? isTransactionAllocated = null)
     {
         lock (syncRoot)
         {
-            return transactionIds
+            var allTransactions = transactionIds
                 .Select(transactionId => transactionsById[transactionId])
+                .Where(transaction => filters?.Matches(
+                    transaction,
+                    isTransactionAllocated?.Invoke(transaction.TransactionId) ?? false) ?? true)
                 .ToList();
+
+            return allTransactions;
         }
     }
 
@@ -136,6 +143,83 @@ public sealed record Transaction(
     DateOnly TransactionDate,
     PositiveMoneyAmount Amount,
     CurrencyCode Currency);
+
+public sealed record TransactionFilters(
+    DateOnly? From,
+    DateOnly? To,
+    TransactionAllocationStatus AllocationStatus)
+{
+    public bool Matches(Transaction transaction, bool isAllocated)
+    {
+        if (From is not null && transaction.TransactionDate < From.Value)
+        {
+            return false;
+        }
+
+        if (To is not null && transaction.TransactionDate > To.Value)
+        {
+            return false;
+        }
+
+        return AllocationStatus.Matches(isAllocated);
+    }
+}
+
+public readonly record struct TransactionAllocationStatus
+{
+    public static TransactionAllocationStatus All { get; } = new("all");
+    public static TransactionAllocationStatus Allocated { get; } = new("allocated");
+    public static TransactionAllocationStatus Unallocated { get; } = new("unallocated");
+
+    private TransactionAllocationStatus(string value)
+    {
+        Value = value;
+    }
+
+    private string Value { get; }
+
+    public static bool TryCreate(string? value, out TransactionAllocationStatus allocationStatus)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            allocationStatus = All;
+            return true;
+        }
+
+        if (string.Equals(value, Allocated.Value, StringComparison.Ordinal))
+        {
+            allocationStatus = Allocated;
+            return true;
+        }
+
+        if (string.Equals(value, Unallocated.Value, StringComparison.Ordinal))
+        {
+            allocationStatus = Unallocated;
+            return true;
+        }
+
+        if (string.Equals(value, All.Value, StringComparison.Ordinal))
+        {
+            allocationStatus = All;
+            return true;
+        }
+
+        allocationStatus = All;
+        return false;
+    }
+
+    public bool Matches(bool isAllocated)
+    {
+        if (this == All)
+        {
+            return true;
+        }
+
+        return this == Allocated
+            ? isAllocated
+            : !isAllocated;
+    }
+}
 
 public abstract record CreateTransactionResult
 {
