@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 
 namespace BudgetyTzar.Api.Features.Budgeting;
@@ -45,7 +44,11 @@ public static partial class BudgetEndpoints
 
     private static IResult GetBudgets(BudgetStore store)
     {
-        return Results.Ok(store.GetAll().Select(BudgetListItemResponse.FromBudget));
+        var budgets = store.GetAll()
+            .Select(BudgetListItemResponse.FromBudget)
+            .ToList();
+
+        return Results.Ok(budgets);
     }
 
     private static IResult GetBudget(Guid budgetId, BudgetStore store)
@@ -76,61 +79,4 @@ public static partial class BudgetEndpoints
 
     [GeneratedRegex("^[A-Z]{3}$")]
     private static partial Regex CurrencyCodePattern();
-}
-
-public sealed record CreateBudgetRequest(string Name, string Currency);
-
-public sealed record BudgetResponse(Guid BudgetId, string Name, string Currency, IReadOnlyList<BudgetItemResponse> BudgetItems)
-{
-    public static BudgetResponse FromBudget(Budget budget)
-    {
-        return new BudgetResponse(budget.BudgetId, budget.Name, budget.Currency, []);
-    }
-}
-
-public sealed record BudgetListItemResponse(Guid BudgetId, string Name, string Currency)
-{
-    public static BudgetListItemResponse FromBudget(Budget budget)
-    {
-        return new BudgetListItemResponse(budget.BudgetId, budget.Name, budget.Currency);
-    }
-}
-
-public sealed record BudgetItemResponse(Guid BudgetItemId, string Name, string Kind, string PlannedAmount);
-
-public sealed record Budget(Guid BudgetId, string Name, string Currency);
-
-public sealed class BudgetStore
-{
-    private readonly object syncRoot = new();
-    private readonly ConcurrentDictionary<Guid, Budget> budgetsById = new();
-    private readonly List<Guid> budgetIds = [];
-
-    public Budget Create(string name, string currency)
-    {
-        var budget = new Budget(Guid.NewGuid(), name, currency);
-
-        lock (syncRoot)
-        {
-            budgetsById[budget.BudgetId] = budget;
-            budgetIds.Add(budget.BudgetId);
-        }
-
-        return budget;
-    }
-
-    public IReadOnlyList<Budget> GetAll()
-    {
-        lock (syncRoot)
-        {
-            return budgetIds
-                .Select(budgetId => budgetsById[budgetId])
-                .ToList();
-        }
-    }
-
-    public Budget? Get(Guid budgetId)
-    {
-        return budgetsById.GetValueOrDefault(budgetId);
-    }
 }
