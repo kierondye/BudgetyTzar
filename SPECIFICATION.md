@@ -4,9 +4,9 @@
 
 BudgetyTzar is a personal budgeting application that helps users plan how they intend to use their money, record what actually happened, and understand the difference between the two.
 
-The application treats a budget as a financial plan. A budget defines planned funding and planned spending for a budgeting period, while financial transactions represent real-world activity that occurs independently of the plan. Transactions can be allocated to budget items to compare planned amounts with actual income and expenditure.
+The application treats a budget as a financial plan. A budget defines planned funding and planned spending for a user-defined purpose, while financial transactions represent real-world activity that occurs independently of the plan. Transactions can be allocated to budget items to compare planned amounts with actual income and expenditure.
 
-The domain model aims to remain simple, expressive, and aligned with the ubiquitous language of personal budgeting. It should accurately represent the core concepts of budgeting while providing a solid foundation for future capabilities such as historical budget versions, split transaction allocations, and richer reporting, without introducing unnecessary complexity into the initial model.
+The domain model aims to remain simple, expressive, and aligned with the ubiquitous language of personal budgeting. It should accurately represent the core concepts of budgeting without introducing unnecessary complexity into the model.
 
 The core product model is intentionally small:
 
@@ -34,7 +34,7 @@ The core product model is intentionally small:
 - Design for reliability and resilience through appropriate validation, error handling, idempotency, and testing.
 - Ensure supported use cases can be verified through automated API-level behaviour tests that exercise the public HTTP API without inspecting backend SQL state.
 - Prefer API-level behaviour tests as the primary regression safety net for public behaviour, while using lower-level unit tests selectively where they provide clearer or faster feedback for domain calculations, invariants, or edge cases that are awkward to express through the API.
-- Design the application so that future capabilities can be introduced without requiring fundamental changes to the core domain model.
+- Design the application so that the core domain model can evolve without requiring fundamental redesign.
 
 ## 3. Target User
 
@@ -45,7 +45,7 @@ Individuals who want to proactively plan their finances by creating budgets and 
 ### 4.0 Ubiquitous Language
 
 Budget
-: A financial plan for a budgeting period. A budget defines the planned funding and planned consumption for that period. It does not own transactions, which represent real-world financial activity.
+: A financial plan for a user-defined purpose. A budget defines planned funding and planned consumption. It does not own transactions, which represent real-world financial activity.
 
 Budget Item
 : A named element of a budget representing either a source of funding or an area of planned consumption. Each budget item has a planned amount.
@@ -60,7 +60,7 @@ Planned Amount
 : The amount assigned to a budget item when the budget is created or updated. Funding planned amounts represent expected funding. Consumption planned amounts represent planned spending.
 
 Actual Amount
-: The total value of transactions allocated to a budget item within the budgeting period.
+: The total value of transactions allocated to a budget item.
 
 Remaining Amount
 : The difference between a budget item's planned amount and its actual amount.
@@ -76,9 +76,9 @@ Budget Summary
 
 ## 4.1 Budget
 
-A budget represents a financial plan for a budgeting period.
+A budget represents a financial plan for a user-defined purpose.
 
-A budget contains one or more budget items that define the planned funding and planned consumption for that period. Transactions are not owned by a budget and represent real-world financial activity independently of the budget.
+A budget may contain budget items that define planned funding and planned consumption. A budget can exist without budget items, although an empty budget has no useful budgeting value until items are added. Transactions are not owned by a budget and represent real-world financial activity independently of the budget.
 
 A budget has:
 
@@ -88,7 +88,9 @@ A budget has:
 
 The total planned funding must always be greater than or equal to the total planned consumption.
 
-All monetary values within a budget use the same currency. The initial model supports one currency per budget and does not perform exchange-rate conversion.
+The model does not assign a start date or end date to a budget. Budgets may overlap in real-world time, such as separate household and business budgets for the same calendar month. A transaction's date does not restrict whether it can be allocated to a budget item.
+
+All monetary values within a budget use the same currency. The model supports one currency per budget and does not perform exchange-rate conversion.
 
 ## 4.2 Budget Item
 
@@ -118,17 +120,19 @@ The kind determines the semantic purpose of the budget item and never changes as
 
 A transaction represents a real-world financial event.
 
-Transactions exist independently of budgets and record money received or money spent. They may later be allocated to budget items to compare actual financial activity with the original budget.
+Transactions exist independently of budgets and record money received or money spent. They may be allocated to budget items to compare actual financial activity with the original budget.
 
 Each transaction has:
 
 - Amount.
-- Currency
+- Currency.
 - Type (`Credit` or `Debit`).
 - Transaction date.
 - Description.
 
 Transaction amounts are always positive. The transaction type determines whether the transaction represents money received or money spent.
+
+The transaction date records when the real-world financial activity occurred. It does not constrain allocation to a budget item.
 
 ## 4.4 Transaction Allocation
 
@@ -137,6 +141,8 @@ A transaction allocation associates a transaction with a budget item.
 Allocations provide the relationship between real-world financial activity and the budget plan, allowing planned amounts to be compared with actual amounts.
 
 A transaction may be allocated to at most one budget item. An allocation applies the full transaction amount to the selected budget item.
+
+Allocations are owned by the Transactions boundary because the transaction must control whether its amount has already been allocated.
 
 ## 4.5 Budget Summary
 
@@ -255,6 +261,14 @@ A transaction may exist without being allocated to a budget item.
 
 Unallocated transactions must not affect budget actuals, remaining amounts, or budget summary totals.
 
+The system must allow a user to delete a transaction.
+
+The system must prevent a transaction from being deleted while it is allocated to a budget item.
+
+The user must remove the transaction allocation before deleting the transaction.
+
+A deleted transaction must not affect budget actuals, remaining amounts, or budget summary totals.
+
 ### 5.4 Transaction Allocation
 
 The system must allow a user to allocate a transaction to a budget item.
@@ -269,6 +283,10 @@ An allocation applies the full transaction amount to the selected budget item.
 The system must allow a user to remove a transaction allocation.
 
 The system must prevent a transaction from being allocated to more than one budget item.
+
+If the transaction is already allocated to the same budget item requested by the allocation command, the command must succeed without changing state.
+
+If the transaction is already allocated to another budget item, the command must be rejected.
 
 The system must prevent a transaction from being allocated to a budget item that does not exist.
 
@@ -434,11 +452,11 @@ The Budget Summary is shaped for reporting. It does not need to mirror the inter
 
 ## 7. Logical Architecture and Boundaries
 
-The initial architecture should prioritise clear domain boundaries without requiring unnecessary deployment complexity.
+The architecture should prioritise clear domain boundaries without requiring unnecessary deployment complexity.
 
-The application may be implemented as a modular monolith, with modules separated by ownership of domain concepts. Separately deployed services may be introduced later if there is a clear product or operational reason.
+The application may be implemented as a modular monolith, with modules separated by ownership of domain concepts. Physical deployment should follow clear product or operational requirements.
 
-The initial logical boundaries are:
+The logical boundaries are:
 
 - Identity.
 - Budgeting.
@@ -456,9 +474,11 @@ Responsibilities:
 - User authentication.
 - User profile identity information.
 - Identity claims required by application services.
+- Providing an authenticated identity to application and domain boundary services.
 
 Does not own:
 
+- Authorisation decisions for domain resources.
 - The ownership model for budgets.
 - The ownership model for transactions.
 - Domain-specific access rules for budgets, transactions, or allocations.
@@ -467,6 +487,8 @@ Suggested implementation:
 
 - Use an external identity provider with OpenID Connect where practical.
 - The application should not implement its own password storage or identity management unless there is a deliberate product reason.
+
+Authorisation is a separate concern from authentication. The Identity boundary authenticates the user and supplies identity claims. Domain boundaries use the authenticated identity to enforce ownership and access rules for their own resources.
 
 ### 7.2 Budgeting Boundary
 
@@ -515,6 +537,8 @@ Does not own:
 
 The Transactions boundary may need to query or reference budget item and budget currency information in order to validate allocations. That dependency should be explicit and should not make transactions children of budgets.
 
+The Reporting boundary needs allocation data to calculate budget summaries, and the Budgeting boundary needs allocation existence checks to prevent deletion of allocated budget items. Those read dependencies must be explicit. They must not move allocation ownership out of the Transactions boundary.
+
 ### 7.4 Reporting Boundary
 
 Responsibilities:
@@ -541,6 +565,15 @@ Responsibilities:
 Owns:
 
 - Audit records.
+
+Each audit record must include:
+
+- Timestamp.
+- Operation.
+- Target ID.
+- Old value.
+- New value.
+- User.
 
 The Audit boundary is an architectural concern. It should not introduce additional domain concepts into the core budgeting model.
 
@@ -593,7 +626,7 @@ The frontend should use API responses shaped for user workflows rather than expo
                        +-----------+
 ```
 
-The diagram describes logical ownership. It does not require separate processes, separate databases, or asynchronous integration in the initial implementation.
+The diagram describes logical ownership. It does not require separate processes, separate databases, or asynchronous integration.
 
 ## 8. Data Storage
 
@@ -605,6 +638,11 @@ Storage rules:
 
 - Monetary values must use decimal-compatible database types.
 - Floating point types must not be used for monetary values.
+- The money scale is two decimal places.
+- Monetary values must support values from `0.00` to `99999999.99`.
+- Budget item planned amounts and transaction amounts must be greater than `0.00`.
+- Derived totals, actual amounts, and remaining amounts may be `0.00`.
+- The model does not require rounding rules because reporting calculations only sum stored monetary values.
 - Logical boundaries should have clear table ownership.
 - Cross-boundary writes should be avoided.
 - Transactions are stored independently of budgets.
@@ -614,7 +652,7 @@ Storage rules:
 
 APIs should be HTTP/JSON for user-driven commands and queries.
 
-The example routes below are illustrative. They describe the intended product capabilities and domain boundaries rather than a final API contract.
+The routes below define the supported public API contract for the application.
 
 ### 9.1 Budgeting API
 
@@ -659,12 +697,17 @@ The Budgeting API should not expose transaction entry as a child operation of a 
 POST /api/transactions
 GET  /api/transactions
 GET  /api/transactions/{transactionId}
-GET  /api/transactions?from={date}&to={date}&allocationStatus={status}
+GET  /api/transactions?from={date}&to={date}&allocationStatus={allocationStatus}
+DELETE /api/transactions/{transactionId}
 ```
 
 The Transaction API owns transaction recording and transaction retrieval.
 
 Transactions may exist without being allocated to a budget item.
+
+The `allocationStatus` query parameter supports `allocated`, `unallocated`, and `all`.
+
+Deleting a transaction must be rejected while the transaction is allocated to a budget item.
 
 ### 9.3 Transaction Allocation API
 
@@ -692,6 +735,12 @@ The system must validate that:
 - The transaction currency matches the currency of the budget that owns the budget item.
 
 The allocation applies the full transaction amount.
+
+If the transaction is not allocated, `PUT /api/transactions/{transactionId}/allocation` creates the allocation and returns `200 OK`.
+
+If the transaction is already allocated to the requested budget item, `PUT /api/transactions/{transactionId}/allocation` returns `200 OK` and leaves state unchanged.
+
+If the transaction is already allocated to a different budget item, `PUT /api/transactions/{transactionId}/allocation` must reject the request.
 
 ### 9.4 Reporting API
 
@@ -831,10 +880,15 @@ Reports should use the same terms as the domain model.
 ## 11. Business Rules
 
 - Monetary values must use decimal types, never floating point.
+- Monetary values use two decimal places.
+- Monetary values must be within the range `0.00` to `99999999.99`.
 - Each budget has one currency.
+- A budget may exist without budget items.
+- A budget does not have a date range.
 - All planned amounts within a budget use the budget currency.
 - Budget item planned amounts must be positive.
 - Transaction amounts must be positive.
+- A transaction's date must not restrict whether the transaction can be allocated to a budget item.
 - Derived actual amounts may be negative.
 - Derived remaining amounts may be negative.
 - A budget item kind must be either `Funding` or `Consumption`.
@@ -847,9 +901,13 @@ Reports should use the same terms as the domain model.
 - Transaction type does not determine whether a transaction is funding or consumption.
 - Transactions are independent of budgets.
 - A transaction may exist without being allocated to a budget item.
+- A transaction must not be deleted while it is allocated to a budget item.
+- A deleted transaction must not affect budget actuals, remaining amounts, or Budget Summary totals.
 - Unallocated transactions must not affect budget actuals, remaining amounts, or Budget Summary totals.
 - A transaction may be allocated to at most one budget item.
 - An allocation applies the full transaction amount to the selected budget item.
+- Allocating a transaction to the same budget item it is already allocated to must succeed without changing state.
+- Allocating a transaction to a different budget item while it already has an allocation must be rejected.
 - A transaction must not be allocated to a budget item that does not exist.
 - A transaction must not be allocated to a budget item if the transaction currency does not match the budget currency.
 - A budget item must not be deleted while any transaction is allocated to it.
@@ -886,7 +944,6 @@ Release requirements:
 - The runtime API should expose product version metadata separately from health status.
 - OpenAPI metadata should include the product SemVer.
 - Container image tags should include explicit SemVer tags such as `budgetytzar-api:0.2.0`; `latest` may exist only as a convenience tag and must not be the release identity.
-- Kubernetes manifests or Helm values should reference explicit SemVer image tags where Kubernetes deployment is used.
 - GitHub Releases should be the human changelog and release-notes surface.
 - Generated version metadata and generated release-note files should be excluded from source control.
 - Local development should provide a versioned commit-message hook that validates Conventional Commits without requiring Node tooling.
@@ -919,12 +976,11 @@ Release requirements:
 - GitHub Actions.
 - PostgreSQL.
 - OpenTelemetry Collector.
-- Prometheus and Grafana, or cloud-native monitoring.
-- Kubernetes, Helm or Kustomize, and Infrastructure as Code may be introduced when deployment requirements justify them.
+- Prometheus and Grafana.
 
 ## 14. Testing Strategy
 
-The testing strategy should protect future refactoring by making supported user-facing behaviour observable through automated tests. The most important regression protection should come from tests that exercise supported use cases through the public HTTP API.
+The testing strategy should protect refactoring by making supported user-facing behaviour observable through automated tests. The most important regression protection should come from tests that exercise supported use cases through the public HTTP API.
 
 Tests should verify externally observable application behaviour rather than implementation details. For product behaviour, tests should drive the application through API requests and assert against API responses, including status codes, validation errors, resource representations, and reporting results. They should not verify behaviour by directly inspecting backend SQL state.
 
@@ -939,21 +995,28 @@ These tests should exercise the application through HTTP/JSON APIs and verify be
 API behaviour tests should cover:
 
 - Budget creation, retrieval, and renaming.
+- Budget creation without budget items.
 - Budget item creation, retrieval, renaming, planned amount changes, deletion, and validation.
 - Rejection of budget item changes that would make total planned consumption exceed total planned funding.
 - Rejection of attempts to change a budget item's kind after creation.
 - Rejection of budget item deletion while transactions are allocated to it.
 - Transaction recording and retrieval.
+- Transaction deletion.
+- Rejection of transaction deletion while the transaction is allocated to a budget item.
 - Transaction allocation and allocation removal.
+- Allocation of a transaction to a budget item regardless of the transaction date.
 - Rejection of allocation to a missing budget item.
 - Rejection of allocation when the transaction currency does not match the budget currency.
-- Rejection of more than one allocation for a transaction.
+- Successful idempotent allocation when a transaction is already allocated to the requested budget item.
+- Rejection of allocation to a different budget item when the transaction is already allocated.
 - Full-amount allocation semantics.
 - Unallocated transactions not affecting budget actuals, remaining amounts, or Budget Summary totals.
+- Deleted transactions not affecting budget actuals, remaining amounts, or Budget Summary totals.
 - Actual amount calculation for funding items.
 - Actual amount calculation for consumption items.
 - Remaining amount calculation.
 - Negative actual and remaining amount scenarios.
+- Monetary scale and range validation.
 - Budget Summary response shape and calculations.
 - Runtime version endpoint and OpenAPI version metadata.
 
@@ -1012,6 +1075,7 @@ Cover:
 - Allocate a credit transaction to a consumption item as a refund.
 - Allocate a debit transaction to a funding item as a correction.
 - Remove a transaction allocation.
+- Delete a transaction.
 - View the Budget Summary.
 - View unallocated transactions.
 - Validate that a budget item with allocations cannot be deleted.
@@ -1024,13 +1088,13 @@ The application should include:
 - Correlation IDs.
 - Distributed tracing with OpenTelemetry.
 - Metrics for API requests.
-- Health endpoints.
+- Health endpoints implemented using standard .NET health check infrastructure.
 - Dashboard for service health.
 
 Important signals:
 
-- API error rate.
-- API latency.
+- Error rate for each endpoint.
+- Latency for each endpoint, including `p90`, `p95`, and `p99`.
 - Validation failure rate.
 - Transaction allocation failure rate.
 - Budget Summary query latency.
@@ -1040,12 +1104,12 @@ Important signals:
 
 - Use HTTPS in deployed environments.
 - Protect APIs with authentication.
+- Enforce domain resource authorisation using the authenticated identity supplied by the Identity boundary.
 - Store secrets outside source control.
 - Avoid logging full bank transaction descriptions if they may contain sensitive information.
 - Avoid logging unnecessary financial details.
 - Support data export.
 - Support full data deletion for the user.
-- Encrypt cloud databases at rest where cloud databases are used.
 
 ## 17. Deployment
 
@@ -1063,30 +1127,6 @@ Use Docker Compose for:
 The application should provide container images for deployable components.
 
 Container image tags should include explicit SemVer tags such as `budgetytzar-api:0.2.0`; `latest` may exist only as a convenience tag and must not be the release identity.
-
-### 17.3 Kubernetes
-
-Kubernetes deployment may be introduced when deployment requirements justify it.
-
-Where Kubernetes is used, each deployed component should define:
-
-- Deployment.
-- Service.
-- ConfigMap.
-- Secret references.
-- Readiness probe.
-- Liveness probe.
-- Explicit SemVer image tag for release deployments.
-
-### 17.4 Cloud
-
-If cloud deployment is introduced, use Infrastructure as Code to provision required resources such as:
-
-- Container registry.
-- PostgreSQL.
-- DNS.
-- TLS certificates.
-- Monitoring.
 
 ## 18. Documentation and Repository Expectations
 
