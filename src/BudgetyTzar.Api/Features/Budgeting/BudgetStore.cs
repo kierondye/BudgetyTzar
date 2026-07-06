@@ -8,7 +8,7 @@ public sealed class BudgetStore
 
     public Budget Create(string name, CurrencyCode currency)
     {
-        var budget = new Budget(Guid.NewGuid(), name, currency);
+        var budget = new Budget(Guid.NewGuid(), name, currency, []);
 
         lock (syncRoot)
         {
@@ -52,6 +52,35 @@ public sealed class BudgetStore
             return renamedBudget;
         }
     }
+
+    public BudgetItem? AddBudgetItem(Guid budgetId, string name, BudgetItemKind kind, PlannedAmount plannedAmount)
+    {
+        lock (syncRoot)
+        {
+            if (!budgetsById.TryGetValue(budgetId, out var budget))
+            {
+                return null;
+            }
+
+            var budgetItem = new BudgetItem(Guid.NewGuid(), name, kind, plannedAmount);
+            var budgetItems = budget.BudgetItems.Append(budgetItem).ToList();
+            budgetsById[budgetId] = budget with { BudgetItems = budgetItems };
+
+            return budgetItem;
+        }
+    }
+
+    public BudgetItem? GetBudgetItem(Guid budgetId, Guid budgetItemId)
+    {
+        lock (syncRoot)
+        {
+            return budgetsById.TryGetValue(budgetId, out var budget)
+                ? budget.BudgetItems.SingleOrDefault(budgetItem => budgetItem.BudgetItemId == budgetItemId)
+                : null;
+        }
+    }
 }
 
-public sealed record Budget(Guid BudgetId, string Name, CurrencyCode Currency);
+public sealed record Budget(Guid BudgetId, string Name, CurrencyCode Currency, IReadOnlyList<BudgetItem> BudgetItems);
+
+public sealed record BudgetItem(Guid BudgetItemId, string Name, BudgetItemKind Kind, PlannedAmount PlannedAmount);
