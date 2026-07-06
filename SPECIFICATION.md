@@ -730,7 +730,7 @@ Example create budget request:
 }
 ```
 
-Creating a budget returns `201 Created`, a `Location` header for the created budget resource, and the created budget representation. A newly created budget may have no budget items.
+Creating a budget returns `201 Created`, a `Location` header for the created budget resource, and the created budget representation. A newly created budget may have no budget items. Creating a budget with a name already used by another budget returns `409 Conflict`.
 
 Example budget response:
 
@@ -755,7 +755,7 @@ Example rename budget request:
 }
 ```
 
-Renaming a budget returns `200 OK` with the updated budget representation. Renaming a budget that does not exist returns `404 Not Found`. Rename requests with an empty name return `400 Bad Request` with a problem details response containing field-level errors.
+Renaming a budget returns `200 OK` with the updated budget representation. Renaming a budget that does not exist returns `404 Not Found`. Renaming a budget to a name already used by another budget returns `409 Conflict`. Rename requests with an empty name return `400 Bad Request` with a problem details response containing field-level errors.
 
 Example change budget item planned amount request:
 
@@ -764,6 +764,33 @@ Example change budget item planned amount request:
   "plannedAmount": "450.00"
 }
 ```
+
+Example create budget item request:
+
+```json
+{
+  "name": "Salary",
+  "kind": "Funding",
+  "plannedAmount": "3000.00"
+}
+```
+
+Creating a budget item returns `201 Created`, a `Location` header for the created budget item resource, and the created budget item representation. Creating a budget item for a budget that does not exist returns `404 Not Found`. Creating a budget item with a name already used by another budget item in the same budget returns `409 Conflict`.
+
+Example budget item response:
+
+```json
+{
+  "budgetItemId": "budget-item-guid",
+  "name": "Salary",
+  "kind": "Funding",
+  "plannedAmount": "3000.00"
+}
+```
+
+Listing budget items returns the budget items in the order they were created. Retrieving a budget item that does not exist returns `404 Not Found`.
+
+Budget item creation rejects an empty name, a kind other than `Funding` or `Consumption`, and planned amount values that are not positive decimal strings with exactly two decimal places up to `99999999.99`. Validation failures return `400 Bad Request` with a problem details response containing field-level errors.
 
 The Budgeting API should not expose transaction entry as a child operation of a budget, because transactions are independent of budgets.
 
