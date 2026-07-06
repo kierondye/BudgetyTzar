@@ -1,3 +1,4 @@
+using System.Globalization;
 using BudgetyTzar.Api.Features.Budgeting;
 
 namespace BudgetyTzar.Api.Features.Transactions;
@@ -59,9 +60,24 @@ public static class TransactionEndpoints
         };
     }
 
-    private static IResult GetTransactions(TransactionStore store)
+    private static IResult GetTransactions(
+        TransactionStore store,
+        TransactionAllocationStore allocationStore,
+        string? from,
+        string? to,
+        string? allocationStatus)
     {
-        var transactions = store.GetAll()
+        var validation = ValidateFilters(from, to, allocationStatus);
+
+        if (validation is TransactionFilterValidationResult.Invalid invalid)
+        {
+            return Results.ValidationProblem(invalid.Errors);
+        }
+
+        var valid = (TransactionFilterValidationResult.Valid)validation;
+        var transactions = store.GetAll(
+                valid.Filters,
+                transactionId => allocationStore.Get(transactionId) is not null)
             .Select(TransactionListItemResponse.FromTransaction)
             .ToList();
 
@@ -163,5 +179,66 @@ public static class TransactionEndpoints
         allocationStore.Remove(transactionId);
 
         return Results.NoContent();
+    }
+
+    private static TransactionFilterValidationResult ValidateFilters(
+        string? from,
+        string? to,
+        string? allocationStatus)
+    {
+        var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        DateOnly? parsedFrom = null;
+        DateOnly? parsedTo = null;
+        var parsedAllocationStatus = TransactionAllocationStatus.All;
+
+        if (from is not null)
+        {
+            if (TryParseDateFilter(from, out var filterDate))
+            {
+                parsedFrom = filterDate;
+            }
+            else
+            {
+                errors["from"] = ["From date must use the yyyy-MM-dd format."];
+            }
+        }
+
+        if (to is not null)
+        {
+            if (TryParseDateFilter(to, out var filterDate))
+            {
+                parsedTo = filterDate;
+            }
+            else
+            {
+                errors["to"] = ["To date must use the yyyy-MM-dd format."];
+            }
+        }
+
+        if (!TransactionAllocationStatus.TryCreate(allocationStatus, out parsedAllocationStatus))
+        {
+            errors["allocationStatus"] = ["Allocation status must be allocated, unallocated, or all."];
+        }
+
+        return errors.Count > 0
+            ? new TransactionFilterValidationResult.Invalid(errors)
+            : new TransactionFilterValidationResult.Valid(new TransactionFilters(parsedFrom, parsedTo, parsedAllocationStatus));
+    }
+
+    private static bool TryParseDateFilter(string value, out DateOnly date)
+    {
+        return DateOnly.TryParseExact(
+            value,
+            "yyyy-MM-dd",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out date);
+    }
+
+    private abstract record TransactionFilterValidationResult
+    {
+        public sealed record Valid(TransactionFilters Filters) : TransactionFilterValidationResult;
+
+        public sealed record Invalid(Dictionary<string, string[]> Errors) : TransactionFilterValidationResult;
     }
 }

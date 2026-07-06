@@ -63,6 +63,141 @@ public sealed class TransactionApiTests
     }
 
     [Fact]
+    public async Task List_transactions_filters_by_from_transaction_date()
+    {
+        await using var server = await TestApiServer.StartAsync();
+
+        await CreateTransactionAsync(server, "Salary", "Credit", "2026-07-01", "3000.00", "GBP");
+        var groceries = await CreateTransactionAsync(server, "Groceries", "Debit", "2026-07-02", "42.50", "GBP");
+        var coffee = await CreateTransactionAsync(server, "Coffee", "Debit", "2026-07-03", "3.50", "GBP");
+
+        var transactions = await server.Client.GetFromJsonAsync<IReadOnlyList<TransactionListItemResponse>>(
+            "/api/transactions?from=2026-07-02");
+
+        Assert.NotNull(transactions);
+        Assert.Collection(
+            transactions,
+            transaction => Assert.Equal(groceries.TransactionId, transaction.TransactionId),
+            transaction => Assert.Equal(coffee.TransactionId, transaction.TransactionId));
+    }
+
+    [Fact]
+    public async Task List_transactions_filters_by_to_transaction_date()
+    {
+        await using var server = await TestApiServer.StartAsync();
+
+        var salary = await CreateTransactionAsync(server, "Salary", "Credit", "2026-07-01", "3000.00", "GBP");
+        var groceries = await CreateTransactionAsync(server, "Groceries", "Debit", "2026-07-02", "42.50", "GBP");
+        await CreateTransactionAsync(server, "Coffee", "Debit", "2026-07-03", "3.50", "GBP");
+
+        var transactions = await server.Client.GetFromJsonAsync<IReadOnlyList<TransactionListItemResponse>>(
+            "/api/transactions?to=2026-07-02");
+
+        Assert.NotNull(transactions);
+        Assert.Collection(
+            transactions,
+            transaction => Assert.Equal(salary.TransactionId, transaction.TransactionId),
+            transaction => Assert.Equal(groceries.TransactionId, transaction.TransactionId));
+    }
+
+    [Fact]
+    public async Task List_transactions_combines_date_filters()
+    {
+        await using var server = await TestApiServer.StartAsync();
+
+        await CreateTransactionAsync(server, "Salary", "Credit", "2026-07-01", "3000.00", "GBP");
+        var groceries = await CreateTransactionAsync(server, "Groceries", "Debit", "2026-07-02", "42.50", "GBP");
+        await CreateTransactionAsync(server, "Coffee", "Debit", "2026-07-03", "3.50", "GBP");
+
+        var transactions = await server.Client.GetFromJsonAsync<IReadOnlyList<TransactionListItemResponse>>(
+            "/api/transactions?from=2026-07-02&to=2026-07-02");
+
+        Assert.NotNull(transactions);
+        var transaction = Assert.Single(transactions);
+        Assert.Equal(groceries.TransactionId, transaction.TransactionId);
+    }
+
+    [Fact]
+    public async Task List_transactions_filters_by_allocation_status()
+    {
+        await using var server = await TestApiServer.StartAsync();
+
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+        var groceriesBudgetItem = await CreateBudgetItemAsync(server, budget.BudgetId, "Groceries", "Consumption", "400.00");
+        var salary = await CreateTransactionAsync(server, "Salary", "Credit", "2026-07-01", "3000.00", "GBP");
+        var groceries = await CreateTransactionAsync(server, "Groceries", "Debit", "2026-07-02", "42.50", "GBP");
+        await AllocateTransactionAsync(server, groceries.TransactionId, groceriesBudgetItem.BudgetItemId);
+
+        var defaultTransactions = await server.Client.GetFromJsonAsync<IReadOnlyList<TransactionListItemResponse>>(
+            "/api/transactions");
+        var allTransactions = await server.Client.GetFromJsonAsync<IReadOnlyList<TransactionListItemResponse>>(
+            "/api/transactions?allocationStatus=all");
+        var unallocatedTransactions = await server.Client.GetFromJsonAsync<IReadOnlyList<TransactionListItemResponse>>(
+            "/api/transactions?allocationStatus=unallocated");
+        var allocatedTransactions = await server.Client.GetFromJsonAsync<IReadOnlyList<TransactionListItemResponse>>(
+            "/api/transactions?allocationStatus=allocated");
+
+        AssertTransactionIds(defaultTransactions, salary.TransactionId, groceries.TransactionId);
+        AssertTransactionIds(allTransactions, salary.TransactionId, groceries.TransactionId);
+        AssertTransactionIds(unallocatedTransactions, salary.TransactionId);
+        AssertTransactionIds(allocatedTransactions, groceries.TransactionId);
+    }
+
+    [Fact]
+    public async Task List_transactions_combines_date_and_allocation_status_filters()
+    {
+        await using var server = await TestApiServer.StartAsync();
+
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+        var groceriesBudgetItem = await CreateBudgetItemAsync(server, budget.BudgetId, "Groceries", "Consumption", "400.00");
+        await CreateTransactionAsync(server, "Salary", "Credit", "2026-07-01", "3000.00", "GBP");
+        var groceries = await CreateTransactionAsync(server, "Groceries", "Debit", "2026-07-02", "42.50", "GBP");
+        var coffee = await CreateTransactionAsync(server, "Coffee", "Debit", "2026-07-03", "3.50", "GBP");
+        await AllocateTransactionAsync(server, groceries.TransactionId, groceriesBudgetItem.BudgetItemId);
+
+        var transactions = await server.Client.GetFromJsonAsync<IReadOnlyList<TransactionListItemResponse>>(
+            "/api/transactions?from=2026-07-02&allocationStatus=unallocated");
+
+        AssertTransactionIds(transactions, coffee.TransactionId);
+    }
+
+    [Theory]
+    [InlineData("from=2026-02-31", "from")]
+    [InlineData("from=07/01/2026", "from")]
+    [InlineData("to=2026-02-31", "to")]
+    [InlineData("to=2026-7-1", "to")]
+    public async Task List_transactions_rejects_invalid_date_filters(string query, string expectedErrorKey)
+    {
+        await using var server = await TestApiServer.StartAsync();
+
+        using var response = await server.Client.GetAsync($"/api/transactions?{query}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemResponse>();
+
+        Assert.NotNull(problem);
+        Assert.Contains(expectedErrorKey, problem.Errors.Keys);
+    }
+
+    [Theory]
+    [InlineData("pending")]
+    [InlineData("Allocated")]
+    public async Task List_transactions_rejects_invalid_allocation_status_filters(string allocationStatus)
+    {
+        await using var server = await TestApiServer.StartAsync();
+
+        using var response = await server.Client.GetAsync($"/api/transactions?allocationStatus={allocationStatus}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemResponse>();
+
+        Assert.NotNull(problem);
+        Assert.Contains("allocationStatus", problem.Errors.Keys);
+    }
+
+    [Fact]
     public async Task Get_transaction_returns_transaction_details()
     {
         await using var server = await TestApiServer.StartAsync();
@@ -196,6 +331,18 @@ public sealed class TransactionApiTests
         return transaction ?? throw new InvalidOperationException("Create transaction response was empty.");
     }
 
+    private static async Task AllocateTransactionAsync(
+        TestApiServer server,
+        Guid transactionId,
+        Guid budgetItemId)
+    {
+        using var response = await server.Client.PutAsJsonAsync(
+            $"/api/transactions/{transactionId}/allocation",
+            new AllocateTransactionRequest(budgetItemId));
+
+        response.EnsureSuccessStatusCode();
+    }
+
     private static async Task<BudgetResponse> CreateBudgetAsync(TestApiServer server, string name, string currency)
     {
         using var response = await server.Client.PostAsJsonAsync(
@@ -225,13 +372,12 @@ public sealed class TransactionApiTests
         return budgetItem ?? throw new InvalidOperationException("Create budget item response was empty.");
     }
 
-    private static async Task AllocateTransactionAsync(TestApiServer server, Guid transactionId, Guid budgetItemId)
+    private static void AssertTransactionIds(
+        IReadOnlyList<TransactionListItemResponse>? transactions,
+        params Guid[] expectedTransactionIds)
     {
-        using var response = await server.Client.PutAsJsonAsync(
-            $"/api/transactions/{transactionId}/allocation",
-            new AllocateTransactionRequest(budgetItemId));
-
-        response.EnsureSuccessStatusCode();
+        Assert.NotNull(transactions);
+        Assert.Equal(expectedTransactionIds, transactions.Select(transaction => transaction.TransactionId));
     }
 
     private sealed record CreateTransactionRequest(
@@ -241,11 +387,11 @@ public sealed class TransactionApiTests
         string Amount,
         string Currency);
 
+    private sealed record AllocateTransactionRequest(Guid BudgetItemId);
+
     private sealed record CreateBudgetRequest(string Name, string Currency);
 
     private sealed record CreateBudgetItemRequest(string Name, string Kind, string PlannedAmount);
-
-    private sealed record AllocateTransactionRequest(Guid BudgetItemId);
 
     private sealed record TransactionResponse(
         Guid TransactionId,
