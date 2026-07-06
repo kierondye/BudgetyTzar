@@ -1010,11 +1010,11 @@ Each increment should be small enough to understand, test, and review independen
 Development should follow test-driven development where practical:
 
 1. Define the externally observable behaviour required by the increment.
-2. Review the relevant domain, API, observability, security, privacy, audit, and operational requirements before implementation begins.
+2. Review the relevant domain, API, observability, security, privacy, audit, operational, and documentation requirements before implementation begins.
 3. Add or update failing tests that describe the required behaviour.
 4. Implement the smallest change needed to make the tests pass.
 5. Refactor while keeping the tests passing.
-6. Update this specification where the increment clarifies, changes, or adds product, domain, API, observability, security, privacy, audit, or operational requirements.
+6. Update this specification and related repository documentation where the increment clarifies, changes, or adds product, domain, API, observability, security, privacy, audit, operational, or documentation requirements.
 
 Before implementing each feature slice or smaller increment, the developer must explicitly review whether the increment requires changes to:
 
@@ -1031,11 +1031,11 @@ Before implementing each feature slice or smaller increment, the developer must 
 - Privacy requirements.
 - Documentation.
 
-Observability and security requirements must be considered at the beginning of each increment, not after implementation. If the increment introduces new endpoints, commands, queries, failure modes, background processing, cross-boundary dependencies, sensitive data handling, or operationally important behaviour, the relevant observability, security, privacy, and audit requirements must be refined in this specification as part of the same increment.
+Observability, security, and documentation requirements must be considered at the beginning of each increment, not after implementation. If the increment introduces new endpoints, commands, queries, failure modes, background processing, cross-boundary dependencies, sensitive data handling, user-visible behaviour, setup changes, deployment changes, or operationally important behaviour, the relevant observability, security, privacy, audit, and documentation requirements must be refined in this specification and related repository documentation as part of the same increment.
 
 The result of this review may be that no specification change is required. That decision should be deliberate rather than accidental.
 
-Implementation should not introduce architectural patterns, abstractions, infrastructure, observability mechanisms, or security mechanisms that are not justified by the current increment or by an explicit requirement in this specification.
+Implementation should not introduce architectural patterns, abstractions, infrastructure, observability mechanisms, security mechanisms, or documentation obligations that are not justified by the current increment or by an explicit requirement in this specification.
 
 ## 16. Testing Strategy
 
