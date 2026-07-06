@@ -1,3 +1,4 @@
+using BudgetyTzar.Api.Features.Budgeting;
 using Microsoft.OpenApi.Models;
 
 namespace BudgetyTzar.Api;
@@ -11,6 +12,7 @@ public static class ApiApplication
         var version = RuntimeVersion.Current;
 
         builder.Services.AddHealthChecks();
+        builder.Services.AddBudgeting();
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen(options =>
         {
@@ -29,6 +31,7 @@ public static class ApiApplication
         app.MapHealthChecks("/health");
         app.MapGet("/api/version", () => version)
             .WithName("GetVersion");
+        app.MapBudgetEndpoints();
 
         return app;
     }
