@@ -730,7 +730,7 @@ Example create budget request:
 }
 ```
 
-Creating a budget returns `201 Created`, a `Location` header for the created budget resource, and the created budget representation. A newly created budget may have no budget items.
+Creating a budget returns `201 Created`, a `Location` header for the created budget resource, and the created budget representation. A newly created budget may have no budget items. Creating a budget with a name already used by another budget returns `409 Conflict`.
 
 Example budget response:
 
@@ -755,7 +755,7 @@ Example rename budget request:
 }
 ```
 
-Renaming a budget returns `200 OK` with the updated budget representation. Renaming a budget that does not exist returns `404 Not Found`. Rename requests with an empty name return `400 Bad Request` with a problem details response containing field-level errors.
+Renaming a budget returns `200 OK` with the updated budget representation. Renaming a budget that does not exist returns `404 Not Found`. Renaming a budget to a name already used by another budget returns `409 Conflict`. Rename requests with an empty name return `400 Bad Request` with a problem details response containing field-level errors.
 
 Example change budget item planned amount request:
 
@@ -775,7 +775,7 @@ Example create budget item request:
 }
 ```
 
-Creating a budget item returns `201 Created`, a `Location` header for the created budget item resource, and the created budget item representation. Creating a budget item for a budget that does not exist returns `404 Not Found`.
+Creating a budget item returns `201 Created`, a `Location` header for the created budget item resource, and the created budget item representation. Creating a budget item for a budget that does not exist returns `404 Not Found`. Creating a budget item with a name already used by another budget item in the same budget returns `409 Conflict`.
 
 Example budget item response:
 

@@ -47,6 +47,12 @@ public static class BudgetEndpoints
         }
 
         var budget = store.Create(request.Name.Trim(), currency);
+
+        if (budget is null)
+        {
+            return Results.Conflict();
+        }
+
         var response = BudgetResponse.FromBudget(budget);
 
         return Results.Created($"/api/budgets/{budget.BudgetId}", response);
@@ -79,11 +85,14 @@ public static class BudgetEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        var budget = store.Rename(budgetId, request.Name.Trim());
+        var result = store.Rename(budgetId, request.Name.Trim());
 
-        return budget is null
-            ? Results.NotFound()
-            : Results.Ok(BudgetResponse.FromBudget(budget));
+        return result.Status switch
+        {
+            RenameBudgetStatus.NotFound => Results.NotFound(),
+            RenameBudgetStatus.DuplicateName => Results.Conflict(),
+            _ => Results.Ok(BudgetResponse.FromBudget(result.Budget!))
+        };
     }
 
     private static IResult CreateBudgetItem(Guid budgetId, CreateBudgetItemRequest request, BudgetStore store)
@@ -95,11 +104,16 @@ public static class BudgetEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        var budgetItem = store.AddBudgetItem(budgetId, request.Name.Trim(), kind, plannedAmount);
+        var result = store.AddBudgetItem(budgetId, request.Name.Trim(), kind, plannedAmount);
 
-        return budgetItem is null
-            ? Results.NotFound()
-            : Results.Created($"/api/budgets/{budgetId}/budget-items/{budgetItem.BudgetItemId}", BudgetItemResponse.FromBudgetItem(budgetItem));
+        return result.Status switch
+        {
+            AddBudgetItemStatus.NotFound => Results.NotFound(),
+            AddBudgetItemStatus.DuplicateName => Results.Conflict(),
+            _ => Results.Created(
+                $"/api/budgets/{budgetId}/budget-items/{result.BudgetItem!.BudgetItemId}",
+                BudgetItemResponse.FromBudgetItem(result.BudgetItem))
+        };
     }
 
     private static IResult GetBudgetItems(Guid budgetId, BudgetStore store)
@@ -143,18 +157,18 @@ public static class BudgetEndpoints
     private static Dictionary<string, string[]> Validate(
         CreateBudgetItemRequest request,
         out BudgetItemKind kind,
-        out PlannedAmount plannedAmount)
+        out AbsoluteMoneyAmount plannedAmount)
     {
         var errors = ValidateName(request.Name, "Budget item name is required.");
         kind = BudgetItemKind.Empty;
-        plannedAmount = PlannedAmount.Empty;
+        plannedAmount = AbsoluteMoneyAmount.Empty;
 
         if (!BudgetItemKind.TryCreate(request.Kind, out kind))
         {
             errors["kind"] = ["Budget item kind must be Funding or Consumption."];
         }
 
-        if (!PlannedAmount.TryCreate(request.PlannedAmount, out plannedAmount))
+        if (!AbsoluteMoneyAmount.TryCreate(request.PlannedAmount, out plannedAmount))
         {
             errors["plannedAmount"] = ["Planned amount must be greater than 0.00, no more than 99999999.99, and use exactly two decimal places."];
         }

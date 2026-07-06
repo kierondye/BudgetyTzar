@@ -80,6 +80,19 @@ public sealed class BudgetApiTests
     }
 
     [Fact]
+    public async Task Create_budget_returns_conflict_when_budget_name_already_exists()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        await CreateBudgetAsync(server, "UK", "GBP");
+
+        using var response = await server.Client.PostAsJsonAsync(
+            "/api/budgets",
+            new CreateBudgetRequest("UK", "GBP"));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Rename_budget_updates_budget_name()
     {
         await using var server = await TestApiServer.StartAsync();
@@ -130,6 +143,20 @@ public sealed class BudgetApiTests
 
         Assert.NotNull(problem);
         Assert.Contains("name", problem.Errors.Keys);
+    }
+
+    [Fact]
+    public async Task Rename_budget_returns_conflict_when_budget_name_already_exists()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var ukBudget = await CreateBudgetAsync(server, "UK", "GBP");
+        await CreateBudgetAsync(server, "EU", "EUR");
+
+        using var response = await server.Client.PutAsJsonAsync(
+            $"/api/budgets/{ukBudget.BudgetId}/name",
+            new RenameBudgetRequest("EU"));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
     [Fact]
@@ -218,6 +245,20 @@ public sealed class BudgetApiTests
             new CreateBudgetItemRequest("Salary", "Funding", "3000.00"));
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Create_budget_item_returns_conflict_when_budget_item_name_already_exists()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+        await CreateBudgetItemAsync(server, budget.BudgetId, "Salary", "Funding", "3000.00");
+
+        using var response = await server.Client.PostAsJsonAsync(
+            $"/api/budgets/{budget.BudgetId}/budget-items",
+            new CreateBudgetItemRequest("Salary", "Consumption", "100.00"));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
     [Fact]

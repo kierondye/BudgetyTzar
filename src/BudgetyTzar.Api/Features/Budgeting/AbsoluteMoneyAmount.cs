@@ -3,13 +3,13 @@ using System.Text.RegularExpressions;
 
 namespace BudgetyTzar.Api.Features.Budgeting;
 
-public readonly partial record struct PlannedAmount
+public readonly partial record struct AbsoluteMoneyAmount
 {
     private const decimal MaximumValue = 99999999.99m;
 
-    public static PlannedAmount Empty { get; } = new(0.00m);
+    public static AbsoluteMoneyAmount Empty { get; } = new(0.00m);
 
-    private PlannedAmount(decimal value)
+    private AbsoluteMoneyAmount(decimal value)
     {
         Value = value;
     }
@@ -18,7 +18,7 @@ public readonly partial record struct PlannedAmount
 
     public string FormattedValue => Value.ToString("0.00", CultureInfo.InvariantCulture);
 
-    public static bool TryCreate(string? value, out PlannedAmount amount)
+    public static bool TryCreate(string? value, out AbsoluteMoneyAmount amount)
     {
         var trimmedValue = value?.Trim() ?? string.Empty;
 
@@ -31,7 +31,7 @@ public readonly partial record struct PlannedAmount
             return false;
         }
 
-        amount = new PlannedAmount(parsedValue);
+        amount = new AbsoluteMoneyAmount(parsedValue);
         return true;
     }
 
