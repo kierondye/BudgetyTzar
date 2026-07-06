@@ -115,6 +115,27 @@ public sealed class BudgetStore
             return null;
         }
     }
+
+    public DeleteBudgetItemResult DeleteBudgetItem(Guid budgetId, Guid budgetItemId)
+    {
+        lock (syncRoot)
+        {
+            if (!budgetsById.TryGetValue(budgetId, out var budget))
+            {
+                return new DeleteBudgetItemResult.NotFound();
+            }
+
+            var budgetItems = budget.BudgetItems.RemoveAll(budgetItem => budgetItem.BudgetItemId == budgetItemId);
+
+            if (budgetItems.Length == budget.BudgetItems.Length)
+            {
+                return new DeleteBudgetItemResult.NotFound();
+            }
+
+            budgetsById[budgetId] = budget with { BudgetItems = budgetItems };
+            return new DeleteBudgetItemResult.Deleted();
+        }
+    }
 }
 
 public sealed record Budget(Guid BudgetId, string Name, CurrencyCode Currency, ImmutableArray<BudgetItem> BudgetItems);
@@ -146,4 +167,11 @@ public abstract record AddBudgetItemResult
     public sealed record NotFound : AddBudgetItemResult;
 
     public sealed record DuplicateName : AddBudgetItemResult;
+}
+
+public abstract record DeleteBudgetItemResult
+{
+    public sealed record Deleted : DeleteBudgetItemResult;
+
+    public sealed record NotFound : DeleteBudgetItemResult;
 }

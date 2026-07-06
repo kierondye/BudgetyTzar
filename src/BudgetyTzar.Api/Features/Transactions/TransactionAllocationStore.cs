@@ -43,6 +43,22 @@ public sealed class TransactionAllocationStore
             allocationsByTransactionId.Remove(transactionId);
         }
     }
+
+    public bool HasAllocationForTransaction(Guid transactionId)
+    {
+        lock (syncRoot)
+        {
+            return allocationsByTransactionId.ContainsKey(transactionId);
+        }
+    }
+
+    public bool HasAllocationForBudgetItem(Guid budgetItemId)
+    {
+        lock (syncRoot)
+        {
+            return allocationsByTransactionId.Values.Any(allocation => allocation.BudgetItemId == budgetItemId);
+        }
+    }
 }
 
 public sealed record TransactionAllocation(

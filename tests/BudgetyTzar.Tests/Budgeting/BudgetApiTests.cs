@@ -273,6 +273,79 @@ public sealed class BudgetApiTests
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Delete_budget_item_removes_recorded_budget_item()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+        var budgetItem = await CreateBudgetItemAsync(server, budget.BudgetId, "Groceries", "Consumption", "400.00");
+
+        using var deleteResponse = await server.Client.DeleteAsync(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{budgetItem.BudgetItemId}");
+
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+
+        using var getResponse = await server.Client.GetAsync(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{budgetItem.BudgetItemId}");
+        var budgetItems = await server.Client.GetFromJsonAsync<IReadOnlyList<BudgetItemResponse>>(
+            $"/api/budgets/{budget.BudgetId}/budget-items");
+        var budgetDetails = await server.Client.GetFromJsonAsync<BudgetResponse>($"/api/budgets/{budget.BudgetId}");
+
+        Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
+        Assert.NotNull(budgetItems);
+        Assert.Empty(budgetItems);
+        Assert.NotNull(budgetDetails);
+        Assert.Empty(budgetDetails.BudgetItems);
+    }
+
+    [Fact]
+    public async Task Delete_budget_item_returns_conflict_when_budget_item_is_allocated()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+        var budgetItem = await CreateBudgetItemAsync(server, budget.BudgetId, "Groceries", "Consumption", "400.00");
+        var transaction = await CreateTransactionAsync(server, "Groceries", "Debit", "2026-07-02", "42.50", "GBP");
+        await AllocateTransactionAsync(server, transaction.TransactionId, budgetItem.BudgetItemId);
+
+        using var response = await server.Client.DeleteAsync(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{budgetItem.BudgetItemId}");
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+
+        var retrievedBudgetItem = await server.Client.GetFromJsonAsync<BudgetItemResponse>(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{budgetItem.BudgetItemId}");
+        var budgetItems = await server.Client.GetFromJsonAsync<IReadOnlyList<BudgetItemResponse>>(
+            $"/api/budgets/{budget.BudgetId}/budget-items");
+
+        Assert.NotNull(retrievedBudgetItem);
+        Assert.Equal(budgetItem.BudgetItemId, retrievedBudgetItem.BudgetItemId);
+        Assert.NotNull(budgetItems);
+        Assert.Equal(budgetItem.BudgetItemId, Assert.Single(budgetItems).BudgetItemId);
+    }
+
+    [Fact]
+    public async Task Delete_budget_item_returns_not_found_when_budget_does_not_exist()
+    {
+        await using var server = await TestApiServer.StartAsync();
+
+        using var response = await server.Client.DeleteAsync(
+            $"/api/budgets/{Guid.NewGuid()}/budget-items/{Guid.NewGuid()}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_budget_item_returns_not_found_when_budget_item_does_not_exist()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+
+        using var response = await server.Client.DeleteAsync(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{Guid.NewGuid()}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     [Theory]
     [InlineData("", "Funding", "3000.00", "name")]
     [InlineData("Salary", "", "3000.00", "kind")]
@@ -353,17 +426,61 @@ public sealed class BudgetApiTests
         return budgetItem ?? throw new InvalidOperationException("Create budget item response was empty.");
     }
 
+    private static async Task<TransactionResponse> CreateTransactionAsync(
+        TestApiServer server,
+        string description,
+        string type,
+        string transactionDate,
+        string amount,
+        string currency)
+    {
+        using var response = await server.Client.PostAsJsonAsync(
+            "/api/transactions",
+            new CreateTransactionRequest(description, type, transactionDate, amount, currency));
+
+        response.EnsureSuccessStatusCode();
+
+        var transaction = await response.Content.ReadFromJsonAsync<TransactionResponse>();
+        return transaction ?? throw new InvalidOperationException("Create transaction response was empty.");
+    }
+
+    private static async Task AllocateTransactionAsync(TestApiServer server, Guid transactionId, Guid budgetItemId)
+    {
+        using var response = await server.Client.PutAsJsonAsync(
+            $"/api/transactions/{transactionId}/allocation",
+            new AllocateTransactionRequest(budgetItemId));
+
+        response.EnsureSuccessStatusCode();
+    }
+
     private sealed record CreateBudgetRequest(string Name, string Currency);
 
     private sealed record RenameBudgetRequest(string Name);
 
     private sealed record CreateBudgetItemRequest(string Name, string Kind, string PlannedAmount);
 
+    private sealed record CreateTransactionRequest(
+        string Description,
+        string Type,
+        string TransactionDate,
+        string Amount,
+        string Currency);
+
+    private sealed record AllocateTransactionRequest(Guid BudgetItemId);
+
     private sealed record BudgetResponse(Guid BudgetId, string Name, string Currency, IReadOnlyList<BudgetItemResponse> BudgetItems);
 
     private sealed record BudgetListItemResponse(Guid BudgetId, string Name, string Currency);
 
     private sealed record BudgetItemResponse(Guid BudgetItemId, string Name, string Kind, string PlannedAmount);
+
+    private sealed record TransactionResponse(
+        Guid TransactionId,
+        string Description,
+        string Type,
+        string TransactionDate,
+        string Amount,
+        string Currency);
 
     private sealed record ValidationProblemResponse(IDictionary<string, string[]> Errors);
 }
