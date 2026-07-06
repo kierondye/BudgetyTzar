@@ -46,7 +46,7 @@ public static class TransactionEndpoints
             request.Description.Trim(),
             type,
             transactionDate,
-            amount,
+            amount!,
             currency);
         var response = TransactionResponse.FromTransaction(transaction);
 

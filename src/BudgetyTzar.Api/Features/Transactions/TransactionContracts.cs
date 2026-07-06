@@ -22,7 +22,7 @@ public sealed record TransactionResponse(
             transaction.Description,
             transaction.Type.Value,
             transaction.TransactionDate.ToString("yyyy-MM-dd"),
-            transaction.Amount.Value,
+            transaction.Amount.FormattedValue,
             transaction.Currency.Value);
     }
 }
@@ -42,7 +42,7 @@ public sealed record TransactionListItemResponse(
             transaction.Description,
             transaction.Type.Value,
             transaction.TransactionDate.ToString("yyyy-MM-dd"),
-            transaction.Amount.Value,
+            transaction.Amount.FormattedValue,
             transaction.Currency.Value);
     }
 }

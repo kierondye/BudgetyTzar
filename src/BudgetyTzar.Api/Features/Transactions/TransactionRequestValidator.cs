@@ -1,4 +1,5 @@
 using System.Globalization;
+using BudgetyTzar.Api.Features.Budgeting;
 
 namespace BudgetyTzar.Api.Features.Transactions;
 
@@ -8,14 +9,14 @@ public static class TransactionRequestValidator
         CreateTransactionRequest request,
         out TransactionType type,
         out DateOnly transactionDate,
-        out TransactionAmount amount,
-        out TransactionCurrencyCode currency)
+        out PositiveMoneyAmount? amount,
+        out CurrencyCode currency)
     {
         var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
         type = TransactionType.Empty;
         transactionDate = default;
-        amount = TransactionAmount.Empty;
-        currency = TransactionCurrencyCode.Empty;
+        amount = null;
+        currency = CurrencyCode.Empty;
 
         if (string.IsNullOrWhiteSpace(request.Description))
         {
@@ -37,12 +38,12 @@ public static class TransactionRequestValidator
             errors["transactionDate"] = ["Transaction date must use the yyyy-MM-dd format."];
         }
 
-        if (!TransactionAmount.TryCreate(request.Amount, out amount))
+        if (!PositiveMoneyAmount.TryCreate(request.Amount, out amount))
         {
             errors["amount"] = ["Amount must be a positive decimal string with exactly two decimal places and no more than 99999999.99."];
         }
 
-        if (!TransactionCurrencyCode.TryCreate(request.Currency, out currency))
+        if (!CurrencyCode.TryCreate(request.Currency, out currency))
         {
             errors["currency"] = ["Currency must be an uppercase ISO 4217 alphabetic code."];
         }

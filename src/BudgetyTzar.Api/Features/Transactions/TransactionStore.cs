@@ -1,3 +1,5 @@
+using BudgetyTzar.Api.Features.Budgeting;
+
 namespace BudgetyTzar.Api.Features.Transactions;
 
 public sealed class TransactionStore
@@ -10,8 +12,8 @@ public sealed class TransactionStore
         string description,
         TransactionType type,
         DateOnly transactionDate,
-        TransactionAmount amount,
-        TransactionCurrencyCode currency)
+        PositiveMoneyAmount amount,
+        CurrencyCode currency)
     {
         var transaction = new Transaction(
             Guid.NewGuid(),
@@ -68,5 +70,5 @@ public sealed record Transaction(
     string Description,
     TransactionType Type,
     DateOnly TransactionDate,
-    TransactionAmount Amount,
-    TransactionCurrencyCode Currency);
+    PositiveMoneyAmount Amount,
+    CurrencyCode Currency);
