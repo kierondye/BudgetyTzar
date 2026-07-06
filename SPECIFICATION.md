@@ -721,6 +721,32 @@ The Budgeting API owns budget and budget item commands.
 
 Budget and budget item updates are represented as specific `PUT` operations so that the API does not imply unsupported generic mutation. In particular, there is no endpoint for changing a budget item's kind after creation.
 
+Example create budget request:
+
+```json
+{
+  "name": "UK",
+  "currency": "GBP"
+}
+```
+
+Creating a budget returns `201 Created`, a `Location` header for the created budget resource, and the created budget representation. A newly created budget may have no budget items.
+
+Example budget response:
+
+```json
+{
+  "budgetId": "budget-guid",
+  "name": "UK",
+  "currency": "GBP",
+  "budgetItems": []
+}
+```
+
+Listing budgets returns budget identifiers, names, and currencies. Retrieving a budget that does not exist returns `404 Not Found`.
+
+Budget creation rejects an empty name and rejects currency values that are not uppercase three-letter alphabetic codes. Validation failures return `400 Bad Request` with a problem details response containing field-level errors.
+
 Example rename budget request:
 
 ```json
