@@ -97,11 +97,52 @@ public sealed class BudgetStore
                 : null;
         }
     }
+
+    public BudgetItemReference? GetBudgetItemReference(Guid budgetItemId)
+    {
+        lock (syncRoot)
+        {
+            foreach (var budget in budgetsById.Values)
+            {
+                var budgetItem = budget.BudgetItems.SingleOrDefault(budgetItem => budgetItem.BudgetItemId == budgetItemId);
+
+                if (budgetItem is not null)
+                {
+                    return new BudgetItemReference(budget.BudgetId, budget.Currency, budgetItem);
+                }
+            }
+
+            return null;
+        }
+    }
+
+    public DeleteBudgetItemResult DeleteBudgetItem(Guid budgetId, Guid budgetItemId)
+    {
+        lock (syncRoot)
+        {
+            if (!budgetsById.TryGetValue(budgetId, out var budget))
+            {
+                return new DeleteBudgetItemResult.NotFound();
+            }
+
+            var budgetItems = budget.BudgetItems.RemoveAll(budgetItem => budgetItem.BudgetItemId == budgetItemId);
+
+            if (budgetItems.Length == budget.BudgetItems.Length)
+            {
+                return new DeleteBudgetItemResult.NotFound();
+            }
+
+            budgetsById[budgetId] = budget with { BudgetItems = budgetItems };
+            return new DeleteBudgetItemResult.Deleted();
+        }
+    }
 }
 
 public sealed record Budget(Guid BudgetId, string Name, CurrencyCode Currency, ImmutableArray<BudgetItem> BudgetItems);
 
 public sealed record BudgetItem(Guid BudgetItemId, string Name, BudgetItemKind Kind, PositiveMoneyAmount PlannedAmount);
+
+public sealed record BudgetItemReference(Guid BudgetId, CurrencyCode Currency, BudgetItem BudgetItem);
 
 public abstract record CreateBudgetResult
 {
@@ -126,4 +167,11 @@ public abstract record AddBudgetItemResult
     public sealed record NotFound : AddBudgetItemResult;
 
     public sealed record DuplicateName : AddBudgetItemResult;
+}
+
+public abstract record DeleteBudgetItemResult
+{
+    public sealed record Deleted : DeleteBudgetItemResult;
+
+    public sealed record NotFound : DeleteBudgetItemResult;
 }

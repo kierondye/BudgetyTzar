@@ -109,6 +109,29 @@ public sealed class TransactionApiTests
     }
 
     [Fact]
+    public async Task Delete_transaction_returns_conflict_when_transaction_is_allocated()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var budget = await CreateBudgetAsync(server, "UK", "GBP");
+        var budgetItem = await CreateBudgetItemAsync(server, budget.BudgetId, "Groceries", "Consumption", "400.00");
+        var transaction = await CreateTransactionAsync(server, "Groceries", "Debit", "2026-07-02", "42.50", "GBP");
+        await AllocateTransactionAsync(server, transaction.TransactionId, budgetItem.BudgetItemId);
+
+        using var response = await server.Client.DeleteAsync($"/api/transactions/{transaction.TransactionId}");
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+
+        var retrievedTransaction = await server.Client.GetFromJsonAsync<TransactionResponse>(
+            $"/api/transactions/{transaction.TransactionId}");
+        var transactions = await server.Client.GetFromJsonAsync<IReadOnlyList<TransactionListItemResponse>>("/api/transactions");
+
+        Assert.NotNull(retrievedTransaction);
+        Assert.Equal(transaction.TransactionId, retrievedTransaction.TransactionId);
+        Assert.NotNull(transactions);
+        Assert.Equal(transaction.TransactionId, Assert.Single(transactions).TransactionId);
+    }
+
+    [Fact]
     public async Task Delete_transaction_returns_not_found_when_transaction_does_not_exist()
     {
         await using var server = await TestApiServer.StartAsync();
@@ -173,12 +196,56 @@ public sealed class TransactionApiTests
         return transaction ?? throw new InvalidOperationException("Create transaction response was empty.");
     }
 
+    private static async Task<BudgetResponse> CreateBudgetAsync(TestApiServer server, string name, string currency)
+    {
+        using var response = await server.Client.PostAsJsonAsync(
+            "/api/budgets",
+            new CreateBudgetRequest(name, currency));
+
+        response.EnsureSuccessStatusCode();
+
+        var budget = await response.Content.ReadFromJsonAsync<BudgetResponse>();
+        return budget ?? throw new InvalidOperationException("Create budget response was empty.");
+    }
+
+    private static async Task<BudgetItemResponse> CreateBudgetItemAsync(
+        TestApiServer server,
+        Guid budgetId,
+        string name,
+        string kind,
+        string plannedAmount)
+    {
+        using var response = await server.Client.PostAsJsonAsync(
+            $"/api/budgets/{budgetId}/budget-items",
+            new CreateBudgetItemRequest(name, kind, plannedAmount));
+
+        response.EnsureSuccessStatusCode();
+
+        var budgetItem = await response.Content.ReadFromJsonAsync<BudgetItemResponse>();
+        return budgetItem ?? throw new InvalidOperationException("Create budget item response was empty.");
+    }
+
+    private static async Task AllocateTransactionAsync(TestApiServer server, Guid transactionId, Guid budgetItemId)
+    {
+        using var response = await server.Client.PutAsJsonAsync(
+            $"/api/transactions/{transactionId}/allocation",
+            new AllocateTransactionRequest(budgetItemId));
+
+        response.EnsureSuccessStatusCode();
+    }
+
     private sealed record CreateTransactionRequest(
         string Description,
         string Type,
         string TransactionDate,
         string Amount,
         string Currency);
+
+    private sealed record CreateBudgetRequest(string Name, string Currency);
+
+    private sealed record CreateBudgetItemRequest(string Name, string Kind, string PlannedAmount);
+
+    private sealed record AllocateTransactionRequest(Guid BudgetItemId);
 
     private sealed record TransactionResponse(
         Guid TransactionId,
@@ -187,6 +254,10 @@ public sealed class TransactionApiTests
         string TransactionDate,
         string Amount,
         string Currency);
+
+    private sealed record BudgetResponse(Guid BudgetId, string Name, string Currency, IReadOnlyList<BudgetItemResponse> BudgetItems);
+
+    private sealed record BudgetItemResponse(Guid BudgetItemId, string Name, string Kind, string PlannedAmount);
 
     private sealed record TransactionListItemResponse(
         Guid TransactionId,

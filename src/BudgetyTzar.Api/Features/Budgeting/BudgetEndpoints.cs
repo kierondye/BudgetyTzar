@@ -1,4 +1,5 @@
 using BudgetyTzar.Api.Features.Common;
+using BudgetyTzar.Api.Features.TransactionAllocations;
 
 namespace BudgetyTzar.Api.Features.Budgeting;
 
@@ -35,6 +36,9 @@ public static class BudgetEndpoints
 
         budgets.MapGet("/{budgetId:guid}/budget-items/{budgetItemId:guid}", GetBudgetItem)
             .WithName("GetBudgetItem");
+
+        budgets.MapDelete("/{budgetId:guid}/budget-items/{budgetItemId:guid}", DeleteBudgetItem)
+            .WithName("DeleteBudgetItem");
 
         return endpoints;
     }
@@ -144,6 +148,32 @@ public static class BudgetEndpoints
         return budgetItem is null
             ? Results.NotFound()
             : Results.Ok(BudgetItemResponse.FromBudgetItem(budgetItem));
+    }
+
+    private static IResult DeleteBudgetItem(
+        Guid budgetId,
+        Guid budgetItemId,
+        BudgetStore store,
+        TransactionAllocationStore allocationStore)
+    {
+        if (store.GetBudgetItem(budgetId, budgetItemId) is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (allocationStore.HasAllocationForBudgetItem(budgetItemId))
+        {
+            return Results.Conflict();
+        }
+
+        var result = store.DeleteBudgetItem(budgetId, budgetItemId);
+
+        return result switch
+        {
+            DeleteBudgetItemResult.Deleted => Results.NoContent(),
+            DeleteBudgetItemResult.NotFound => Results.NotFound(),
+            _ => throw new InvalidOperationException("Unexpected delete budget item result.")
+        };
     }
 
     private static Dictionary<string, string[]> Validate(CreateBudgetRequest request, out CurrencyCode currency)
