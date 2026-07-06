@@ -79,6 +79,59 @@ public sealed class BudgetApiTests
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Rename_budget_updates_budget_name()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var createdBudget = await CreateBudgetAsync(server, "UK", "GBP");
+
+        using var renameResponse = await server.Client.PutAsJsonAsync(
+            $"/api/budgets/{createdBudget.BudgetId}/name",
+            new RenameBudgetRequest("UK 2026"));
+
+        Assert.Equal(HttpStatusCode.OK, renameResponse.StatusCode);
+
+        var renamedBudget = await renameResponse.Content.ReadFromJsonAsync<BudgetResponse>();
+        var retrievedBudget = await server.Client.GetFromJsonAsync<BudgetResponse>($"/api/budgets/{createdBudget.BudgetId}");
+        var budgets = await server.Client.GetFromJsonAsync<IReadOnlyList<BudgetListItemResponse>>("/api/budgets");
+
+        Assert.NotNull(renamedBudget);
+        Assert.Equal(createdBudget.BudgetId, renamedBudget.BudgetId);
+        Assert.Equal("UK 2026", renamedBudget.Name);
+        Assert.Equal("UK 2026", retrievedBudget?.Name);
+        Assert.Equal("UK 2026", Assert.Single(budgets ?? []).Name);
+    }
+
+    [Fact]
+    public async Task Rename_budget_returns_not_found_when_budget_does_not_exist()
+    {
+        await using var server = await TestApiServer.StartAsync();
+
+        using var response = await server.Client.PutAsJsonAsync(
+            $"/api/budgets/{Guid.NewGuid()}/name",
+            new RenameBudgetRequest("UK 2026"));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Rename_budget_rejects_empty_name()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var createdBudget = await CreateBudgetAsync(server, "UK", "GBP");
+
+        using var response = await server.Client.PutAsJsonAsync(
+            $"/api/budgets/{createdBudget.BudgetId}/name",
+            new RenameBudgetRequest(""));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemResponse>();
+
+        Assert.NotNull(problem);
+        Assert.Contains("name", problem.Errors.Keys);
+    }
+
     [Theory]
     [InlineData("", "GBP", "name")]
     [InlineData("UK", "", "currency")]
@@ -113,6 +166,8 @@ public sealed class BudgetApiTests
     }
 
     private sealed record CreateBudgetRequest(string Name, string Currency);
+
+    private sealed record RenameBudgetRequest(string Name);
 
     private sealed record BudgetResponse(Guid BudgetId, string Name, string Currency, IReadOnlyList<BudgetItemResponse> BudgetItems);
 
