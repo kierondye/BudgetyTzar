@@ -1,0 +1,24 @@
+<Project>
+  <PropertyGroup>
+    <BudgetyTzarRepositoryRoot>$(MSBuildThisFileDirectory)</BudgetyTzarRepositoryRoot>
+  </PropertyGroup>
+
+  <Target Name="CalculateBudgetyTzarVersion" BeforeTargets="GenerateAssemblyInfo">
+    <Exec
+      Command="&quot;$(BudgetyTzarRepositoryRoot)scripts/calculate-version.sh&quot; --print &quot;$(BudgetyTzarRepositoryRoot)&quot;"
+      ConsoleToMsBuild="true"
+      StandardOutputImportance="Low">
+      <Output TaskParameter="ConsoleOutput" ItemName="BudgetyTzarVersionLine" />
+    </Exec>
+
+    <PropertyGroup>
+      <BudgetyTzarVersionOutput>@(BudgetyTzarVersionLine, ';')</BudgetyTzarVersionOutput>
+      <ProductVersion>$([System.Text.RegularExpressions.Regex]::Match('$(BudgetyTzarVersionOutput)', 'ProductVersion=([^;]+)').Groups[1].Value)</ProductVersion>
+      <Version>$(ProductVersion)</Version>
+      <PackageVersion>$(ProductVersion)</PackageVersion>
+      <InformationalVersion>$([System.Text.RegularExpressions.Regex]::Match('$(BudgetyTzarVersionOutput)', 'InformationalVersion=([^;]+)').Groups[1].Value)</InformationalVersion>
+      <AssemblyVersion>$([System.Text.RegularExpressions.Regex]::Match('$(BudgetyTzarVersionOutput)', 'AssemblyVersion=([^;]+)').Groups[1].Value)</AssemblyVersion>
+      <FileVersion>$([System.Text.RegularExpressions.Regex]::Match('$(BudgetyTzarVersionOutput)', 'FileVersion=([^;]+)').Groups[1].Value)</FileVersion>
+    </PropertyGroup>
+  </Target>
+</Project>
