@@ -700,7 +700,7 @@ The routes below define the supported public API contract for the application.
 
 API request and response patterns may evolve as the application is developed. Once a pattern emerges for status codes, validation errors, problem responses, pagination, filtering, sorting, identifiers, date formats, monetary values, or other reusable API concerns, that pattern must be recorded in this specification so that other developers follow the same contract.
 
-API monetary values must be represented as strings with exactly two decimal places. API currency values must use uppercase ISO 4217 alphabetic codes.
+API monetary values must be represented as strings with exactly two decimal places. API currency values must use uppercase ISO 4217 alphabetic codes. API dates representing calendar transaction activity use `yyyy-MM-dd`.
 
 ### 10.1 Budgeting API
 
@@ -811,6 +811,37 @@ Transactions may exist without being allocated to a budget item.
 The `allocationStatus` query parameter supports `allocated`, `unallocated`, and `all`.
 
 Deleting a transaction must be rejected while the transaction is allocated to a budget item.
+
+Example create transaction request:
+
+```json
+{
+  "description": "Salary",
+  "type": "Credit",
+  "transactionDate": "2026-07-01",
+  "amount": "3000.00",
+  "currency": "GBP"
+}
+```
+
+Creating a transaction returns `201 Created`, a `Location` header for the created transaction resource, and the created transaction representation. Listing transactions returns recorded transaction representations. Retrieving a transaction that does not exist returns `404 Not Found`.
+
+Example transaction response:
+
+```json
+{
+  "transactionId": "transaction-guid",
+  "description": "Salary",
+  "type": "Credit",
+  "transactionDate": "2026-07-01",
+  "amount": "3000.00",
+  "currency": "GBP"
+}
+```
+
+Deleting an unallocated transaction returns `204 No Content`. Retrieving the deleted transaction after deletion returns `404 Not Found`. Deleting a transaction that does not exist returns `404 Not Found`.
+
+Transaction creation rejects an empty description, a type other than exactly `Credit` or `Debit`, transaction dates that are not valid `yyyy-MM-dd` calendar dates, amounts that are not positive decimal strings with exactly two decimal places or are greater than `99999999.99`, and currency values that are not uppercase three-letter alphabetic codes. Validation failures return `400 Bad Request` with a problem details response containing field-level errors.
 
 ### 10.3 Transaction Allocation API
 
