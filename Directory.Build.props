@@ -4,6 +4,5 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <NuGetAudit>false</NuGetAudit>
   </PropertyGroup>
 </Project>
