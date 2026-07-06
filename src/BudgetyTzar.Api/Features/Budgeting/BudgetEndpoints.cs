@@ -97,14 +97,15 @@ public static class BudgetEndpoints
 
     private static IResult CreateBudgetItem(Guid budgetId, CreateBudgetItemRequest request, BudgetStore store)
     {
-        var errors = Validate(request, out var kind, out var plannedAmount);
+        var validation = Validate(request);
 
-        if (errors.Count > 0)
+        if (validation.Errors.Count > 0)
         {
-            return Results.ValidationProblem(errors);
+            return Results.ValidationProblem(validation.Errors);
         }
 
-        var result = store.AddBudgetItem(budgetId, request.Name.Trim(), kind, plannedAmount!);
+        var amount = ((PositiveMoneyAmountCreationResult.Created)validation.PlannedAmount).Amount;
+        var result = store.AddBudgetItem(budgetId, request.Name.Trim(), validation.Kind, amount);
 
         return result.Status switch
         {
@@ -154,26 +155,24 @@ public static class BudgetEndpoints
         return errors;
     }
 
-    private static Dictionary<string, string[]> Validate(
-        CreateBudgetItemRequest request,
-        out BudgetItemKind kind,
-        out AbsoluteMoneyAmount? plannedAmount)
+    private static BudgetItemValidationResult Validate(CreateBudgetItemRequest request)
     {
         var errors = ValidateName(request.Name, "Budget item name is required.");
-        kind = BudgetItemKind.Empty;
-        plannedAmount = null;
+        var kind = BudgetItemKind.Empty;
 
         if (!BudgetItemKind.TryCreate(request.Kind, out kind))
         {
             errors["kind"] = ["Budget item kind must be Funding or Consumption."];
         }
 
-        if (!AbsoluteMoneyAmount.TryCreate(request.PlannedAmount, out plannedAmount))
+        var plannedAmount = PositiveMoneyAmount.TryCreate(request.PlannedAmount);
+
+        if (plannedAmount is PositiveMoneyAmountCreationResult.Invalid)
         {
             errors["plannedAmount"] = ["Planned amount must be greater than 0.00, no more than 99999999.99, and use exactly two decimal places."];
         }
 
-        return errors;
+        return new BudgetItemValidationResult(errors, kind, plannedAmount);
     }
 
     private static Dictionary<string, string[]> ValidateName(string name, string message)
@@ -187,4 +186,9 @@ public static class BudgetEndpoints
 
         return errors;
     }
+
+    private sealed record BudgetItemValidationResult(
+        Dictionary<string, string[]> Errors,
+        BudgetItemKind Kind,
+        PositiveMoneyAmountCreationResult PlannedAmount);
 }

@@ -3,11 +3,11 @@ using System.Text.RegularExpressions;
 
 namespace BudgetyTzar.Api.Features.Budgeting;
 
-public sealed partial record AbsoluteMoneyAmount
+public sealed partial record PositiveMoneyAmount
 {
     private const decimal MaximumValue = 99999999.99m;
 
-    private AbsoluteMoneyAmount(decimal value)
+    private PositiveMoneyAmount(decimal value)
     {
         Value = value;
     }
@@ -16,7 +16,7 @@ public sealed partial record AbsoluteMoneyAmount
 
     public string FormattedValue => Value.ToString("0.00", CultureInfo.InvariantCulture);
 
-    public static bool TryCreate(string? value, out AbsoluteMoneyAmount? amount)
+    public static PositiveMoneyAmountCreationResult TryCreate(string? value)
     {
         var trimmedValue = value?.Trim() ?? string.Empty;
 
@@ -25,14 +25,30 @@ public sealed partial record AbsoluteMoneyAmount
             || parsedValue <= 0.00m
             || parsedValue > MaximumValue)
         {
-            amount = null;
-            return false;
+            return PositiveMoneyAmountCreationResult.Invalid.Instance;
         }
 
-        amount = new AbsoluteMoneyAmount(parsedValue);
-        return true;
+        return new PositiveMoneyAmountCreationResult.Created(new PositiveMoneyAmount(parsedValue));
     }
 
     [GeneratedRegex(@"^\d{1,8}\.\d{2}$")]
     private static partial Regex AmountPattern();
+}
+
+public abstract record PositiveMoneyAmountCreationResult
+{
+    private PositiveMoneyAmountCreationResult()
+    {
+    }
+
+    public sealed record Created(PositiveMoneyAmount Amount) : PositiveMoneyAmountCreationResult;
+
+    public sealed record Invalid : PositiveMoneyAmountCreationResult
+    {
+        public static Invalid Instance { get; } = new();
+
+        private Invalid()
+        {
+        }
+    }
 }

@@ -63,7 +63,7 @@ public sealed class BudgetStore
         }
     }
 
-    public AddBudgetItemResult AddBudgetItem(Guid budgetId, string name, BudgetItemKind kind, AbsoluteMoneyAmount plannedAmount)
+    public AddBudgetItemResult AddBudgetItem(Guid budgetId, string name, BudgetItemKind kind, PositiveMoneyAmount plannedAmount)
     {
         lock (syncRoot)
         {
@@ -98,7 +98,7 @@ public sealed class BudgetStore
 
 public sealed record Budget(Guid BudgetId, string Name, CurrencyCode Currency, IReadOnlyList<BudgetItem> BudgetItems);
 
-public sealed record BudgetItem(Guid BudgetItemId, string Name, BudgetItemKind Kind, AbsoluteMoneyAmount PlannedAmount);
+public sealed record BudgetItem(Guid BudgetItemId, string Name, BudgetItemKind Kind, PositiveMoneyAmount PlannedAmount);
 
 public sealed record CreateBudgetResult(CreateBudgetStatus Status, Budget? Budget);
 
