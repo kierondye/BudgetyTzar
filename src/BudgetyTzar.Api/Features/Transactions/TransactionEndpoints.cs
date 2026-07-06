@@ -30,27 +30,21 @@ public static class TransactionEndpoints
 
     private static IResult CreateTransaction(CreateTransactionRequest request, TransactionStore store)
     {
-        var errors = TransactionRequestValidator.ValidateCreateRequest(
-            request,
-            out var type,
-            out var transactionDate,
-            out var amount,
-            out var currency);
+        var result = store.Create(
+            request.Description,
+            request.Type,
+            request.TransactionDate,
+            request.Amount,
+            request.Currency);
 
-        if (errors.Count > 0)
+        return result switch
         {
-            return Results.ValidationProblem(errors);
-        }
-
-        var transaction = store.Create(
-            request.Description.Trim(),
-            type,
-            transactionDate,
-            amount!,
-            currency);
-        var response = TransactionResponse.FromTransaction(transaction);
-
-        return Results.Created($"/api/transactions/{transaction.TransactionId}", response);
+            CreateTransactionResult.Invalid invalid => Results.ValidationProblem(invalid.Errors),
+            CreateTransactionResult.Created created => Results.Created(
+                $"/api/transactions/{created.Transaction.TransactionId}",
+                TransactionResponse.FromTransaction(created.Transaction)),
+            _ => throw new InvalidOperationException("Unexpected create transaction result.")
+        };
     }
 
     private static IResult GetTransactions(TransactionStore store)

@@ -3,6 +3,8 @@ namespace BudgetyTzar.Api.Features.Transactions;
 public readonly record struct TransactionType
 {
     public static TransactionType Empty { get; } = new(string.Empty);
+    public static TransactionType Credit { get; } = new(nameof(Credit));
+    public static TransactionType Debit { get; } = new(nameof(Debit));
 
     private TransactionType(string value)
     {
@@ -15,8 +17,8 @@ public readonly record struct TransactionType
     {
         type = value switch
         {
-            "Credit" => new TransactionType("Credit"),
-            "Debit" => new TransactionType("Debit"),
+            nameof(Credit) => Credit,
+            nameof(Debit) => Debit,
             _ => Empty
         };
 

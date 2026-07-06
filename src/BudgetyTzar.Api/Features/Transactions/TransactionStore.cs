@@ -1,3 +1,4 @@
+using System.Globalization;
 using BudgetyTzar.Api.Features.Common;
 
 namespace BudgetyTzar.Api.Features.Transactions;
@@ -8,20 +9,28 @@ public sealed class TransactionStore
     private readonly Dictionary<Guid, Transaction> transactionsById = [];
     private readonly List<Guid> transactionIds = [];
 
-    public Transaction Create(
+    public CreateTransactionResult Create(
         string description,
-        TransactionType type,
-        DateOnly transactionDate,
-        PositiveMoneyAmount amount,
-        CurrencyCode currency)
+        string type,
+        string transactionDate,
+        string amount,
+        string currency)
     {
+        var validation = Validate(description, type, transactionDate, amount, currency);
+
+        if (validation is CreateTransactionValidationResult.Invalid invalid)
+        {
+            return new CreateTransactionResult.Invalid(invalid.Errors);
+        }
+
+        var valid = (CreateTransactionValidationResult.Valid)validation;
         var transaction = new Transaction(
             Guid.NewGuid(),
-            description,
-            type,
-            transactionDate,
-            amount,
-            currency);
+            description.Trim(),
+            valid.Type,
+            valid.TransactionDate,
+            valid.Amount,
+            valid.Currency);
 
         lock (syncRoot)
         {
@@ -29,7 +38,7 @@ public sealed class TransactionStore
             transactionIds.Add(transaction.TransactionId);
         }
 
-        return transaction;
+        return new CreateTransactionResult.Created(transaction);
     }
 
     public IReadOnlyList<Transaction> GetAll()
@@ -63,6 +72,61 @@ public sealed class TransactionStore
             return true;
         }
     }
+
+    private static CreateTransactionValidationResult Validate(
+        string description,
+        string type,
+        string transactionDate,
+        string amount,
+        string currency)
+    {
+        var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
+
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            errors["description"] = ["Transaction description is required."];
+        }
+
+        if (!TransactionType.TryCreate(type, out var parsedType))
+        {
+            errors["type"] = ["Transaction type must be Credit or Debit."];
+        }
+
+        if (!DateOnly.TryParseExact(
+            transactionDate,
+            "yyyy-MM-dd",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out var parsedTransactionDate))
+        {
+            errors["transactionDate"] = ["Transaction date must use the yyyy-MM-dd format."];
+        }
+
+        if (!PositiveMoneyAmount.TryCreate(amount, out var parsedAmount))
+        {
+            errors["amount"] = ["Amount must be a positive decimal string with exactly two decimal places and no more than 99999999.99."];
+        }
+
+        if (!CurrencyCode.TryCreate(currency, out var parsedCurrency))
+        {
+            errors["currency"] = ["Currency must be an uppercase ISO 4217 alphabetic code."];
+        }
+
+        return errors.Count > 0
+            ? new CreateTransactionValidationResult.Invalid(errors)
+            : new CreateTransactionValidationResult.Valid(parsedType, parsedTransactionDate, parsedAmount!, parsedCurrency);
+    }
+
+    private abstract record CreateTransactionValidationResult
+    {
+        public sealed record Valid(
+            TransactionType Type,
+            DateOnly TransactionDate,
+            PositiveMoneyAmount Amount,
+            CurrencyCode Currency) : CreateTransactionValidationResult;
+
+        public sealed record Invalid(Dictionary<string, string[]> Errors) : CreateTransactionValidationResult;
+    }
 }
 
 public sealed record Transaction(
@@ -72,3 +136,10 @@ public sealed record Transaction(
     DateOnly TransactionDate,
     PositiveMoneyAmount Amount,
     CurrencyCode Currency);
+
+public abstract record CreateTransactionResult
+{
+    public sealed record Created(Transaction Transaction) : CreateTransactionResult;
+
+    public sealed record Invalid(Dictionary<string, string[]> Errors) : CreateTransactionResult;
+}
