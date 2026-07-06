@@ -1,3 +1,5 @@
+using BudgetyTzar.Api.Features.Common;
+
 namespace BudgetyTzar.Api.Features.Budgeting;
 
 public static class BudgetEndpoints

@@ -1,4 +1,4 @@
-using BudgetyTzar.Api.Features.Budgeting;
+using BudgetyTzar.Api.Features.Common;
 
 namespace BudgetyTzar.Api.Features.Transactions;
 
