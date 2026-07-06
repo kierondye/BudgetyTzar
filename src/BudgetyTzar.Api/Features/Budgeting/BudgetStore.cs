@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace BudgetyTzar.Api.Features.Budgeting;
 
 public sealed class BudgetStore
@@ -14,14 +16,14 @@ public sealed class BudgetStore
         {
             if (budgetsById.Values.Any(existingBudget => existingBudget.Name == name))
             {
-                return new CreateBudgetResult(CreateBudgetStatus.DuplicateName, null);
+                return new CreateBudgetResult.DuplicateName();
             }
 
             budgetsById[budget.BudgetId] = budget;
             budgetIds.Add(budget.BudgetId);
         }
 
-        return new CreateBudgetResult(CreateBudgetStatus.Created, budget);
+        return new CreateBudgetResult.Created(budget);
     }
 
     public IReadOnlyList<Budget> GetAll()
@@ -48,18 +50,18 @@ public sealed class BudgetStore
         {
             if (!budgetsById.TryGetValue(budgetId, out var budget))
             {
-                return new RenameBudgetResult(RenameBudgetStatus.NotFound, null);
+                return new RenameBudgetResult.NotFound();
             }
 
             if (budgetsById.Values.Any(existingBudget => existingBudget.BudgetId != budgetId && existingBudget.Name == name))
             {
-                return new RenameBudgetResult(RenameBudgetStatus.DuplicateName, null);
+                return new RenameBudgetResult.DuplicateName();
             }
 
             var renamedBudget = budget with { Name = name };
             budgetsById[budgetId] = renamedBudget;
 
-            return new RenameBudgetResult(RenameBudgetStatus.Renamed, renamedBudget);
+            return new RenameBudgetResult.Renamed(renamedBudget);
         }
     }
 
@@ -69,19 +71,19 @@ public sealed class BudgetStore
         {
             if (!budgetsById.TryGetValue(budgetId, out var budget))
             {
-                return new AddBudgetItemResult(AddBudgetItemStatus.NotFound, null);
+                return new AddBudgetItemResult.NotFound();
             }
 
             if (budget.BudgetItems.Any(budgetItem => budgetItem.Name == name))
             {
-                return new AddBudgetItemResult(AddBudgetItemStatus.DuplicateName, null);
+                return new AddBudgetItemResult.DuplicateName();
             }
 
             var budgetItem = new BudgetItem(Guid.NewGuid(), name, kind, plannedAmount);
-            var budgetItems = budget.BudgetItems.Append(budgetItem).ToList();
+            var budgetItems = budget.BudgetItems.Add(budgetItem);
             budgetsById[budgetId] = budget with { BudgetItems = budgetItems };
 
-            return new AddBudgetItemResult(AddBudgetItemStatus.Added, budgetItem);
+            return new AddBudgetItemResult.Added(budgetItem);
         }
     }
 
@@ -96,32 +98,31 @@ public sealed class BudgetStore
     }
 }
 
-public sealed record Budget(Guid BudgetId, string Name, CurrencyCode Currency, IReadOnlyList<BudgetItem> BudgetItems);
+public sealed record Budget(Guid BudgetId, string Name, CurrencyCode Currency, ImmutableArray<BudgetItem> BudgetItems);
 
 public sealed record BudgetItem(Guid BudgetItemId, string Name, BudgetItemKind Kind, PositiveMoneyAmount PlannedAmount);
 
-public sealed record CreateBudgetResult(CreateBudgetStatus Status, Budget? Budget);
-
-public enum CreateBudgetStatus
+public abstract record CreateBudgetResult
 {
-    Created,
-    DuplicateName
+    public sealed record Created(Budget Budget) : CreateBudgetResult;
+
+    public sealed record DuplicateName : CreateBudgetResult;
 }
 
-public sealed record RenameBudgetResult(RenameBudgetStatus Status, Budget? Budget);
-
-public enum RenameBudgetStatus
+public abstract record RenameBudgetResult
 {
-    Renamed,
-    NotFound,
-    DuplicateName
+    public sealed record Renamed(Budget Budget) : RenameBudgetResult;
+
+    public sealed record NotFound : RenameBudgetResult;
+
+    public sealed record DuplicateName : RenameBudgetResult;
 }
 
-public sealed record AddBudgetItemResult(AddBudgetItemStatus Status, BudgetItem? BudgetItem);
-
-public enum AddBudgetItemStatus
+public abstract record AddBudgetItemResult
 {
-    Added,
-    NotFound,
-    DuplicateName
+    public sealed record Added(BudgetItem BudgetItem) : AddBudgetItemResult;
+
+    public sealed record NotFound : AddBudgetItemResult;
+
+    public sealed record DuplicateName : AddBudgetItemResult;
 }

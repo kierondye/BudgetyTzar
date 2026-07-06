@@ -48,14 +48,14 @@ public static class BudgetEndpoints
 
         var result = store.Create(request.Name.Trim(), currency);
 
-        if (result.Status == CreateBudgetStatus.DuplicateName)
+        return result switch
         {
-            return Results.Conflict();
-        }
-
-        var response = BudgetResponse.FromBudget(result.Budget!);
-
-        return Results.Created($"/api/budgets/{result.Budget!.BudgetId}", response);
+            CreateBudgetResult.DuplicateName => Results.Conflict(),
+            CreateBudgetResult.Created created => Results.Created(
+                $"/api/budgets/{created.Budget.BudgetId}",
+                BudgetResponse.FromBudget(created.Budget)),
+            _ => throw new InvalidOperationException("Unexpected create budget result.")
+        };
     }
 
     private static IResult GetBudgets(BudgetStore store)
@@ -87,11 +87,12 @@ public static class BudgetEndpoints
 
         var result = store.Rename(budgetId, request.Name.Trim());
 
-        return result.Status switch
+        return result switch
         {
-            RenameBudgetStatus.NotFound => Results.NotFound(),
-            RenameBudgetStatus.DuplicateName => Results.Conflict(),
-            _ => Results.Ok(BudgetResponse.FromBudget(result.Budget!))
+            RenameBudgetResult.NotFound => Results.NotFound(),
+            RenameBudgetResult.DuplicateName => Results.Conflict(),
+            RenameBudgetResult.Renamed renamed => Results.Ok(BudgetResponse.FromBudget(renamed.Budget)),
+            _ => throw new InvalidOperationException("Unexpected rename budget result.")
         };
     }
 
@@ -107,13 +108,14 @@ public static class BudgetEndpoints
         var valid = (BudgetItemValidationResult.Valid)validation;
         var result = store.AddBudgetItem(budgetId, request.Name.Trim(), valid.Kind, valid.PlannedAmount);
 
-        return result.Status switch
+        return result switch
         {
-            AddBudgetItemStatus.NotFound => Results.NotFound(),
-            AddBudgetItemStatus.DuplicateName => Results.Conflict(),
-            _ => Results.Created(
-                $"/api/budgets/{budgetId}/budget-items/{result.BudgetItem!.BudgetItemId}",
-                BudgetItemResponse.FromBudgetItem(result.BudgetItem))
+            AddBudgetItemResult.NotFound => Results.NotFound(),
+            AddBudgetItemResult.DuplicateName => Results.Conflict(),
+            AddBudgetItemResult.Added added => Results.Created(
+                $"/api/budgets/{budgetId}/budget-items/{added.BudgetItem.BudgetItemId}",
+                BudgetItemResponse.FromBudgetItem(added.BudgetItem)),
+            _ => throw new InvalidOperationException("Unexpected add budget item result.")
         };
     }
 
