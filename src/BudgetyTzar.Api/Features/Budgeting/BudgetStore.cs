@@ -107,9 +107,9 @@ public sealed class BudgetStore
                 return new RenameBudgetItemResult.NotFound();
             }
 
-            var budgetItemIndex = IndexOfBudgetItem(budget.BudgetItems, budgetItemId);
+            var budgetItem = budget.BudgetItems.FirstOrDefault(budgetItem => budgetItem.BudgetItemId == budgetItemId);
 
-            if (budgetItemIndex < 0)
+            if (budgetItem is null)
             {
                 return new RenameBudgetItemResult.NotFound();
             }
@@ -119,8 +119,8 @@ public sealed class BudgetStore
                 return new RenameBudgetItemResult.DuplicateName();
             }
 
-            var renamedBudgetItem = budget.BudgetItems[budgetItemIndex] with { Name = name };
-            var budgetItems = budget.BudgetItems.SetItem(budgetItemIndex, renamedBudgetItem);
+            var renamedBudgetItem = budgetItem with { Name = name };
+            var budgetItems = budget.BudgetItems.Replace(budgetItem, renamedBudgetItem);
             budgetsById[budgetId] = budget with { BudgetItems = budgetItems };
 
             return new RenameBudgetItemResult.Renamed(renamedBudgetItem);
@@ -139,32 +139,19 @@ public sealed class BudgetStore
                 return new ChangeBudgetItemPlannedAmountResult.NotFound();
             }
 
-            var budgetItemIndex = IndexOfBudgetItem(budget.BudgetItems, budgetItemId);
+            var budgetItem = budget.BudgetItems.FirstOrDefault(budgetItem => budgetItem.BudgetItemId == budgetItemId);
 
-            if (budgetItemIndex < 0)
+            if (budgetItem is null)
             {
                 return new ChangeBudgetItemPlannedAmountResult.NotFound();
             }
 
-            var updatedBudgetItem = budget.BudgetItems[budgetItemIndex] with { PlannedAmount = plannedAmount };
-            var budgetItems = budget.BudgetItems.SetItem(budgetItemIndex, updatedBudgetItem);
+            var updatedBudgetItem = budgetItem with { PlannedAmount = plannedAmount };
+            var budgetItems = budget.BudgetItems.Replace(budgetItem, updatedBudgetItem);
             budgetsById[budgetId] = budget with { BudgetItems = budgetItems };
 
             return new ChangeBudgetItemPlannedAmountResult.Changed(updatedBudgetItem);
         }
-    }
-
-    private static int IndexOfBudgetItem(ImmutableArray<BudgetItem> budgetItems, Guid budgetItemId)
-    {
-        for (var index = 0; index < budgetItems.Length; index++)
-        {
-            if (budgetItems[index].BudgetItemId == budgetItemId)
-            {
-                return index;
-            }
-        }
-
-        return -1;
     }
 
     public BudgetItemReference? GetBudgetItemReference(Guid budgetItemId)
