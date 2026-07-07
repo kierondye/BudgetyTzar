@@ -7,21 +7,14 @@ public sealed class InMemoryBudgetRepository
 {
     private readonly object syncRoot = new();
     private readonly Dictionary<Guid, Budget> budgetsById = [];
+    private readonly Dictionary<string, Guid> budgetIdsByName = new(StringComparer.Ordinal);
     private readonly List<Guid> budgetIds = [];
 
-    public AddBudgetResult Add(Budget budget)
+    public BudgetSaveResult Save(Budget budget)
     {
         lock (syncRoot)
         {
-            if (HasBudgetNamedCore(budget.Name, exceptBudgetId: null))
-            {
-                return new AddBudgetResult.DuplicateName();
-            }
-
-            budgetsById[budget.BudgetId] = budget;
-            budgetIds.Add(budget.BudgetId);
-
-            return new AddBudgetResult.Added(budget);
+            return SaveCore(budget);
         }
     }
 
@@ -37,13 +30,20 @@ public sealed class InMemoryBudgetRepository
             }
 
             var updatedBudget = update(budget);
-            if (HasBudgetNamedCore(updatedBudget.Name, budgetId))
+            return SaveCore(updatedBudget) switch
             {
-                return new BudgetUpdateResult.Conflict();
-            }
+                BudgetSaveResult.Conflict => new BudgetUpdateResult.Conflict(),
+                BudgetSaveResult.Saved saved => new BudgetUpdateResult.Updated(saved.Budget),
+                _ => throw new InvalidOperationException("Unexpected save budget result.")
+            };
+        }
+    }
 
-            budgetsById[budgetId] = updatedBudget;
-            return new BudgetUpdateResult.Updated(updatedBudget);
+    public bool HasBudgetNamed(string name, Guid? exceptBudgetId = null)
+    {
+        lock (syncRoot)
+        {
+            return HasBudgetNamedCore(name, exceptBudgetId);
         }
     }
 
@@ -95,17 +95,46 @@ public sealed class InMemoryBudgetRepository
 
     private bool HasBudgetNamedCore(string name, Guid? exceptBudgetId)
     {
-        return budgetsById.Values.Any(budget =>
-            budget.BudgetId != exceptBudgetId
-            && string.Equals(budget.Name, name, StringComparison.Ordinal));
+        return budgetIdsByName.TryGetValue(NormalizeName(name), out var budgetId)
+            && budgetId != exceptBudgetId;
+    }
+
+    private BudgetSaveResult SaveCore(Budget budget)
+    {
+        var normalizedName = NormalizeName(budget.Name);
+
+        if (budgetIdsByName.TryGetValue(normalizedName, out var existingBudgetId)
+            && existingBudgetId != budget.BudgetId)
+        {
+            return new BudgetSaveResult.Conflict();
+        }
+
+        if (budgetsById.TryGetValue(budget.BudgetId, out var existingBudget))
+        {
+            budgetIdsByName.Remove(NormalizeName(existingBudget.Name));
+        }
+        else
+        {
+            budgetIds.Add(budget.BudgetId);
+        }
+
+        budgetsById[budget.BudgetId] = budget;
+        budgetIdsByName[normalizedName] = budget.BudgetId;
+
+        return new BudgetSaveResult.Saved(budget);
+    }
+
+    private static string NormalizeName(string name)
+    {
+        return name.Trim();
     }
 }
 
-public abstract record AddBudgetResult
+public abstract record BudgetSaveResult
 {
-    public sealed record Added(Budget Budget) : AddBudgetResult;
+    public sealed record Saved(Budget Budget) : BudgetSaveResult;
 
-    public sealed record DuplicateName : AddBudgetResult;
+    public sealed record Conflict : BudgetSaveResult;
 }
 
 public abstract record BudgetUpdateResult

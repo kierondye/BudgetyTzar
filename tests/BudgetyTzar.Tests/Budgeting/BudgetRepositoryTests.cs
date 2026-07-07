@@ -7,17 +7,17 @@ namespace BudgetyTzar.Tests.Budgeting;
 public sealed class BudgetRepositoryTests
 {
     [Fact]
-    public void Add_rejects_duplicate_budget_names_without_overwriting_existing_budget()
+    public void Save_rejects_duplicate_budget_names_without_overwriting_existing_budget()
     {
         var repository = new InMemoryBudgetRepository();
         var firstBudget = Budget.Create(Guid.NewGuid(), "UK", Currency("GBP"));
         var duplicateBudget = Budget.Create(Guid.NewGuid(), "UK", Currency("EUR"));
 
-        var firstResult = repository.Add(firstBudget);
-        var duplicateResult = repository.Add(duplicateBudget);
+        var firstResult = repository.Save(firstBudget);
+        var duplicateResult = repository.Save(duplicateBudget);
 
-        Assert.IsType<AddBudgetResult.Added>(firstResult);
-        Assert.IsType<AddBudgetResult.DuplicateName>(duplicateResult);
+        Assert.IsType<BudgetSaveResult.Saved>(firstResult);
+        Assert.IsType<BudgetSaveResult.Conflict>(duplicateResult);
 
         var budget = Assert.Single(repository.GetAll());
         Assert.Equal(firstBudget.BudgetId, budget.BudgetId);
@@ -25,11 +25,55 @@ public sealed class BudgetRepositoryTests
     }
 
     [Fact]
+    public async Task Save_allows_only_one_budget_to_claim_a_name_when_saves_overlap()
+    {
+        var repository = new InMemoryBudgetRepository();
+        var firstBudget = Budget.Create(Guid.NewGuid(), "Shared", Currency("GBP"));
+        var duplicateBudget = Budget.Create(Guid.NewGuid(), "Shared", Currency("EUR"));
+        using var start = new ManualResetEventSlim();
+
+        var firstSave = Task.Run(() =>
+        {
+            start.Wait();
+            return repository.Save(firstBudget);
+        });
+        var duplicateSave = Task.Run(() =>
+        {
+            start.Wait();
+            return repository.Save(duplicateBudget);
+        });
+
+        start.Set();
+        var results = await Task.WhenAll(firstSave, duplicateSave);
+
+        Assert.Equal(1, results.Count(result => result is BudgetSaveResult.Saved));
+        Assert.Equal(1, results.Count(result => result is BudgetSaveResult.Conflict));
+        Assert.Single(repository.GetAll());
+    }
+
+    [Fact]
+    public void Save_updates_the_name_index_when_an_existing_budget_is_renamed()
+    {
+        var repository = new InMemoryBudgetRepository();
+        var budget = Budget.Create(Guid.NewGuid(), "UK", Currency("GBP"));
+        repository.Save(budget);
+
+        var renamedBudget = budget.Rename("Europe");
+        var renameResult = repository.Save(renamedBudget);
+        var replacementResult = repository.Save(Budget.Create(Guid.NewGuid(), "UK", Currency("GBP")));
+
+        Assert.IsType<BudgetSaveResult.Saved>(renameResult);
+        Assert.IsType<BudgetSaveResult.Saved>(replacementResult);
+        Assert.True(repository.HasBudgetNamed("Europe"));
+        Assert.True(repository.HasBudgetNamed("UK"));
+    }
+
+    [Fact]
     public void TryUpdate_applies_each_update_to_the_latest_stored_budget()
     {
         var repository = new InMemoryBudgetRepository();
         var budget = Budget.Create(Guid.NewGuid(), "UK", Currency("GBP"));
-        repository.Add(budget);
+        repository.Save(budget);
 
         var salaryId = Guid.NewGuid();
         var groceriesId = Guid.NewGuid();
@@ -61,19 +105,17 @@ public sealed class BudgetRepositoryTests
     }
 
     [Fact]
-    public void TryUpdate_can_report_conflict_without_changing_stored_budget()
+    public void Save_can_report_conflict_without_changing_stored_budget()
     {
         var repository = new InMemoryBudgetRepository();
         var ukBudget = Budget.Create(Guid.NewGuid(), "UK", Currency("GBP"));
         var euBudget = Budget.Create(Guid.NewGuid(), "EU", Currency("EUR"));
-        repository.Add(ukBudget);
-        repository.Add(euBudget);
+        repository.Save(ukBudget);
+        repository.Save(euBudget);
 
-        var result = repository.TryUpdate(
-            ukBudget.BudgetId,
-            currentBudget => currentBudget.Rename("EU"));
+        var result = repository.Save(ukBudget.Rename("EU"));
 
-        Assert.IsType<BudgetUpdateResult.Conflict>(result);
+        Assert.IsType<BudgetSaveResult.Conflict>(result);
         Assert.Equal("UK", repository.Get(ukBudget.BudgetId)?.Name);
     }
 

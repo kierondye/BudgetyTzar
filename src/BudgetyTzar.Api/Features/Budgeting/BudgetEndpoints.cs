@@ -61,13 +61,18 @@ public static class BudgetEndpoints
 
         var budget = Budget.Create(Guid.NewGuid(), request.Name, currency);
 
-        return budgets.Add(budget) switch
+        if (budgets.HasBudgetNamed(budget.Name))
         {
-            AddBudgetResult.DuplicateName => Results.Conflict(),
-            AddBudgetResult.Added added => Results.Created(
-                $"/api/budgets/{added.Budget.BudgetId}",
-                BudgetResponse.FromBudget(added.Budget)),
-            _ => throw new InvalidOperationException("Unexpected add budget result.")
+            return Results.Conflict();
+        }
+
+        return budgets.Save(budget) switch
+        {
+            BudgetSaveResult.Conflict => Results.Conflict(),
+            BudgetSaveResult.Saved saved => Results.Created(
+                $"/api/budgets/{saved.Budget.BudgetId}",
+                BudgetResponse.FromBudget(saved.Budget)),
+            _ => throw new InvalidOperationException("Unexpected save budget result.")
         };
     }
 
@@ -98,16 +103,25 @@ public static class BudgetEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        var result = budgets.TryUpdate(
-            budgetId,
-            budget => budget.Rename(request.Name));
+        var budget = budgets.Get(budgetId);
 
-        return result switch
+        if (budget is null)
         {
-            BudgetUpdateResult.NotFound => Results.NotFound(),
-            BudgetUpdateResult.Conflict => Results.Conflict(),
-            BudgetUpdateResult.Updated updated => Results.Ok(BudgetResponse.FromBudget(updated.Budget)),
-            _ => throw new InvalidOperationException("Unexpected update budget result.")
+            return Results.NotFound();
+        }
+
+        if (budgets.HasBudgetNamed(request.Name, budgetId))
+        {
+            return Results.Conflict();
+        }
+
+        var renamedBudget = budget.Rename(request.Name);
+
+        return budgets.Save(renamedBudget) switch
+        {
+            BudgetSaveResult.Conflict => Results.Conflict(),
+            BudgetSaveResult.Saved saved => Results.Ok(BudgetResponse.FromBudget(saved.Budget)),
+            _ => throw new InvalidOperationException("Unexpected save budget result.")
         };
     }
 
