@@ -58,9 +58,7 @@ public static class BudgetEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        var name = request.Name.Trim();
-
-        var budget = Budget.Create(Guid.NewGuid(), name, currency);
+        var budget = Budget.Create(Guid.NewGuid(), request.Name, currency);
 
         return budgets.Add(budget) switch
         {
@@ -99,15 +97,18 @@ public static class BudgetEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        var name = request.Name.Trim();
         var result = budgets.TryUpdate(
             budgetId,
             (budget, allBudgets) =>
-                allBudgets.Any(existingBudget =>
+            {
+                var renamedBudget = budget.Rename(request.Name);
+
+                return allBudgets.Any(existingBudget =>
                     existingBudget.BudgetId != budgetId
-                    && string.Equals(existingBudget.Name, name, StringComparison.Ordinal))
+                    && string.Equals(existingBudget.Name, renamedBudget.Name, StringComparison.Ordinal))
                     ? new BudgetUpdateResult.Conflict()
-                    : new BudgetUpdateResult.Updated(budget.Rename(name)));
+                    : new BudgetUpdateResult.Updated(renamedBudget);
+            });
 
         return result switch
         {
