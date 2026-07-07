@@ -37,6 +37,12 @@ public static class BudgetEndpoints
         budgets.MapGet("/{budgetId:guid}/budget-items/{budgetItemId:guid}", GetBudgetItem)
             .WithName("GetBudgetItem");
 
+        budgets.MapPut("/{budgetId:guid}/budget-items/{budgetItemId:guid}/name", RenameBudgetItem)
+            .WithName("RenameBudgetItem");
+
+        budgets.MapPut("/{budgetId:guid}/budget-items/{budgetItemId:guid}/planned-amount", ChangeBudgetItemPlannedAmount)
+            .WithName("ChangeBudgetItemPlannedAmount");
+
         budgets.MapDelete("/{budgetId:guid}/budget-items/{budgetItemId:guid}", DeleteBudgetItem)
             .WithName("DeleteBudgetItem");
 
@@ -150,6 +156,55 @@ public static class BudgetEndpoints
             : Results.Ok(BudgetItemResponse.FromBudgetItem(budgetItem));
     }
 
+    private static IResult RenameBudgetItem(
+        Guid budgetId,
+        Guid budgetItemId,
+        RenameBudgetItemRequest request,
+        BudgetStore store)
+    {
+        var validation = Validate(request);
+
+        if (validation is RenameBudgetItemValidationResult.Invalid invalid)
+        {
+            return Results.ValidationProblem(invalid.Errors);
+        }
+
+        var valid = (RenameBudgetItemValidationResult.Valid)validation;
+        var result = store.RenameBudgetItem(budgetId, budgetItemId, valid.Name);
+
+        return result switch
+        {
+            RenameBudgetItemResult.NotFound => Results.NotFound(),
+            RenameBudgetItemResult.DuplicateName => Results.Conflict(),
+            RenameBudgetItemResult.Renamed renamed => Results.Ok(BudgetItemResponse.FromBudgetItem(renamed.BudgetItem)),
+            _ => throw new InvalidOperationException("Unexpected rename budget item result.")
+        };
+    }
+
+    private static IResult ChangeBudgetItemPlannedAmount(
+        Guid budgetId,
+        Guid budgetItemId,
+        ChangeBudgetItemPlannedAmountRequest request,
+        BudgetStore store)
+    {
+        var validation = Validate(request);
+
+        if (validation is BudgetItemPlannedAmountValidationResult.Invalid invalid)
+        {
+            return Results.ValidationProblem(invalid.Errors);
+        }
+
+        var valid = (BudgetItemPlannedAmountValidationResult.Valid)validation;
+        var result = store.ChangeBudgetItemPlannedAmount(budgetId, budgetItemId, valid.PlannedAmount);
+
+        return result switch
+        {
+            ChangeBudgetItemPlannedAmountResult.NotFound => Results.NotFound(),
+            ChangeBudgetItemPlannedAmountResult.Changed changed => Results.Ok(BudgetItemResponse.FromBudgetItem(changed.BudgetItem)),
+            _ => throw new InvalidOperationException("Unexpected change budget item planned amount result.")
+        };
+    }
+
     private static IResult DeleteBudgetItem(
         Guid budgetId,
         Guid budgetItemId,
@@ -211,6 +266,31 @@ public static class BudgetEndpoints
             : new BudgetItemValidationResult.Valid(kind, plannedAmount!);
     }
 
+    private static RenameBudgetItemValidationResult Validate(RenameBudgetItemRequest request)
+    {
+        var errors = ValidateName(request.Name, "Budget item name is required.");
+
+        return errors.Count > 0
+            ? new RenameBudgetItemValidationResult.Invalid(errors)
+            : new RenameBudgetItemValidationResult.Valid(request.Name.Trim());
+    }
+
+    private static BudgetItemPlannedAmountValidationResult Validate(ChangeBudgetItemPlannedAmountRequest request)
+    {
+        var hasPlannedAmount = PositiveMoneyAmount.TryCreate(request.PlannedAmount, out var plannedAmount);
+
+        if (!hasPlannedAmount)
+        {
+            return new BudgetItemPlannedAmountValidationResult.Invalid(
+                new Dictionary<string, string[]>(StringComparer.Ordinal)
+                {
+                    ["plannedAmount"] = ["Planned amount must be greater than 0.00, no more than 99999999.99, and use exactly two decimal places."]
+                });
+        }
+
+        return new BudgetItemPlannedAmountValidationResult.Valid(plannedAmount!);
+    }
+
     private static Dictionary<string, string[]> ValidateName(string name, string message)
     {
         var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
@@ -228,5 +308,19 @@ public static class BudgetEndpoints
         public sealed record Valid(BudgetItemKind Kind, PositiveMoneyAmount PlannedAmount) : BudgetItemValidationResult;
 
         public sealed record Invalid(Dictionary<string, string[]> Errors) : BudgetItemValidationResult;
+    }
+
+    private abstract record RenameBudgetItemValidationResult
+    {
+        public sealed record Valid(string Name) : RenameBudgetItemValidationResult;
+
+        public sealed record Invalid(Dictionary<string, string[]> Errors) : RenameBudgetItemValidationResult;
+    }
+
+    private abstract record BudgetItemPlannedAmountValidationResult
+    {
+        public sealed record Valid(PositiveMoneyAmount PlannedAmount) : BudgetItemPlannedAmountValidationResult;
+
+        public sealed record Invalid(Dictionary<string, string[]> Errors) : BudgetItemPlannedAmountValidationResult;
     }
 }

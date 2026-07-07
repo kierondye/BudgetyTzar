@@ -98,6 +98,62 @@ public sealed class BudgetStore
         }
     }
 
+    public RenameBudgetItemResult RenameBudgetItem(Guid budgetId, Guid budgetItemId, string name)
+    {
+        lock (syncRoot)
+        {
+            if (!budgetsById.TryGetValue(budgetId, out var budget))
+            {
+                return new RenameBudgetItemResult.NotFound();
+            }
+
+            var budgetItem = budget.BudgetItems.FirstOrDefault(budgetItem => budgetItem.BudgetItemId == budgetItemId);
+
+            if (budgetItem is null)
+            {
+                return new RenameBudgetItemResult.NotFound();
+            }
+
+            if (budget.BudgetItems.Any(budgetItem => budgetItem.BudgetItemId != budgetItemId && budgetItem.Name == name))
+            {
+                return new RenameBudgetItemResult.DuplicateName();
+            }
+
+            var renamedBudgetItem = budgetItem with { Name = name };
+            var budgetItems = budget.BudgetItems.Replace(budgetItem, renamedBudgetItem);
+            budgetsById[budgetId] = budget with { BudgetItems = budgetItems };
+
+            return new RenameBudgetItemResult.Renamed(renamedBudgetItem);
+        }
+    }
+
+    public ChangeBudgetItemPlannedAmountResult ChangeBudgetItemPlannedAmount(
+        Guid budgetId,
+        Guid budgetItemId,
+        PositiveMoneyAmount plannedAmount)
+    {
+        lock (syncRoot)
+        {
+            if (!budgetsById.TryGetValue(budgetId, out var budget))
+            {
+                return new ChangeBudgetItemPlannedAmountResult.NotFound();
+            }
+
+            var budgetItem = budget.BudgetItems.FirstOrDefault(budgetItem => budgetItem.BudgetItemId == budgetItemId);
+
+            if (budgetItem is null)
+            {
+                return new ChangeBudgetItemPlannedAmountResult.NotFound();
+            }
+
+            var updatedBudgetItem = budgetItem with { PlannedAmount = plannedAmount };
+            var budgetItems = budget.BudgetItems.Replace(budgetItem, updatedBudgetItem);
+            budgetsById[budgetId] = budget with { BudgetItems = budgetItems };
+
+            return new ChangeBudgetItemPlannedAmountResult.Changed(updatedBudgetItem);
+        }
+    }
+
     public BudgetItemReference? GetBudgetItemReference(Guid budgetItemId)
     {
         lock (syncRoot)
@@ -167,6 +223,22 @@ public abstract record AddBudgetItemResult
     public sealed record NotFound : AddBudgetItemResult;
 
     public sealed record DuplicateName : AddBudgetItemResult;
+}
+
+public abstract record RenameBudgetItemResult
+{
+    public sealed record Renamed(BudgetItem BudgetItem) : RenameBudgetItemResult;
+
+    public sealed record NotFound : RenameBudgetItemResult;
+
+    public sealed record DuplicateName : RenameBudgetItemResult;
+}
+
+public abstract record ChangeBudgetItemPlannedAmountResult
+{
+    public sealed record Changed(BudgetItem BudgetItem) : ChangeBudgetItemPlannedAmountResult;
+
+    public sealed record NotFound : ChangeBudgetItemPlannedAmountResult;
 }
 
 public abstract record DeleteBudgetItemResult
