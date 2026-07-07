@@ -36,6 +36,14 @@ public sealed class TransactionAllocationStore
         }
     }
 
+    public IReadOnlyList<TransactionAllocation> GetAll()
+    {
+        lock (syncRoot)
+        {
+            return allocationsByTransactionId.Values.ToList();
+        }
+    }
+
     public void Remove(Guid transactionId)
     {
         lock (syncRoot)

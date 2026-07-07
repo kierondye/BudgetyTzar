@@ -1,4 +1,5 @@
 using BudgetyTzar.Api.Features.Budgeting;
+using BudgetyTzar.Api.Features.Reporting;
 using BudgetyTzar.Api.Features.Transactions;
 using Microsoft.OpenApi.Models;
 
@@ -15,6 +16,7 @@ public static class ApiApplication
         builder.Services.AddHealthChecks();
         builder.Services.AddBudgeting();
         builder.Services.AddTransactions();
+        builder.Services.AddReporting();
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen(options =>
         {
@@ -35,6 +37,7 @@ public static class ApiApplication
             .WithName("GetVersion");
         app.MapBudgetEndpoints();
         app.MapTransactionEndpoints();
+        app.MapReportingEndpoints();
 
         return app;
     }
