@@ -1,3 +1,6 @@
+using BudgetyTzar.Api.Domain.Entities;
+using BudgetyTzar.Api.Domain.ValueTypes;
+
 namespace BudgetyTzar.Api.Features.Budgeting;
 
 public sealed class InMemoryBudgetRepository
@@ -24,7 +27,7 @@ public sealed class InMemoryBudgetRepository
 
     public BudgetUpdateResult TryUpdate(
         Guid budgetId,
-        Func<Budget, IReadOnlyCollection<Budget>, BudgetUpdateResult> update)
+        Func<Budget, Budget> update)
     {
         lock (syncRoot)
         {
@@ -33,14 +36,14 @@ public sealed class InMemoryBudgetRepository
                 return new BudgetUpdateResult.NotFound();
             }
 
-            var result = update(budget, budgetsById.Values.ToList());
-
-            if (result is BudgetUpdateResult.Updated updated)
+            var updatedBudget = update(budget);
+            if (HasBudgetNamedCore(updatedBudget.Name, budgetId))
             {
-                budgetsById[budgetId] = updated.Budget;
+                return new BudgetUpdateResult.Conflict();
             }
 
-            return result;
+            budgetsById[budgetId] = updatedBudget;
+            return new BudgetUpdateResult.Updated(updatedBudget);
         }
     }
 
@@ -59,14 +62,6 @@ public sealed class InMemoryBudgetRepository
         lock (syncRoot)
         {
             return budgetsById.GetValueOrDefault(budgetId);
-        }
-    }
-
-    public bool HasBudgetNamed(string name, Guid? exceptBudgetId = null)
-    {
-        lock (syncRoot)
-        {
-            return HasBudgetNamedCore(name, exceptBudgetId);
         }
     }
 
@@ -121,3 +116,5 @@ public abstract record BudgetUpdateResult
 
     public sealed record Conflict : BudgetUpdateResult;
 }
+
+public sealed record BudgetItemReference(Guid BudgetId, CurrencyCode BudgetCurrency, BudgetItem BudgetItem);

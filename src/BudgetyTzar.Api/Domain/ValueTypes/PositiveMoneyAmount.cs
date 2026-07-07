@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 
-namespace BudgetyTzar.Api.Features.Common;
+namespace BudgetyTzar.Api.Domain.ValueTypes;
 
 public sealed partial record PositiveMoneyAmount
 {

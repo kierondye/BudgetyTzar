@@ -1,5 +1,6 @@
+using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Features.Budgeting;
-using BudgetyTzar.Api.Features.Common;
+using BudgetyTzar.Api.Domain.ValueTypes;
 
 namespace BudgetyTzar.Tests.Budgeting;
 
@@ -35,18 +36,18 @@ public sealed class BudgetRepositoryTests
 
         var firstResult = repository.TryUpdate(
             budget.BudgetId,
-            (currentBudget, _) => new BudgetUpdateResult.Updated(currentBudget.AddBudgetItem(
+            currentBudget => currentBudget.AddBudgetItem(
                 salaryId,
                 "Salary",
                 BudgetItemKind.Funding,
-                Money("3000.00"))));
+                Money("3000.00")));
         var secondResult = repository.TryUpdate(
             budget.BudgetId,
-            (currentBudget, _) => new BudgetUpdateResult.Updated(currentBudget.AddBudgetItem(
+            currentBudget => currentBudget.AddBudgetItem(
                 groceriesId,
                 "Groceries",
                 BudgetItemKind.Consumption,
-                Money("400.00"))));
+                Money("400.00")));
 
         Assert.IsType<BudgetUpdateResult.Updated>(firstResult);
         Assert.IsType<BudgetUpdateResult.Updated>(secondResult);
@@ -70,10 +71,7 @@ public sealed class BudgetRepositoryTests
 
         var result = repository.TryUpdate(
             ukBudget.BudgetId,
-            (currentBudget, allBudgets) =>
-                allBudgets.Any(budget => budget.BudgetId != currentBudget.BudgetId && budget.Name == "EU")
-                    ? new BudgetUpdateResult.Conflict()
-                    : new BudgetUpdateResult.Updated(currentBudget.Rename("EU")));
+            currentBudget => currentBudget.Rename("EU"));
 
         Assert.IsType<BudgetUpdateResult.Conflict>(result);
         Assert.Equal("UK", repository.Get(ukBudget.BudgetId)?.Name);

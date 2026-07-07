@@ -1,3 +1,5 @@
+using BudgetyTzar.Api.Domain.Entities;
+
 namespace BudgetyTzar.Api.Features.Budgeting;
 
 public sealed record CreateBudgetRequest(string Name, string Currency);

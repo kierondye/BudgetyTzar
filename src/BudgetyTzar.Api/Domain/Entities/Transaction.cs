@@ -1,6 +1,6 @@
-using BudgetyTzar.Api.Features.Common;
+using BudgetyTzar.Api.Domain.ValueTypes;
 
-namespace BudgetyTzar.Api.Features.Transactions;
+namespace BudgetyTzar.Api.Domain.Entities;
 
 public sealed class Transaction
 {

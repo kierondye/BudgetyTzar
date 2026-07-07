@@ -1,5 +1,5 @@
 using System.Globalization;
-using BudgetyTzar.Api.Features.Budgeting;
+using BudgetyTzar.Api.Domain.ValueTypes;
 
 namespace BudgetyTzar.Api.Features.Reporting;
 

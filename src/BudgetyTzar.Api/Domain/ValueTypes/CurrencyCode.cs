@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace BudgetyTzar.Api.Features.Common;
+namespace BudgetyTzar.Api.Domain.ValueTypes;
 
 public readonly partial record struct CurrencyCode
 {

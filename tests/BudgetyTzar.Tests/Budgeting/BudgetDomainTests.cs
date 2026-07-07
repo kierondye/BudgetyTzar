@@ -1,5 +1,5 @@
-using BudgetyTzar.Api.Features.Budgeting;
-using BudgetyTzar.Api.Features.Common;
+using BudgetyTzar.Api.Domain.Entities;
+using BudgetyTzar.Api.Domain.ValueTypes;
 
 namespace BudgetyTzar.Tests.Budgeting;
 

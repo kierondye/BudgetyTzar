@@ -1,3 +1,5 @@
+using BudgetyTzar.Api.Domain.Entities;
+
 namespace BudgetyTzar.Api.Features.Transactions;
 
 public sealed class InMemoryTransactionAllocationRepository

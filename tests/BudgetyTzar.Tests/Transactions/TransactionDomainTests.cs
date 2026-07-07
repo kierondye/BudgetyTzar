@@ -1,5 +1,5 @@
-using BudgetyTzar.Api.Features.Common;
-using BudgetyTzar.Api.Features.Transactions;
+using BudgetyTzar.Api.Domain.Entities;
+using BudgetyTzar.Api.Domain.ValueTypes;
 
 namespace BudgetyTzar.Tests.Transactions;
 

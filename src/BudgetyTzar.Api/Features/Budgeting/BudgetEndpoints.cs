@@ -1,4 +1,5 @@
-using BudgetyTzar.Api.Features.Common;
+using BudgetyTzar.Api.Domain.Entities;
+using BudgetyTzar.Api.Domain.ValueTypes;
 using BudgetyTzar.Api.Features.Transactions;
 
 namespace BudgetyTzar.Api.Features.Budgeting;
@@ -99,16 +100,7 @@ public static class BudgetEndpoints
 
         var result = budgets.TryUpdate(
             budgetId,
-            (budget, allBudgets) =>
-            {
-                var renamedBudget = budget.Rename(request.Name);
-
-                return allBudgets.Any(existingBudget =>
-                    existingBudget.BudgetId != budgetId
-                    && string.Equals(existingBudget.Name, renamedBudget.Name, StringComparison.Ordinal))
-                    ? new BudgetUpdateResult.Conflict()
-                    : new BudgetUpdateResult.Updated(renamedBudget);
-            });
+            budget => budget.Rename(request.Name));
 
         return result switch
         {
@@ -130,16 +122,25 @@ public static class BudgetEndpoints
 
         var valid = (BudgetItemValidationResult.Valid)validation;
         var budgetItemId = Guid.NewGuid();
+        var budget = budgets.Get(budgetId);
+
+        if (budget is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (budget.HasBudgetItemNamed(valid.Name))
+        {
+            return Results.Conflict();
+        }
+
         var result = budgets.TryUpdate(
             budgetId,
-            (budget, _) =>
-                budget.HasBudgetItemNamed(valid.Name)
-                    ? new BudgetUpdateResult.Conflict()
-                    : new BudgetUpdateResult.Updated(budget.AddBudgetItem(
-                        budgetItemId,
-                        valid.Name,
-                        valid.Kind,
-                        valid.PlannedAmount)));
+            currentBudget => currentBudget.AddBudgetItem(
+                budgetItemId,
+                valid.Name,
+                valid.Kind,
+                valid.PlannedAmount));
 
         return result switch
         {
@@ -191,22 +192,21 @@ public static class BudgetEndpoints
         }
 
         var valid = (RenameBudgetItemValidationResult.Valid)validation;
+        var budget = budgets.Get(budgetId);
+
+        if (budget is null || budget.GetBudgetItem(budgetItemId) is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (budget.HasBudgetItemNamed(valid.Name, budgetItemId))
+        {
+            return Results.Conflict();
+        }
+
         var result = budgets.TryUpdate(
             budgetId,
-            (budget, _) =>
-            {
-                if (budget.GetBudgetItem(budgetItemId) is null)
-                {
-                    return new BudgetUpdateResult.NotFound();
-                }
-
-                if (budget.HasBudgetItemNamed(valid.Name, budgetItemId))
-                {
-                    return new BudgetUpdateResult.Conflict();
-                }
-
-                return new BudgetUpdateResult.Updated(budget.RenameBudgetItem(budgetItemId, valid.Name));
-            });
+            currentBudget => currentBudget.RenameBudgetItem(budgetItemId, valid.Name));
 
         return result switch
         {
@@ -232,14 +232,18 @@ public static class BudgetEndpoints
         }
 
         var valid = (BudgetItemPlannedAmountValidationResult.Valid)validation;
+        var budget = budgets.Get(budgetId);
+
+        if (budget is null || budget.GetBudgetItem(budgetItemId) is null)
+        {
+            return Results.NotFound();
+        }
+
         var result = budgets.TryUpdate(
             budgetId,
-            (budget, _) =>
-                budget.GetBudgetItem(budgetItemId) is null
-                    ? new BudgetUpdateResult.NotFound()
-                    : new BudgetUpdateResult.Updated(budget.ChangeBudgetItemPlannedAmount(
-                        budgetItemId,
-                        valid.PlannedAmount)));
+            currentBudget => currentBudget.ChangeBudgetItemPlannedAmount(
+                budgetItemId,
+                valid.PlannedAmount));
 
         return result switch
         {
@@ -261,12 +265,16 @@ public static class BudgetEndpoints
             return Results.Conflict();
         }
 
+        var budget = budgets.Get(budgetId);
+
+        if (budget is null || budget.GetBudgetItem(budgetItemId) is null)
+        {
+            return Results.NotFound();
+        }
+
         var result = budgets.TryUpdate(
             budgetId,
-            (budget, _) =>
-                budget.GetBudgetItem(budgetItemId) is null
-                    ? new BudgetUpdateResult.NotFound()
-                    : new BudgetUpdateResult.Updated(budget.RemoveBudgetItem(budgetItemId)));
+            currentBudget => currentBudget.RemoveBudgetItem(budgetItemId));
 
         return result switch
         {

@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
-using BudgetyTzar.Api.Features.Common;
+using BudgetyTzar.Api.Domain.ValueTypes;
 
-namespace BudgetyTzar.Api.Features.Budgeting;
+namespace BudgetyTzar.Api.Domain.Entities;
 
 public sealed class Budget
 {
@@ -136,5 +136,3 @@ public sealed class Budget
         return name.Trim();
     }
 }
-
-public sealed record BudgetItemReference(Guid BudgetId, CurrencyCode BudgetCurrency, BudgetItem BudgetItem);
