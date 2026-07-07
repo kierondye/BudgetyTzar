@@ -151,19 +151,16 @@ public static class TransactionEndpoints
             return Results.Conflict();
         }
 
-        var existingAllocation = allocations.Get(transactionId);
-
-        if (existingAllocation is not null)
-        {
-            return existingAllocation.BudgetItemId == request.BudgetItemId
-                ? Results.Ok(TransactionAllocationResponse.FromAllocation(existingAllocation))
-                : Results.Conflict();
-        }
-
         var allocation = TransactionAllocation.Allocate(transaction, request.BudgetItemId);
-        allocations.Add(allocation);
+        var result = allocations.Allocate(allocation);
 
-        return Results.Ok(TransactionAllocationResponse.FromAllocation(allocation));
+        return result switch
+        {
+            AllocateTransactionResult.Allocated allocated => Results.Ok(
+                TransactionAllocationResponse.FromAllocation(allocated.Allocation)),
+            AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem => Results.Conflict(),
+            _ => throw new InvalidOperationException("Unexpected allocate transaction result.")
+        };
     }
 
     private static IResult GetTransactionAllocation(

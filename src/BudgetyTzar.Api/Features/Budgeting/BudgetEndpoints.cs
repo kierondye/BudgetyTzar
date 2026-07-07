@@ -60,17 +60,16 @@ public static class BudgetEndpoints
 
         var name = request.Name.Trim();
 
-        if (budgets.HasBudgetNamed(name))
-        {
-            return Results.Conflict();
-        }
-
         var budget = Budget.Create(Guid.NewGuid(), name, currency);
-        budgets.Add(budget);
 
-        return Results.Created(
-            $"/api/budgets/{budget.BudgetId}",
-            BudgetResponse.FromBudget(budget));
+        return budgets.Add(budget) switch
+        {
+            AddBudgetResult.DuplicateName => Results.Conflict(),
+            AddBudgetResult.Added added => Results.Created(
+                $"/api/budgets/{added.Budget.BudgetId}",
+                BudgetResponse.FromBudget(added.Budget)),
+            _ => throw new InvalidOperationException("Unexpected add budget result.")
+        };
     }
 
     private static IResult GetBudgets(InMemoryBudgetRepository budgets)
@@ -100,24 +99,23 @@ public static class BudgetEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        var budget = budgets.Get(budgetId);
-
-        if (budget is null)
-        {
-            return Results.NotFound();
-        }
-
         var name = request.Name.Trim();
+        var result = budgets.TryUpdate(
+            budgetId,
+            (budget, allBudgets) =>
+                allBudgets.Any(existingBudget =>
+                    existingBudget.BudgetId != budgetId
+                    && string.Equals(existingBudget.Name, name, StringComparison.Ordinal))
+                    ? new BudgetUpdateResult.Conflict()
+                    : new BudgetUpdateResult.Updated(budget.Rename(name)));
 
-        if (budgets.HasBudgetNamed(name, budgetId))
+        return result switch
         {
-            return Results.Conflict();
-        }
-
-        var renamedBudget = budget.Rename(name);
-        budgets.Save(renamedBudget);
-
-        return Results.Ok(BudgetResponse.FromBudget(renamedBudget));
+            BudgetUpdateResult.NotFound => Results.NotFound(),
+            BudgetUpdateResult.Conflict => Results.Conflict(),
+            BudgetUpdateResult.Updated updated => Results.Ok(BudgetResponse.FromBudget(updated.Budget)),
+            _ => throw new InvalidOperationException("Unexpected update budget result.")
+        };
     }
 
     private static IResult CreateBudgetItem(Guid budgetId, CreateBudgetItemRequest request, InMemoryBudgetRepository budgets)
@@ -130,28 +128,27 @@ public static class BudgetEndpoints
         }
 
         var valid = (BudgetItemValidationResult.Valid)validation;
-        var budget = budgets.Get(budgetId);
-
-        if (budget is null)
-        {
-            return Results.NotFound();
-        }
-
-        if (budget.HasBudgetItemNamed(valid.Name))
-        {
-            return Results.Conflict();
-        }
-
         var budgetItemId = Guid.NewGuid();
-        var updatedBudget = budget.AddBudgetItem(budgetItemId, valid.Name, valid.Kind, valid.PlannedAmount);
-        var budgetItem = updatedBudget.GetBudgetItem(budgetItemId)
-            ?? throw new InvalidOperationException("Added budget item was not found.");
+        var result = budgets.TryUpdate(
+            budgetId,
+            (budget, _) =>
+                budget.HasBudgetItemNamed(valid.Name)
+                    ? new BudgetUpdateResult.Conflict()
+                    : new BudgetUpdateResult.Updated(budget.AddBudgetItem(
+                        budgetItemId,
+                        valid.Name,
+                        valid.Kind,
+                        valid.PlannedAmount)));
 
-        budgets.Save(updatedBudget);
-
-        return Results.Created(
-            $"/api/budgets/{budgetId}/budget-items/{budgetItem.BudgetItemId}",
-            BudgetItemResponse.FromBudgetItem(budgetItem));
+        return result switch
+        {
+            BudgetUpdateResult.NotFound => Results.NotFound(),
+            BudgetUpdateResult.Conflict => Results.Conflict(),
+            BudgetUpdateResult.Updated updated => Results.Created(
+                $"/api/budgets/{budgetId}/budget-items/{budgetItemId}",
+                BudgetItemResponse.FromBudgetItem(GetUpdatedBudgetItem(updated.Budget, budgetItemId, "Added"))),
+            _ => throw new InvalidOperationException("Unexpected update budget result.")
+        };
     }
 
     private static IResult GetBudgetItems(Guid budgetId, InMemoryBudgetRepository budgets)
@@ -193,25 +190,31 @@ public static class BudgetEndpoints
         }
 
         var valid = (RenameBudgetItemValidationResult.Valid)validation;
-        var budget = budgets.Get(budgetId);
+        var result = budgets.TryUpdate(
+            budgetId,
+            (budget, _) =>
+            {
+                if (budget.GetBudgetItem(budgetItemId) is null)
+                {
+                    return new BudgetUpdateResult.NotFound();
+                }
 
-        if (budget is null || budget.GetBudgetItem(budgetItemId) is null)
+                if (budget.HasBudgetItemNamed(valid.Name, budgetItemId))
+                {
+                    return new BudgetUpdateResult.Conflict();
+                }
+
+                return new BudgetUpdateResult.Updated(budget.RenameBudgetItem(budgetItemId, valid.Name));
+            });
+
+        return result switch
         {
-            return Results.NotFound();
-        }
-
-        if (budget.HasBudgetItemNamed(valid.Name, budgetItemId))
-        {
-            return Results.Conflict();
-        }
-
-        var updatedBudget = budget.RenameBudgetItem(budgetItemId, valid.Name);
-        var budgetItem = updatedBudget.GetBudgetItem(budgetItemId)
-            ?? throw new InvalidOperationException("Renamed budget item was not found.");
-
-        budgets.Save(updatedBudget);
-
-        return Results.Ok(BudgetItemResponse.FromBudgetItem(budgetItem));
+            BudgetUpdateResult.NotFound => Results.NotFound(),
+            BudgetUpdateResult.Conflict => Results.Conflict(),
+            BudgetUpdateResult.Updated updated => Results.Ok(BudgetItemResponse.FromBudgetItem(
+                GetUpdatedBudgetItem(updated.Budget, budgetItemId, "Renamed"))),
+            _ => throw new InvalidOperationException("Unexpected update budget result.")
+        };
     }
 
     private static IResult ChangeBudgetItemPlannedAmount(
@@ -228,20 +231,22 @@ public static class BudgetEndpoints
         }
 
         var valid = (BudgetItemPlannedAmountValidationResult.Valid)validation;
-        var budget = budgets.Get(budgetId);
+        var result = budgets.TryUpdate(
+            budgetId,
+            (budget, _) =>
+                budget.GetBudgetItem(budgetItemId) is null
+                    ? new BudgetUpdateResult.NotFound()
+                    : new BudgetUpdateResult.Updated(budget.ChangeBudgetItemPlannedAmount(
+                        budgetItemId,
+                        valid.PlannedAmount)));
 
-        if (budget is null || budget.GetBudgetItem(budgetItemId) is null)
+        return result switch
         {
-            return Results.NotFound();
-        }
-
-        var updatedBudget = budget.ChangeBudgetItemPlannedAmount(budgetItemId, valid.PlannedAmount);
-        var budgetItem = updatedBudget.GetBudgetItem(budgetItemId)
-            ?? throw new InvalidOperationException("Updated budget item was not found.");
-
-        budgets.Save(updatedBudget);
-
-        return Results.Ok(BudgetItemResponse.FromBudgetItem(budgetItem));
+            BudgetUpdateResult.NotFound => Results.NotFound(),
+            BudgetUpdateResult.Updated updated => Results.Ok(BudgetItemResponse.FromBudgetItem(
+                GetUpdatedBudgetItem(updated.Budget, budgetItemId, "Updated"))),
+            _ => throw new InvalidOperationException("Unexpected update budget result.")
+        };
     }
 
     private static IResult DeleteBudgetItem(
@@ -250,22 +255,24 @@ public static class BudgetEndpoints
         InMemoryBudgetRepository budgets,
         InMemoryTransactionAllocationRepository allocationRepository)
     {
-        var budget = budgets.Get(budgetId);
-
-        if (budget is null || budget.GetBudgetItem(budgetItemId) is null)
-        {
-            return Results.NotFound();
-        }
-
         if (allocationRepository.HasAllocationForBudgetItem(budgetItemId))
         {
             return Results.Conflict();
         }
 
-        var updatedBudget = budget.RemoveBudgetItem(budgetItemId);
-        budgets.Save(updatedBudget);
+        var result = budgets.TryUpdate(
+            budgetId,
+            (budget, _) =>
+                budget.GetBudgetItem(budgetItemId) is null
+                    ? new BudgetUpdateResult.NotFound()
+                    : new BudgetUpdateResult.Updated(budget.RemoveBudgetItem(budgetItemId)));
 
-        return Results.NoContent();
+        return result switch
+        {
+            BudgetUpdateResult.NotFound => Results.NotFound(),
+            BudgetUpdateResult.Updated => Results.NoContent(),
+            _ => throw new InvalidOperationException("Unexpected update budget result.")
+        };
     }
 
     private static Dictionary<string, string[]> Validate(CreateBudgetRequest request, out CurrencyCode currency)
@@ -338,6 +345,12 @@ public static class BudgetEndpoints
         }
 
         return errors;
+    }
+
+    private static BudgetItem GetUpdatedBudgetItem(Budget budget, Guid budgetItemId, string action)
+    {
+        return budget.GetBudgetItem(budgetItemId)
+            ?? throw new InvalidOperationException($"{action} budget item was not found.");
     }
 
     private abstract record BudgetItemValidationResult

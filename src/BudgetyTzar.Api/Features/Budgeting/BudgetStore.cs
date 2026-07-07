@@ -6,20 +6,41 @@ public sealed class InMemoryBudgetRepository
     private readonly Dictionary<Guid, Budget> budgetsById = [];
     private readonly List<Guid> budgetIds = [];
 
-    public void Add(Budget budget)
+    public AddBudgetResult Add(Budget budget)
     {
         lock (syncRoot)
         {
+            if (HasBudgetNamedCore(budget.Name, exceptBudgetId: null))
+            {
+                return new AddBudgetResult.DuplicateName();
+            }
+
             budgetsById[budget.BudgetId] = budget;
             budgetIds.Add(budget.BudgetId);
+
+            return new AddBudgetResult.Added(budget);
         }
     }
 
-    public void Save(Budget budget)
+    public BudgetUpdateResult TryUpdate(
+        Guid budgetId,
+        Func<Budget, IReadOnlyCollection<Budget>, BudgetUpdateResult> update)
     {
         lock (syncRoot)
         {
-            budgetsById[budget.BudgetId] = budget;
+            if (!budgetsById.TryGetValue(budgetId, out var budget))
+            {
+                return new BudgetUpdateResult.NotFound();
+            }
+
+            var result = update(budget, budgetsById.Values.ToList());
+
+            if (result is BudgetUpdateResult.Updated updated)
+            {
+                budgetsById[budgetId] = updated.Budget;
+            }
+
+            return result;
         }
     }
 
@@ -45,9 +66,7 @@ public sealed class InMemoryBudgetRepository
     {
         lock (syncRoot)
         {
-            return budgetsById.Values.Any(budget =>
-                budget.BudgetId != exceptBudgetId
-                && string.Equals(budget.Name, name, StringComparison.Ordinal));
+            return HasBudgetNamedCore(name, exceptBudgetId);
         }
     }
 
@@ -78,4 +97,27 @@ public sealed class InMemoryBudgetRepository
             return null;
         }
     }
+
+    private bool HasBudgetNamedCore(string name, Guid? exceptBudgetId)
+    {
+        return budgetsById.Values.Any(budget =>
+            budget.BudgetId != exceptBudgetId
+            && string.Equals(budget.Name, name, StringComparison.Ordinal));
+    }
+}
+
+public abstract record AddBudgetResult
+{
+    public sealed record Added(Budget Budget) : AddBudgetResult;
+
+    public sealed record DuplicateName : AddBudgetResult;
+}
+
+public abstract record BudgetUpdateResult
+{
+    public sealed record Updated(Budget Budget) : BudgetUpdateResult;
+
+    public sealed record NotFound : BudgetUpdateResult;
+
+    public sealed record Conflict : BudgetUpdateResult;
 }
