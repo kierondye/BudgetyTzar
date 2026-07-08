@@ -182,7 +182,8 @@ attempting the write.
 `EntityState<T>` is opaque to application code: callers only carry it from `Get`,
 through `Update`, to `Save`. Each repository can therefore encode whatever concurrency
 state its persistence mechanism requires without exposing that choice to domain or
-application code.
+application code. A repository returns its own private `EntityState<T>` implementation
+and rejects state created by a different repository implementation.
 
 `InMemoryBudgetRepository` represents the concurrency state with its own private
 numeric token and compares it under the repository lock. If another writer has already
