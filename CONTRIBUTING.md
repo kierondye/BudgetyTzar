@@ -34,8 +34,10 @@ git config core.hooksPath .githooks
   `EntityState<T>` through the workflow.
 - Extend a repository only when persistence has a new responsibility, and preserve
   concurrency, uniqueness, and referential checks atomically.
-- Coordinate validation and outcomes in the feature handler, then map them to HTTP in
-  the endpoint. Keep request and response records in the feature's contracts file.
+- In the endpoint handler, coordinate validation, domain and persistence outcomes, and
+  HTTP mapping. If a handler is extracted, return application outcomes from it while
+  retaining HTTP mapping in the endpoint. Keep request and response records in the
+  feature's contracts file.
 - Register the endpoint and dependencies through the feature's `Map*` and `Add*`
   methods.
 - Add domain tests for invariant logic, repository tests for persistence guarantees,

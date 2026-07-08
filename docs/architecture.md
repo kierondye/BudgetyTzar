@@ -71,12 +71,9 @@ implementations live beside their feature, and HTTP contracts use `*Request` and
 ### Value types
 
 Create a value type in `Domain/ValueTypes` when a value has domain-wide validation or
-semantics that should not be represented by a primitive. Domain types should make
-invalid states difficult or impossible to represent. Construct validated value types
-before passing them to aggregate operations, so a method such as `Budget.Rename` can
-accept a `NormalizedName` without also handling invalid strings. Existing value types
-use `TryCreate` and an `Empty` value or nullable out value to report parsing failure
-without throwing.
+semantics that should not be represented by a primitive. Existing value types use
+`TryCreate` and an `Empty` value or nullable out value to report parsing failure without
+throwing.
 
 Value types must not know about JSON, HTTP status codes, repositories, or persistence
 versions.
@@ -87,6 +84,10 @@ Create an entity in `Domain/Entities` when the concept has an identity and domai
 behaviour. Put an operation on the aggregate that owns the invariant it changes.
 `Budget`, for example, owns its collection of `BudgetItem` values and protects
 collection-level rules.
+
+Domain types should make invalid states difficult or impossible to represent. Create
+validated value types before invoking aggregate operations, so a method such as
+`Budget.Rename` can accept a `NormalizedName` without also handling invalid strings.
 
 Domain objects are immutable. An operation returns a new object with the same identity
 instead of modifying the existing object. Collections exposed by aggregates are
@@ -143,12 +144,11 @@ allocations. This is important for checks such as preventing deletion of an allo
 transaction or budget item: the check and write happen under the same lock as the
 related allocation state.
 
-This shared synchronization boundary lets the in-memory repositories emulate
-referential-integrity constraints across repository boundaries. It necessarily creates
-an explicit cross-boundary dependency: Budgeting must be able to determine whether
-Transaction Allocations reference a budget item before deleting it. Keep that
-dependency visible at the persistence boundary; do not move ownership of allocations
-into Budgeting to hide it.
+The shared InMemoryDataStore synchronization boundary allows the in-memory
+repositories to emulate referential-integrity constraints across repository boundaries.
+This also introduces cross-boundary coupling: for example, Budgeting must know whether
+Transaction Allocations reference a budget item. That dependency should be acknowledged
+and kept explicit, without moving ownership of allocations into Budgeting.
 
 Keep direct access to the shared dictionaries inside repositories. An eventual
 database implementation should preserve the same observable outcomes using database
@@ -180,9 +180,9 @@ var saveResult = budgets.Save(state.Update(changed.Budget));
 writer has already saved the aggregate, it returns `BudgetSaveResult.StaleState`
 without overwriting the newer value.
 
-The state is opaque because callers only carry it from `Get`, through `Update`, to
-`Save`; they do not interpret or change its version. Each persistence implementation
-can therefore use its own concurrency mechanism without affecting domain or
+`EntityState<T>` is opaque to application code: callers only carry it from `Get`,
+through `Update`, to `Save`. Each repository can therefore encode whatever concurrency
+state its persistence mechanism requires without exposing that choice to domain or
 application code. The version is persistence state, not domain state. Do not add it to
 `Budget`, expose it through domain operations, or let the aggregate increment it.
 
