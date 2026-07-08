@@ -182,13 +182,15 @@ attempting the write.
 `EntityState<T>` is opaque to application code: callers only carry it from `Get`,
 through `Update`, to `Save`. Each repository can therefore encode whatever concurrency
 state its persistence mechanism requires without exposing that choice to domain or
-application code.
+application code. A repository returns its own private `EntityState<T>` implementation
+and rejects state created by a different repository implementation.
 
-`InMemoryBudgetRepository` represents the concurrency state as a numeric `Version` and
-compares it under the repository lock. If another writer has already saved the
-aggregate, the repository returns `BudgetSaveResult.StaleState` without overwriting the
-newer value. This state belongs to persistence, not the domain: do not add it to
-`Budget`, expose it through domain operations, or let the aggregate change it.
+`InMemoryBudgetRepository` represents the concurrency state with its own private
+numeric token and compares it under the repository lock. If another writer has already
+saved the aggregate, the repository returns `BudgetSaveResult.StaleState` without
+overwriting the newer value. This state belongs to persistence, not the domain: do not
+add it to `Budget`, expose it through domain operations, or let the aggregate change
+it.
 
 ### Reporting services
 
@@ -311,7 +313,7 @@ specific result variants.
 
 ### 4. Preserve concurrency and integrity in memory
 
-The handler retains the version loaded with the budget:
+The handler retains the opaque persistence state loaded with the budget:
 
 ```csharp
 var budgetState = budgets.Get(budgetId);
@@ -330,10 +332,10 @@ if (budgetState.Value.ChangeBudgetItemPlannedAmount(budgetItemId, amount)
 var save = budgets.Save(budgetState.Update(changed.Budget));
 ```
 
-`InMemoryBudgetRepository.Save` performs its version, uniqueness, and referential checks
-while holding `InMemoryDataStore.SyncRoot`. A new persistence rule must be checked in
-the same critical section as its write and must leave stored state untouched on
-failure.
+`InMemoryBudgetRepository.Save` performs its concurrency, uniqueness, and referential
+checks while holding `InMemoryDataStore.SyncRoot`. A new persistence rule must be
+checked in the same critical section as its write and must leave stored state untouched
+on failure.
 
 ### 5. Coordinate and map outcomes in the handler
 

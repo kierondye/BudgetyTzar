@@ -7,6 +7,30 @@ namespace BudgetyTzar.Tests.Budgeting;
 public sealed class BudgetRepositoryTests
 {
     [Fact]
+    public void Entity_state_exposes_only_the_loaded_value_and_update_operation()
+    {
+        var entityStateType = typeof(EntityState<Budget>);
+
+        Assert.True(entityStateType.IsAbstract);
+        Assert.Empty(entityStateType.GetConstructors());
+        var valueProperty = Assert.Single(entityStateType.GetProperties());
+        Assert.Equal(nameof(EntityState<Budget>.Value), valueProperty.Name);
+        Assert.Null(entityStateType.GetProperty("Version"));
+    }
+
+    [Fact]
+    public void Save_rejects_state_created_by_another_repository_implementation()
+    {
+        var repository = new InMemoryBudgetRepository();
+        var budget = CreateBudget("UK", "GBP");
+
+        var result = repository.Save(new ForeignEntityState<Budget>(budget));
+
+        Assert.IsType<BudgetSaveResult.InvalidState>(result);
+        Assert.Empty(repository.GetAll());
+    }
+
+    [Fact]
     public void Save_rejects_duplicate_budget_names_without_overwriting_existing_budget()
     {
         var repository = new InMemoryBudgetRepository();
@@ -155,5 +179,13 @@ public sealed class BudgetRepositoryTests
         return PositiveMoneyAmount.TryCreate(value, out var amount)
             ? amount!
             : throw new InvalidOperationException("Invalid test amount.");
+    }
+
+    private sealed class ForeignEntityState<T>(T value) : EntityState<T>(value)
+    {
+        public override EntityState<T> Update(T value)
+        {
+            return new ForeignEntityState<T>(value);
+        }
     }
 }

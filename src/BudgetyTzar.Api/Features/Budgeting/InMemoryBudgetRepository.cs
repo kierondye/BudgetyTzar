@@ -23,9 +23,14 @@ public sealed class InMemoryBudgetRepository
 
     public BudgetSaveResult Save(EntityState<Budget> budgetState)
     {
+        if (budgetState is not InMemoryEntityState<Budget> inMemoryState)
+        {
+            return new BudgetSaveResult.InvalidState();
+        }
+
         lock (store.SyncRoot)
         {
-            return SaveCore(budgetState.Value, budgetState.Version);
+            return SaveCore(inMemoryState.Value, inMemoryState.Version);
         }
     }
 
@@ -52,7 +57,7 @@ public sealed class InMemoryBudgetRepository
         lock (store.SyncRoot)
         {
             return store.BudgetsById.TryGetValue(budgetId, out var budget)
-                ? new EntityState<Budget>(budget, store.BudgetVersionsById[budgetId])
+                ? new InMemoryEntityState<Budget>(budget, store.BudgetVersionsById[budgetId])
                 : null;
         }
     }
@@ -155,6 +160,16 @@ public sealed class InMemoryBudgetRepository
         return removedBudgetItemIds.Count > 0
             && store.AllocationsByTransactionId.Values.Any(allocation => removedBudgetItemIds.Contains(allocation.BudgetItemId));
     }
+
+    private sealed class InMemoryEntityState<T>(T value, long version) : EntityState<T>(value)
+    {
+        public long Version { get; } = version;
+
+        public override EntityState<T> Update(T value)
+        {
+            return new InMemoryEntityState<T>(value, Version);
+        }
+    }
 }
 
 public abstract record BudgetSaveResult
@@ -170,14 +185,22 @@ public abstract record BudgetSaveResult
     public sealed record StaleState : BudgetSaveResult;
 
     public sealed record BudgetItemHasAllocations : BudgetSaveResult;
+
+    public sealed record InvalidState : BudgetSaveResult;
 }
 
-public sealed record EntityState<T>(T Value, long Version)
+public abstract class EntityState<T>
 {
-    public EntityState<T> Update(T value)
+    protected EntityState(T value)
     {
-        return this with { Value = value };
+        ArgumentNullException.ThrowIfNull(value);
+
+        Value = value;
     }
+
+    public T Value { get; }
+
+    public abstract EntityState<T> Update(T value);
 }
 
 public sealed record BudgetItemReference(Guid BudgetId, CurrencyCode BudgetCurrency, BudgetItem BudgetItem);
