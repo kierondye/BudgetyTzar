@@ -156,7 +156,7 @@ transactions, constraints, and concurrency tokens.
 
 ### `EntityState<T>`
 
-`EntityState<T>` pairs a loaded aggregate with an opaque repository version:
+`EntityState<T>` pairs a loaded aggregate with opaque concurrency state:
 
 ```csharp
 var state = budgets.Get(budgetId);
@@ -175,16 +175,20 @@ if (state.Value.ChangeBudgetItemPlannedAmount(budgetItemId, amount)
 var saveResult = budgets.Save(state.Update(changed.Budget));
 ```
 
-`Update` replaces the immutable value while retaining the version that was read.
-`Save(EntityState<Budget>)` compares that version under the repository lock. If another
-writer has already saved the aggregate, it returns `BudgetSaveResult.StaleState`
-without overwriting the newer value.
+`Update` replaces the immutable value while retaining the concurrency state returned by
+`Get`. `Save(EntityState<Budget>)` gives that state back to the repository when
+attempting the write.
 
 `EntityState<T>` is opaque to application code: callers only carry it from `Get`,
 through `Update`, to `Save`. Each repository can therefore encode whatever concurrency
 state its persistence mechanism requires without exposing that choice to domain or
-application code. The version is persistence state, not domain state. Do not add it to
-`Budget`, expose it through domain operations, or let the aggregate increment it.
+application code.
+
+`InMemoryBudgetRepository` represents the concurrency state as a numeric `Version` and
+compares it under the repository lock. If another writer has already saved the
+aggregate, the repository returns `BudgetSaveResult.StaleState` without overwriting the
+newer value. This state belongs to persistence, not the domain: do not add it to
+`Budget`, expose it through domain operations, or let the aggregate change it.
 
 ### Reporting services
 
