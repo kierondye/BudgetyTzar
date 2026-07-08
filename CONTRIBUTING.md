@@ -5,7 +5,7 @@ Thank you for contributing to BudgetyTzar.
 Before changing behaviour, read the relevant parts of
 [the product specification](SPECIFICATION.md). It is the source of truth for product
 rules and externally observable behaviour. Read
-[the architecture guide](docs/architecture.md) for the current code structure,
+[the architecture guide](docs/architecture.md) for the code structure,
 responsibility boundaries, request flow, and worked example.
 
 ## Local checks

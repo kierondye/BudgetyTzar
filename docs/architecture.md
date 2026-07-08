@@ -1,14 +1,19 @@
 # Architecture
 
-This guide explains how the current code is arranged, how its parts collaborate, and
-where to put new functionality. It describes the implementation rather than defining
+This guide explains how the code is arranged, how its parts collaborate, and where to
+put new functionality. It describes the implementation rather than defining
 product behaviour. Use [the specification](../SPECIFICATION.md) for product rules and
 externally observable behaviour, and [the contributing guide](../CONTRIBUTING.md) for
 the short development checklist.
 
 ## System shape
 
-BudgetyTzar is currently a single .NET 9 Minimal API and a single xUnit test project.
+BudgetyTzar uses Vertical Slice Architecture in a single .NET 9 Minimal API and a
+single xUnit test project. Each feature folder brings together the HTTP endpoints,
+application coordination, persistence, and contracts needed by that slice. Shared
+domain concepts remain under `Domain` so feature slices can use the same ubiquitous
+language and invariant-protecting types.
+
 The API process owns the domain model, request coordination, HTTP endpoints, reporting,
 and in-memory persistence.
 
@@ -57,22 +62,21 @@ responsibility and tests that benefit from it.
 | `CONTRIBUTING.md` | Contributor workflow and the checklist for adding functionality. |
 | `scripts` and `.githooks` | Versioning, release, and commit-message tooling. |
 
-There is no separate `Application`, `Infrastructure`, or `Contracts` folder today.
 Application handling lives in private methods on endpoint classes, persistence
 implementations live beside their feature, and HTTP contracts use `*Request` and
-`*Response` records in `*Contracts.cs`. If those responsibilities grow enough to need
-their own folders or projects, move them deliberately and update this guide in the same
-change.
+`*Response` records in `*Contracts.cs`. Reflect structural changes in this guide.
 
 ## Responsibilities and placement
 
 ### Value types
 
 Create a value type in `Domain/ValueTypes` when a value has domain-wide validation or
-semantics that should not be represented by a primitive. Construct values through their
-validation methods before passing them to domain operations. Existing types use
-`TryCreate` and an `Empty` value or nullable out value to report parsing failure without
-throwing.
+semantics that should not be represented by a primitive. Domain types should make
+invalid states difficult or impossible to represent. Construct validated value types
+before passing them to aggregate operations, so a method such as `Budget.Rename` can
+accept a `NormalizedName` without also handling invalid strings. Existing value types
+use `TryCreate` and an `Empty` value or nullable out value to report parsing failure
+without throwing.
 
 Value types must not know about JSON, HTTP status codes, repositories, or persistence
 versions.
@@ -100,7 +104,7 @@ storage-wide view belongs to the repository's atomic save boundary.
 ### Endpoint delegates and handlers
 
 The private methods in `BudgetEndpoints`, `TransactionEndpoints`, and
-`BudgetSummaryEndpoints` are the application's handlers today. They:
+`BudgetSummaryEndpoints` are the application's handlers. They:
 
 1. parse and validate transport input;
 2. load current state;
@@ -121,8 +125,8 @@ but the repository save remains the final consistency guard.
 
 ### Repositories and the shared store
 
-The current repositories are concrete in-memory classes in their owning features.
-Their public methods and result records form the current persistence contract; there
+The repositories are concrete in-memory classes in their owning features.
+Their public methods and result records form the persistence contract; there
 are no repository interfaces yet.
 
 Repositories:
@@ -139,6 +143,13 @@ allocations. This is important for checks such as preventing deletion of an allo
 transaction or budget item: the check and write happen under the same lock as the
 related allocation state.
 
+This shared synchronization boundary lets the in-memory repositories emulate
+referential-integrity constraints across repository boundaries. It necessarily creates
+an explicit cross-boundary dependency: Budgeting must be able to determine whether
+Transaction Allocations reference a budget item before deleting it. Keep that
+dependency visible at the persistence boundary; do not move ownership of allocations
+into Budgeting to hide it.
+
 Keep direct access to the shared dictionaries inside repositories. An eventual
 database implementation should preserve the same observable outcomes using database
 transactions, constraints, and concurrency tokens.
@@ -149,8 +160,19 @@ transactions, constraints, and concurrency tokens.
 
 ```csharp
 var state = budgets.Get(budgetId);
-var result = state.Value.ChangeBudgetItemPlannedAmount(budgetItemId, amount);
-var saveResult = budgets.Save(state.Update(result.Budget));
+
+if (state is null)
+{
+    return Results.NotFound();
+}
+
+if (state.Value.ChangeBudgetItemPlannedAmount(budgetItemId, amount)
+    is not ChangeBudgetItemPlannedAmountResult.Changed changed)
+{
+    return Results.NotFound();
+}
+
+var saveResult = budgets.Save(state.Update(changed.Budget));
 ```
 
 `Update` replaces the immutable value while retaining the version that was read.
@@ -158,15 +180,18 @@ var saveResult = budgets.Save(state.Update(result.Budget));
 writer has already saved the aggregate, it returns `BudgetSaveResult.StaleState`
 without overwriting the newer value.
 
-The version is persistence state, not domain state. Do not add it to `Budget`, expose it
-through domain operations, or let the aggregate increment it.
+The state is opaque because callers only carry it from `Get`, through `Update`, to
+`Save`; they do not interpret or change its version. Each persistence implementation
+can therefore use its own concurrency mechanism without affecting domain or
+application code. The version is persistence state, not domain state. Do not add it to
+`Budget`, expose it through domain operations, or let the aggregate increment it.
 
 ### Reporting services
 
-Reporting combines read models owned by more than one feature. Put calculations and
-query coordination in a service such as `BudgetSummaryService`, with report-specific
-models and result types in the reporting feature. Reporting services read through
-repositories and do not mutate domain or repository state.
+Reporting provides read-only views of domain data. It coordinates data from multiple
+features and produces report-specific models without modifying domain or repository
+state. Put calculations and query coordination in a service such as
+`BudgetSummaryService`, with its models and result types in the reporting feature.
 
 ### Tests
 
@@ -241,7 +266,7 @@ formatting out of domain and repository result types.
 - Tests name the unit and observable behaviour:
   `Save_rejects_stale_updates_without_overwriting_existing_budget`.
 - Public C# types and members use `PascalCase`; locals and parameters use `camelCase`.
-- Money and dates cross the current HTTP boundary as invariant strings and are
+- Money and dates cross the HTTP boundary as invariant strings and are
   formatted in response contracts.
 
 ## Worked vertical slice: change a budget item's planned amount
@@ -286,7 +311,18 @@ The handler retains the version loaded with the budget:
 
 ```csharp
 var budgetState = budgets.Get(budgetId);
-var changed = budgetState.Value.ChangeBudgetItemPlannedAmount(budgetItemId, amount);
+
+if (budgetState is null)
+{
+    return Results.NotFound();
+}
+
+if (budgetState.Value.ChangeBudgetItemPlannedAmount(budgetItemId, amount)
+    is not ChangeBudgetItemPlannedAmountResult.Changed changed)
+{
+    return Results.NotFound();
+}
+
 var save = budgets.Save(budgetState.Update(changed.Budget));
 ```
 
@@ -333,7 +369,6 @@ an API behaviour test for every new or changed public workflow.
 
 ## Before changing the structure
 
-Keep the implementation and this guide aligned. If a change extracts handlers,
-introduces repository interfaces, moves persistence to a database, or splits the
-solution into projects, update the project map, dependency rules, request lifecycle,
-and worked example in the same pull request.
+Keep the implementation and this guide aligned. When responsibilities or request flow
+change, update the project map, dependency rules, lifecycle, and worked example in the
+same pull request.
