@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using BudgetyTzar.Api.Authentication;
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Features.Budgeting;
 using BudgetyTzar.Api.Domain.ValueTypes;
@@ -6,6 +8,11 @@ namespace BudgetyTzar.Tests.Budgeting;
 
 public sealed class BudgetRepositoryTests
 {
+    private static readonly ApplicationUserId TestUser =
+        ApplicationUserId.FromPrincipal(
+            new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "test-user")])),
+            "sub");
+
     [Fact]
     public void Entity_state_exposes_only_the_loaded_value_and_update_operation()
     {
@@ -24,10 +31,10 @@ public sealed class BudgetRepositoryTests
         var repository = new InMemoryBudgetRepository();
         var budget = CreateBudget("UK", "GBP");
 
-        var result = repository.Save(new ForeignEntityState<Budget>(budget));
+        var result = repository.Save(TestUser, new ForeignEntityState<Budget>(budget));
 
         Assert.IsType<BudgetSaveResult.InvalidState>(result);
-        Assert.Empty(repository.GetAll());
+        Assert.Empty(repository.GetAll(TestUser));
     }
 
     [Fact]
@@ -37,13 +44,13 @@ public sealed class BudgetRepositoryTests
         var firstBudget = CreateBudget("UK", "GBP");
         var duplicateBudget = CreateBudget("UK", "EUR");
 
-        var firstResult = repository.Save(firstBudget);
-        var duplicateResult = repository.Save(duplicateBudget);
+        var firstResult = repository.Save(TestUser, firstBudget);
+        var duplicateResult = repository.Save(TestUser, duplicateBudget);
 
         Assert.IsType<BudgetSaveResult.Saved>(firstResult);
         Assert.IsType<BudgetSaveResult.DuplicateName>(duplicateResult);
 
-        var budget = Assert.Single(repository.GetAll());
+        var budget = Assert.Single(repository.GetAll(TestUser));
         Assert.Equal(firstBudget.BudgetId, budget.BudgetId);
         Assert.Equal("GBP", budget.Currency.Value);
     }
@@ -59,12 +66,12 @@ public sealed class BudgetRepositoryTests
         var firstSave = Task.Run(() =>
         {
             start.Wait();
-            return repository.Save(firstBudget);
+            return repository.Save(TestUser, firstBudget);
         });
         var duplicateSave = Task.Run(() =>
         {
             start.Wait();
-            return repository.Save(duplicateBudget);
+            return repository.Save(TestUser, duplicateBudget);
         });
 
         start.Set();
@@ -72,7 +79,7 @@ public sealed class BudgetRepositoryTests
 
         Assert.Equal(1, results.Count(result => result is BudgetSaveResult.Saved));
         Assert.Equal(1, results.Count(result => result is BudgetSaveResult.DuplicateName));
-        Assert.Single(repository.GetAll());
+        Assert.Single(repository.GetAll(TestUser));
     }
 
     [Fact]
@@ -80,19 +87,19 @@ public sealed class BudgetRepositoryTests
     {
         var repository = new InMemoryBudgetRepository();
         var budget = CreateBudget("UK", "GBP");
-        repository.Save(budget);
+        repository.Save(TestUser, budget);
 
-        var budgetState = repository.Get(budget.BudgetId);
+        var budgetState = repository.Get(TestUser, budget.BudgetId);
         Assert.NotNull(budgetState);
 
         var renamedBudget = Assert.IsType<RenameBudgetResult.Renamed>(budgetState.Value.Rename(Name("Europe")));
-        var renameResult = repository.Save(budgetState.Update(renamedBudget.Budget));
-        var replacementResult = repository.Save(CreateBudget("UK", "GBP"));
+        var renameResult = repository.Save(TestUser, budgetState.Update(renamedBudget.Budget));
+        var replacementResult = repository.Save(TestUser, CreateBudget("UK", "GBP"));
 
         Assert.IsType<BudgetSaveResult.Saved>(renameResult);
         Assert.IsType<BudgetSaveResult.Saved>(replacementResult);
-        Assert.True(repository.HasBudgetNamed(Name("Europe")));
-        Assert.True(repository.HasBudgetNamed(Name("UK")));
+        Assert.True(repository.HasBudgetNamed(TestUser, Name("Europe")));
+        Assert.True(repository.HasBudgetNamed(TestUser, Name("UK")));
     }
 
     [Fact]
@@ -100,12 +107,12 @@ public sealed class BudgetRepositoryTests
     {
         var repository = new InMemoryBudgetRepository();
         var budget = CreateBudget("UK", "GBP");
-        repository.Save(budget);
+        repository.Save(TestUser, budget);
 
         var salaryId = Guid.NewGuid();
         var groceriesId = Guid.NewGuid();
-        var firstRead = repository.Get(budget.BudgetId);
-        var staleRead = repository.Get(budget.BudgetId);
+        var firstRead = repository.Get(TestUser, budget.BudgetId);
+        var staleRead = repository.Get(TestUser, budget.BudgetId);
 
         Assert.NotNull(firstRead);
         Assert.NotNull(staleRead);
@@ -123,13 +130,13 @@ public sealed class BudgetRepositoryTests
                 BudgetItemKind.Consumption,
                 Money("400.00")));
 
-        var firstResult = repository.Save(firstRead.Update(addedSalary.Budget));
-        var staleResult = repository.Save(staleRead.Update(addedGroceriesFromStaleRead.Budget));
+        var firstResult = repository.Save(TestUser, firstRead.Update(addedSalary.Budget));
+        var staleResult = repository.Save(TestUser, staleRead.Update(addedGroceriesFromStaleRead.Budget));
 
         Assert.IsType<BudgetSaveResult.Saved>(firstResult);
         Assert.IsType<BudgetSaveResult.StaleState>(staleResult);
 
-        var updatedBudget = repository.Get(budget.BudgetId);
+        var updatedBudget = repository.Get(TestUser, budget.BudgetId);
         Assert.NotNull(updatedBudget);
         var budgetItem = Assert.Single(updatedBudget.Value.BudgetItems);
         Assert.Equal(salaryId, budgetItem.BudgetItemId);
@@ -141,17 +148,17 @@ public sealed class BudgetRepositoryTests
         var repository = new InMemoryBudgetRepository();
         var ukBudget = CreateBudget("UK", "GBP");
         var euBudget = CreateBudget("EU", "EUR");
-        repository.Save(ukBudget);
-        repository.Save(euBudget);
+        repository.Save(TestUser, ukBudget);
+        repository.Save(TestUser, euBudget);
 
-        var ukBudgetState = repository.Get(ukBudget.BudgetId);
+        var ukBudgetState = repository.Get(TestUser, ukBudget.BudgetId);
         Assert.NotNull(ukBudgetState);
 
         var renamedBudget = Assert.IsType<RenameBudgetResult.Renamed>(ukBudgetState.Value.Rename(Name("EU")));
-        var result = repository.Save(ukBudgetState.Update(renamedBudget.Budget));
+        var result = repository.Save(TestUser, ukBudgetState.Update(renamedBudget.Budget));
 
         Assert.IsType<BudgetSaveResult.DuplicateName>(result);
-        Assert.Equal("UK", repository.Get(ukBudget.BudgetId)?.Value.Name.Value);
+        Assert.Equal("UK", repository.Get(TestUser, ukBudget.BudgetId)?.Value.Name.Value);
     }
 
     private static Budget CreateBudget(string name, string currency)

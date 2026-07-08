@@ -1,3 +1,4 @@
+using BudgetyTzar.Api.Authentication;
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Features;
 
@@ -12,38 +13,43 @@ public sealed class InMemoryTransactionRepository
         this.store = store ?? new InMemoryDataStore();
     }
 
-    public void Add(Transaction transaction)
+    public void Add(ApplicationUserId userId, Transaction transaction)
     {
         lock (store.SyncRoot)
         {
             store.TransactionsById[transaction.TransactionId] = transaction;
+            store.TransactionOwnersById[transaction.TransactionId] = userId;
             store.TransactionIds.Add(transaction.TransactionId);
         }
     }
 
-    public IReadOnlyList<Transaction> GetAll()
+    public IReadOnlyList<Transaction> GetAll(ApplicationUserId userId)
     {
         lock (store.SyncRoot)
         {
             return store.TransactionIds
+                .Where(transactionId => IsOwner(userId, transactionId))
                 .Select(transactionId => store.TransactionsById[transactionId])
                 .ToList();
         }
     }
 
-    public Transaction? Get(Guid transactionId)
+    public Transaction? Get(ApplicationUserId userId, Guid transactionId)
     {
         lock (store.SyncRoot)
         {
-            return store.TransactionsById.GetValueOrDefault(transactionId);
+            return IsOwner(userId, transactionId)
+                ? store.TransactionsById.GetValueOrDefault(transactionId)
+                : null;
         }
     }
 
-    public TransactionDeleteResult Delete(Guid transactionId)
+    public TransactionDeleteResult Delete(ApplicationUserId userId, Guid transactionId)
     {
         lock (store.SyncRoot)
         {
-            if (!store.TransactionsById.ContainsKey(transactionId))
+            if (!IsOwner(userId, transactionId)
+                || !store.TransactionsById.ContainsKey(transactionId))
             {
                 return new TransactionDeleteResult.NotFound();
             }
@@ -54,9 +60,16 @@ public sealed class InMemoryTransactionRepository
             }
 
             store.TransactionsById.Remove(transactionId);
+            store.TransactionOwnersById.Remove(transactionId);
             store.TransactionIds.Remove(transactionId);
             return new TransactionDeleteResult.Deleted();
         }
+    }
+
+    private bool IsOwner(ApplicationUserId userId, Guid transactionId)
+    {
+        return store.TransactionOwnersById.TryGetValue(transactionId, out var ownerId)
+            && ownerId == userId;
     }
 }
 

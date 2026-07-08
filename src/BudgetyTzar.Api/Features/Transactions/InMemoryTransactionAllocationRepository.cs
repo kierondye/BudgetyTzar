@@ -1,3 +1,4 @@
+using BudgetyTzar.Api.Authentication;
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Features;
 
@@ -12,16 +13,19 @@ public sealed class InMemoryTransactionAllocationRepository
         this.store = store ?? new InMemoryDataStore();
     }
 
-    public AllocateTransactionResult Allocate(TransactionAllocation allocation)
+    public AllocateTransactionResult Allocate(
+        ApplicationUserId userId,
+        TransactionAllocation allocation)
     {
         lock (store.SyncRoot)
         {
-            if (!store.TransactionsById.ContainsKey(allocation.TransactionId))
+            if (!IsTransactionOwner(userId, allocation.TransactionId)
+                || !store.TransactionsById.ContainsKey(allocation.TransactionId))
             {
                 return new AllocateTransactionResult.TransactionNotFound();
             }
 
-            if (!BudgetItemExists(allocation.BudgetItemId))
+            if (!BudgetItemExists(userId, allocation.BudgetItemId))
             {
                 return new AllocateTransactionResult.BudgetItemNotFound();
             }
@@ -39,35 +43,57 @@ public sealed class InMemoryTransactionAllocationRepository
         }
     }
 
-    public TransactionAllocation? Get(Guid transactionId)
+    public TransactionAllocation? Get(ApplicationUserId userId, Guid transactionId)
     {
         lock (store.SyncRoot)
         {
-            return store.AllocationsByTransactionId.GetValueOrDefault(transactionId);
+            return IsTransactionOwner(userId, transactionId)
+                ? store.AllocationsByTransactionId.GetValueOrDefault(transactionId)
+                : null;
         }
     }
 
-    public IReadOnlyList<TransactionAllocation> GetAll()
+    public IReadOnlyList<TransactionAllocation> GetAll(ApplicationUserId userId)
     {
         lock (store.SyncRoot)
         {
-            return store.AllocationsByTransactionId.Values.ToList();
+            return store.AllocationsByTransactionId
+                .Where(pair => IsTransactionOwner(userId, pair.Key))
+                .Select(pair => pair.Value)
+                .ToList();
         }
     }
 
-    public void Remove(Guid transactionId)
+    public void Remove(ApplicationUserId userId, Guid transactionId)
     {
         lock (store.SyncRoot)
         {
-            store.AllocationsByTransactionId.Remove(transactionId);
+            if (IsTransactionOwner(userId, transactionId))
+            {
+                store.AllocationsByTransactionId.Remove(transactionId);
+            }
         }
     }
 
-    private bool BudgetItemExists(Guid budgetItemId)
+    private bool BudgetItemExists(ApplicationUserId userId, Guid budgetItemId)
     {
-        return store.BudgetsById.Values
+        return store.BudgetsById
+            .Where(pair => IsBudgetOwner(userId, pair.Key))
+            .Select(pair => pair.Value)
             .SelectMany(budget => budget.BudgetItems)
             .Any(budgetItem => budgetItem.BudgetItemId == budgetItemId);
+    }
+
+    private bool IsTransactionOwner(ApplicationUserId userId, Guid transactionId)
+    {
+        return store.TransactionOwnersById.TryGetValue(transactionId, out var ownerId)
+            && ownerId == userId;
+    }
+
+    private bool IsBudgetOwner(ApplicationUserId userId, Guid budgetId)
+    {
+        return store.BudgetOwnersById.TryGetValue(budgetId, out var ownerId)
+            && ownerId == userId;
     }
 }
 

@@ -1,3 +1,5 @@
+using BudgetyTzar.Api.Authentication;
+
 namespace BudgetyTzar.Api.Features.Reporting;
 
 public static class BudgetSummaryEndpoints
@@ -11,7 +13,8 @@ public static class BudgetSummaryEndpoints
     public static IEndpointRouteBuilder MapReportingEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var budgets = endpoints.MapGroup("/api/budgets")
-            .WithTags("Reporting");
+            .WithTags("Reporting")
+            .RequireAuthorization(ApiApplication.BusinessApiPolicy);
 
         budgets.MapGet("/{budgetId:guid}/summary", GetBudgetSummary)
             .WithName("GetBudgetSummary");
@@ -19,9 +22,12 @@ public static class BudgetSummaryEndpoints
         return endpoints;
     }
 
-    private static IResult GetBudgetSummary(Guid budgetId, BudgetSummaryService service)
+    private static IResult GetBudgetSummary(
+        Guid budgetId,
+        AuthenticatedUser user,
+        BudgetSummaryService service)
     {
-        var result = service.Get(budgetId);
+        var result = service.Get(user.UserId, budgetId);
 
         return result switch
         {

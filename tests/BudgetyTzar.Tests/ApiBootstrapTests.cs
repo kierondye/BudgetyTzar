@@ -12,8 +12,9 @@ public sealed partial class ApiBootstrapTests
     public async Task Health_endpoint_reports_healthy()
     {
         await using var server = await TestApiServer.StartAsync();
+        var client = server.CreateClient(null);
 
-        using var response = await server.Client.GetAsync("/health");
+        using var response = await client.GetAsync("/health");
         var content = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -24,8 +25,9 @@ public sealed partial class ApiBootstrapTests
     public async Task Version_endpoint_reports_runtime_version_metadata()
     {
         await using var server = await TestApiServer.StartAsync();
+        var client = server.CreateClient(null);
 
-        var response = await server.Client.GetFromJsonAsync<VersionResponse>("/api/version");
+        var response = await client.GetFromJsonAsync<VersionResponse>("/api/version");
 
         Assert.NotNull(response);
         Assert.Matches(SemanticVersionPattern(), response.ProductVersion);
@@ -36,8 +38,9 @@ public sealed partial class ApiBootstrapTests
     public async Task Openapi_document_reports_runtime_version_metadata()
     {
         await using var server = await TestApiServer.StartAsync();
+        var client = server.CreateClient(null);
 
-        using var response = await server.Client.GetAsync("/swagger/v1/swagger.json");
+        using var response = await client.GetAsync("/swagger/v1/swagger.json");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         await using var content = await response.Content.ReadAsStreamAsync();
@@ -47,6 +50,27 @@ public sealed partial class ApiBootstrapTests
         Assert.Matches(
             SemanticVersionPattern(),
             document.RootElement.GetProperty("info").GetProperty("version").GetString() ?? string.Empty);
+        Assert.True(
+            document.RootElement
+                .GetProperty("components")
+                .GetProperty("securitySchemes")
+                .TryGetProperty("Bearer", out _));
+        Assert.Contains(
+            document.RootElement.GetProperty("paths").EnumerateObject(),
+            path => path.Name.StartsWith("/api/budgets", StringComparison.Ordinal)
+                && path.Value.EnumerateObject().Any(operation =>
+                    operation.Value.TryGetProperty("security", out _)));
+    }
+
+    [Fact]
+    public async Task Swagger_ui_is_available_without_authentication()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var client = server.CreateClient(null);
+
+        using var response = await client.GetAsync("/swagger/index.html");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [GeneratedRegex(@"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")]

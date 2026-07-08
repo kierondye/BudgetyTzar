@@ -1,3 +1,4 @@
+using BudgetyTzar.Api.Authentication;
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
 
@@ -9,13 +10,17 @@ public sealed class InMemoryDataStore
 
     internal Dictionary<Guid, Budget> BudgetsById { get; } = [];
 
+    internal Dictionary<Guid, ApplicationUserId> BudgetOwnersById { get; } = [];
+
     internal Dictionary<Guid, long> BudgetVersionsById { get; } = [];
 
-    internal Dictionary<NormalizedName, Guid> BudgetIdsByName { get; } = [];
+    internal Dictionary<(ApplicationUserId UserId, NormalizedName Name), Guid> BudgetIdsByName { get; } = [];
 
     internal List<Guid> BudgetIds { get; } = [];
 
     internal Dictionary<Guid, Transaction> TransactionsById { get; } = [];
+
+    internal Dictionary<Guid, ApplicationUserId> TransactionOwnersById { get; } = [];
 
     internal List<Guid> TransactionIds { get; } = [];
 

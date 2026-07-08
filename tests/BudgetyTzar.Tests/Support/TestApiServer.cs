@@ -1,14 +1,21 @@
 using BudgetyTzar.Api;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace BudgetyTzar.Tests.Support;
 
 public sealed class TestApiServer : IAsyncDisposable
 {
-    private TestApiServer(WebApplication app, HttpClient client)
+    public const string DefaultUserId = "default-test-user";
+
+    private readonly List<HttpClient> clients = [];
+
+    private TestApiServer(WebApplication app)
     {
         App = app;
-        Client = client;
+        Client = CreateClient(DefaultUserId);
     }
 
     public HttpClient Client { get; }
@@ -17,21 +24,50 @@ public sealed class TestApiServer : IAsyncDisposable
 
     public static async Task<TestApiServer> StartAsync()
     {
-        var app = ApiApplication.Create(["--urls", "http://127.0.0.1:0"]);
+        var app = ApiApplication.Create(
+            ["--urls", "http://127.0.0.1:0"],
+            builder =>
+            {
+                builder.Configuration.AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["Authentication:Scheme"] = TestAuthenticationHandler.SchemeName,
+                        ["Authentication:UserIdClaimType"] = "sub"
+                    });
+                builder.Services
+                    .AddAuthentication()
+                    .AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>(
+                        TestAuthenticationHandler.SchemeName,
+                        _ => { });
+            });
         await app.StartAsync();
 
-        var address = app.Urls.Single();
+        return new TestApiServer(app);
+    }
+
+    public HttpClient CreateClient(string? userId)
+    {
         var client = new HttpClient
         {
-            BaseAddress = new Uri(address)
+            BaseAddress = new Uri(App.Urls.Single())
         };
 
-        return new TestApiServer(app, client);
+        if (userId is not null)
+        {
+            client.DefaultRequestHeaders.Add(TestAuthenticationHandler.UserHeaderName, userId);
+        }
+
+        clients.Add(client);
+        return client;
     }
 
     public async ValueTask DisposeAsync()
     {
-        Client.Dispose();
+        foreach (var client in clients)
+        {
+            client.Dispose();
+        }
+
         await App.DisposeAsync();
     }
 }
