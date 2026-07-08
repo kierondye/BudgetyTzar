@@ -1,4 +1,4 @@
-namespace BudgetyTzar.Api.Features.Transactions;
+namespace BudgetyTzar.Api.Domain.ValueTypes;
 
 public readonly record struct TransactionType
 {

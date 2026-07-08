@@ -1,5 +1,9 @@
 using System.Globalization;
+using BudgetyTzar.Api.Domain.Entities;
+using BudgetyTzar.Api.Domain.ValueTypes;
+using BudgetyTzar.Api.Features;
 using BudgetyTzar.Api.Features.Budgeting;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace BudgetyTzar.Api.Features.Transactions;
 
@@ -7,8 +11,9 @@ public static class TransactionEndpoints
 {
     public static IServiceCollection AddTransactions(this IServiceCollection services)
     {
-        services.AddSingleton<TransactionStore>();
-        services.AddSingleton<TransactionAllocationStore>();
+        services.TryAddSingleton<InMemoryDataStore>();
+        services.AddSingleton<InMemoryTransactionRepository>();
+        services.AddSingleton<InMemoryTransactionAllocationRepository>();
         return services;
     }
 
@@ -41,28 +46,56 @@ public static class TransactionEndpoints
         return endpoints;
     }
 
-    private static IResult CreateTransaction(CreateTransactionRequest request, TransactionStore store)
+    private static IResult CreateTransaction(CreateTransactionRequest request, InMemoryTransactionRepository transactions)
     {
-        var result = store.Create(
+        var validation = Validate(
             request.Description,
             request.Type,
             request.TransactionDate,
             request.Amount,
             request.Currency);
 
-        return result switch
+        if (validation is CreateTransactionValidationResult.Invalid invalid)
         {
-            CreateTransactionResult.Invalid invalid => Results.ValidationProblem(invalid.Errors),
-            CreateTransactionResult.Created created => Results.Created(
-                $"/api/transactions/{created.Transaction.TransactionId}",
-                TransactionResponse.FromTransaction(created.Transaction)),
-            _ => throw new InvalidOperationException("Unexpected create transaction result.")
+            return Results.ValidationProblem(invalid.Errors);
+        }
+
+        var valid = (CreateTransactionValidationResult.Valid)validation;
+        return Transaction.Record(
+            Guid.NewGuid(),
+            valid.Description,
+            valid.Type,
+            valid.TransactionDate,
+            valid.Amount,
+            valid.Currency) switch
+        {
+            RecordTransactionResult.InvalidIdentity => Results.ValidationProblem(
+                new Dictionary<string, string[]>(StringComparer.Ordinal)
+                {
+                    ["transactionId"] = ["Transaction identity is required."]
+                }),
+            RecordTransactionResult.InvalidDescription => Results.ValidationProblem(
+                new Dictionary<string, string[]>(StringComparer.Ordinal)
+                {
+                    ["description"] = ["Transaction description is required."]
+                }),
+            RecordTransactionResult.Recorded recorded => RecordTransaction(recorded.Transaction),
+            _ => throw new InvalidOperationException("Unexpected record transaction result.")
         };
+
+        IResult RecordTransaction(Transaction transaction)
+        {
+            transactions.Add(transaction);
+
+            return Results.Created(
+                $"/api/transactions/{transaction.TransactionId}",
+                TransactionResponse.FromTransaction(transaction));
+        }
     }
 
     private static IResult GetTransactions(
-        TransactionStore store,
-        TransactionAllocationStore allocationStore,
+        InMemoryTransactionRepository transactions,
+        InMemoryTransactionAllocationRepository allocations,
         string? from,
         string? to,
         string? allocationStatus)
@@ -75,18 +108,19 @@ public static class TransactionEndpoints
         }
 
         var valid = (TransactionFilterValidationResult.Valid)validation;
-        var transactions = store.GetAll(
-                valid.Filters,
-                transactionId => allocationStore.Get(transactionId) is not null)
+        var response = transactions.GetAll()
+            .Where(transaction => valid.Filters.Matches(
+                transaction,
+                allocations.Get(transaction.TransactionId) is not null))
             .Select(TransactionListItemResponse.FromTransaction)
             .ToList();
 
-        return Results.Ok(transactions);
+        return Results.Ok(response);
     }
 
-    private static IResult GetTransaction(Guid transactionId, TransactionStore store)
+    private static IResult GetTransaction(Guid transactionId, InMemoryTransactionRepository transactions)
     {
-        var transaction = store.Get(transactionId);
+        var transaction = transactions.Get(transactionId);
 
         return transaction is null
             ? Results.NotFound()
@@ -95,38 +129,32 @@ public static class TransactionEndpoints
 
     private static IResult DeleteTransaction(
         Guid transactionId,
-        TransactionStore store,
-        TransactionAllocationStore allocationStore)
+        InMemoryTransactionRepository transactions)
     {
-        if (store.Get(transactionId) is null)
+        return transactions.Delete(transactionId) switch
         {
-            return Results.NotFound();
-        }
-
-        if (allocationStore.HasAllocationForTransaction(transactionId))
-        {
-            return Results.Conflict();
-        }
-
-        store.Delete(transactionId);
-        return Results.NoContent();
+            TransactionDeleteResult.NotFound => Results.NotFound(),
+            TransactionDeleteResult.TransactionHasAllocation => TransactionHasAllocation(),
+            TransactionDeleteResult.Deleted => Results.NoContent(),
+            _ => throw new InvalidOperationException("Unexpected delete transaction result.")
+        };
     }
 
     private static IResult AllocateTransaction(
         Guid transactionId,
         AllocateTransactionRequest request,
-        TransactionStore transactionStore,
-        BudgetStore budgetStore,
-        TransactionAllocationStore allocationStore)
+        InMemoryTransactionRepository transactions,
+        InMemoryBudgetRepository budgets,
+        InMemoryTransactionAllocationRepository allocations)
     {
-        var transaction = transactionStore.Get(transactionId);
+        var transaction = transactions.Get(transactionId);
 
         if (transaction is null)
         {
             return Results.NotFound();
         }
 
-        var budgetItemReference = budgetStore.GetBudgetItemReference(request.BudgetItemId);
+        var budgetItemReference = budgets.GetBudgetItemReference(request.BudgetItemId);
 
         if (budgetItemReference is null)
         {
@@ -135,31 +163,41 @@ public static class TransactionEndpoints
 
         if (transaction.Currency != budgetItemReference.BudgetCurrency)
         {
-            return Results.Conflict();
+            return TransactionCurrencyDoesNotMatchBudget();
         }
 
-        var result = allocationStore.Allocate(transaction, request.BudgetItemId);
+        var allocationResult = TransactionAllocation.Allocate(transaction, request.BudgetItemId);
+
+        if (allocationResult is AllocateTransactionEntityResult.InvalidBudgetItemIdentity)
+        {
+            return Results.NotFound();
+        }
+
+        var allocation = ((AllocateTransactionEntityResult.Allocated)allocationResult).Allocation;
+        var result = allocations.Allocate(allocation);
 
         return result switch
         {
             AllocateTransactionResult.Allocated allocated => Results.Ok(
                 TransactionAllocationResponse.FromAllocation(allocated.Allocation)),
-            AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem => Results.Conflict(),
+            AllocateTransactionResult.TransactionNotFound => Results.NotFound(),
+            AllocateTransactionResult.BudgetItemNotFound => Results.NotFound(),
+            AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem => TransactionAlreadyAllocated(),
             _ => throw new InvalidOperationException("Unexpected allocate transaction result.")
         };
     }
 
     private static IResult GetTransactionAllocation(
         Guid transactionId,
-        TransactionStore transactionStore,
-        TransactionAllocationStore allocationStore)
+        InMemoryTransactionRepository transactions,
+        InMemoryTransactionAllocationRepository allocations)
     {
-        if (transactionStore.Get(transactionId) is null)
+        if (transactions.Get(transactionId) is null)
         {
             return Results.NotFound();
         }
 
-        var allocation = allocationStore.Get(transactionId);
+        var allocation = allocations.Get(transactionId);
 
         return allocation is null
             ? Results.NotFound()
@@ -168,18 +206,90 @@ public static class TransactionEndpoints
 
     private static IResult DeleteTransactionAllocation(
         Guid transactionId,
-        TransactionStore transactionStore,
-        TransactionAllocationStore allocationStore)
+        InMemoryTransactionRepository transactions,
+        InMemoryTransactionAllocationRepository allocations)
     {
-        if (transactionStore.Get(transactionId) is null)
+        if (transactions.Get(transactionId) is null)
         {
             return Results.NotFound();
         }
 
-        allocationStore.Remove(transactionId);
+        allocations.Remove(transactionId);
 
         return Results.NoContent();
     }
+
+    private static CreateTransactionValidationResult Validate(
+        string description,
+        string type,
+        string transactionDate,
+        string amount,
+        string currency)
+    {
+        var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
+
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            errors["description"] = ["Transaction description is required."];
+        }
+
+        if (!TransactionType.TryCreate(type, out var parsedType))
+        {
+            errors["type"] = ["Transaction type must be Credit or Debit."];
+        }
+
+        if (!DateOnly.TryParseExact(
+            transactionDate,
+            "yyyy-MM-dd",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out var parsedTransactionDate))
+        {
+            errors["transactionDate"] = ["Transaction date must use the yyyy-MM-dd format."];
+        }
+
+        if (!PositiveMoneyAmount.TryCreate(amount, out var parsedAmount))
+        {
+            errors["amount"] = ["Amount must be a positive decimal string with exactly two decimal places and no more than 99999999.99."];
+        }
+
+        if (!CurrencyCode.TryCreate(currency, out var parsedCurrency))
+        {
+            errors["currency"] = ["Currency must be an uppercase ISO 4217 alphabetic code."];
+        }
+
+        return errors.Count > 0
+            ? new CreateTransactionValidationResult.Invalid(errors)
+            : new CreateTransactionValidationResult.Valid(
+                description.Trim(),
+                parsedType,
+                parsedTransactionDate,
+                parsedAmount!,
+                parsedCurrency);
+    }
+
+    private static IResult TransactionHasAllocation()
+    {
+        return Results.Conflict(new ConflictResponse(
+            "TransactionHasAllocation",
+            "Transaction has an allocation."));
+    }
+
+    private static IResult TransactionCurrencyDoesNotMatchBudget()
+    {
+        return Results.Conflict(new ConflictResponse(
+            "TransactionCurrencyDoesNotMatchBudget",
+            "Transaction currency does not match the budget currency."));
+    }
+
+    private static IResult TransactionAlreadyAllocated()
+    {
+        return Results.Conflict(new ConflictResponse(
+            "TransactionAlreadyAllocated",
+            "Transaction is already allocated to a different budget item."));
+    }
+
+    private sealed record ConflictResponse(string Code, string Message);
 
     private static TransactionFilterValidationResult ValidateFilters(
         string? from,
@@ -240,5 +350,17 @@ public static class TransactionEndpoints
         public sealed record Valid(TransactionFilters Filters) : TransactionFilterValidationResult;
 
         public sealed record Invalid(Dictionary<string, string[]> Errors) : TransactionFilterValidationResult;
+    }
+
+    private abstract record CreateTransactionValidationResult
+    {
+        public sealed record Valid(
+            string Description,
+            TransactionType Type,
+            DateOnly TransactionDate,
+            PositiveMoneyAmount Amount,
+            CurrencyCode Currency) : CreateTransactionValidationResult;
+
+        public sealed record Invalid(Dictionary<string, string[]> Errors) : CreateTransactionValidationResult;
     }
 }

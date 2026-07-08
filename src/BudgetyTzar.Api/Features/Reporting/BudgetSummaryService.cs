@@ -1,22 +1,25 @@
+using BudgetyTzar.Api.Domain.Entities;
+using BudgetyTzar.Api.Domain.ValueTypes;
 using BudgetyTzar.Api.Features.Budgeting;
 using BudgetyTzar.Api.Features.Transactions;
 
 namespace BudgetyTzar.Api.Features.Reporting;
 
 public sealed class BudgetSummaryService(
-    BudgetStore budgetStore,
-    TransactionStore transactionStore,
-    TransactionAllocationStore allocationStore)
+    InMemoryBudgetRepository budgetStore,
+    InMemoryTransactionRepository transactionStore,
+    InMemoryTransactionAllocationRepository allocationStore)
 {
     public GetBudgetSummaryResult Get(Guid budgetId)
     {
-        var budget = budgetStore.Get(budgetId);
+        var budgetState = budgetStore.Get(budgetId);
 
-        if (budget is null)
+        if (budgetState is null)
         {
             return new GetBudgetSummaryResult.NotFound();
         }
 
+        var budget = budgetState.Value;
         var transactionsById = transactionStore.GetAll()
             .ToDictionary(transaction => transaction.TransactionId);
         var allocationsByBudgetItemId = allocationStore.GetAll()
@@ -31,7 +34,7 @@ public sealed class BudgetSummaryService(
 
         var summary = new BudgetSummary(
             budget.BudgetId,
-            budget.Name,
+            budget.Name.Value,
             budget.Currency.Value,
             funding,
             consumption,
@@ -72,7 +75,7 @@ public sealed class BudgetSummaryService(
 
         return new BudgetSummaryItem(
             budgetItem.BudgetItemId,
-            budgetItem.Name,
+            budgetItem.Name.Value,
             budgetItem.PlannedAmount.Value,
             actualAmount,
             budgetItem.PlannedAmount.Value - actualAmount);
