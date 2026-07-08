@@ -7,6 +7,17 @@ namespace BudgetyTzar.Tests.Budgeting;
 public sealed class BudgetRepositoryTests
 {
     [Fact]
+    public void Entity_state_exposes_only_the_loaded_value_and_update_operation()
+    {
+        var entityStateType = typeof(EntityState<Budget>);
+
+        Assert.Empty(entityStateType.GetConstructors());
+        var valueProperty = Assert.Single(entityStateType.GetProperties());
+        Assert.Equal(nameof(EntityState<Budget>.Value), valueProperty.Name);
+        Assert.Null(entityStateType.GetProperty("Version"));
+    }
+
+    [Fact]
     public void Save_rejects_duplicate_budget_names_without_overwriting_existing_budget()
     {
         var repository = new InMemoryBudgetRepository();

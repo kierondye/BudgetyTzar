@@ -25,7 +25,8 @@ public sealed class InMemoryBudgetRepository
     {
         lock (store.SyncRoot)
         {
-            return SaveCore(budgetState.Value, budgetState.Version);
+            var concurrencyState = budgetState.GetPersistenceState<BudgetConcurrencyState>();
+            return SaveCore(budgetState.Value, concurrencyState.Version);
         }
     }
 
@@ -52,7 +53,9 @@ public sealed class InMemoryBudgetRepository
         lock (store.SyncRoot)
         {
             return store.BudgetsById.TryGetValue(budgetId, out var budget)
-                ? new EntityState<Budget>(budget, store.BudgetVersionsById[budgetId])
+                ? new EntityState<Budget>(
+                    budget,
+                    new BudgetConcurrencyState(store.BudgetVersionsById[budgetId]))
                 : null;
         }
     }
@@ -155,6 +158,8 @@ public sealed class InMemoryBudgetRepository
         return removedBudgetItemIds.Count > 0
             && store.AllocationsByTransactionId.Values.Any(allocation => removedBudgetItemIds.Contains(allocation.BudgetItemId));
     }
+
+    private sealed record BudgetConcurrencyState(long Version);
 }
 
 public abstract record BudgetSaveResult
@@ -172,11 +177,29 @@ public abstract record BudgetSaveResult
     public sealed record BudgetItemHasAllocations : BudgetSaveResult;
 }
 
-public sealed record EntityState<T>(T Value, long Version)
+public sealed class EntityState<T>
 {
+    private readonly object persistenceState;
+
+    internal EntityState(T value, object persistenceState)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        ArgumentNullException.ThrowIfNull(persistenceState);
+
+        Value = value;
+        this.persistenceState = persistenceState;
+    }
+
+    public T Value { get; }
+
     public EntityState<T> Update(T value)
     {
-        return this with { Value = value };
+        return new EntityState<T>(value, persistenceState);
+    }
+
+    internal TPersistenceState GetPersistenceState<TPersistenceState>()
+    {
+        return (TPersistenceState)persistenceState;
     }
 }
 
