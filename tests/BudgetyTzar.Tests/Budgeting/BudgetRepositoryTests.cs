@@ -17,7 +17,7 @@ public sealed class BudgetRepositoryTests
         var duplicateResult = repository.Save(duplicateBudget);
 
         Assert.IsType<BudgetSaveResult.Saved>(firstResult);
-        Assert.IsType<BudgetSaveResult.Conflict>(duplicateResult);
+        Assert.IsType<BudgetSaveResult.DuplicateName>(duplicateResult);
 
         var budget = Assert.Single(repository.GetAll());
         Assert.Equal(firstBudget.BudgetId, budget.BudgetId);
@@ -47,7 +47,7 @@ public sealed class BudgetRepositoryTests
         var results = await Task.WhenAll(firstSave, duplicateSave);
 
         Assert.Equal(1, results.Count(result => result is BudgetSaveResult.Saved));
-        Assert.Equal(1, results.Count(result => result is BudgetSaveResult.Conflict));
+        Assert.Equal(1, results.Count(result => result is BudgetSaveResult.DuplicateName));
         Assert.Single(repository.GetAll());
     }
 
@@ -61,14 +61,14 @@ public sealed class BudgetRepositoryTests
         var budgetState = repository.Get(budget.BudgetId);
         Assert.NotNull(budgetState);
 
-        var renamedBudget = Assert.IsType<RenameBudgetResult.Renamed>(budgetState.Value.Rename("Europe"));
+        var renamedBudget = Assert.IsType<RenameBudgetResult.Renamed>(budgetState.Value.Rename(Name("Europe")));
         var renameResult = repository.Save(budgetState.Update(renamedBudget.Budget));
         var replacementResult = repository.Save(CreateBudget("UK", "GBP"));
 
         Assert.IsType<BudgetSaveResult.Saved>(renameResult);
         Assert.IsType<BudgetSaveResult.Saved>(replacementResult);
-        Assert.True(repository.HasBudgetNamed("Europe"));
-        Assert.True(repository.HasBudgetNamed("UK"));
+        Assert.True(repository.HasBudgetNamed(Name("Europe")));
+        Assert.True(repository.HasBudgetNamed(Name("UK")));
     }
 
     [Fact]
@@ -89,13 +89,13 @@ public sealed class BudgetRepositoryTests
         var addedSalary = Assert.IsType<AddBudgetItemResult.Added>(
             firstRead.Value.AddBudgetItem(
                 salaryId,
-                "Salary",
+                Name("Salary"),
                 BudgetItemKind.Funding,
                 Money("3000.00")));
         var addedGroceriesFromStaleRead = Assert.IsType<AddBudgetItemResult.Added>(
             staleRead.Value.AddBudgetItem(
                 groceriesId,
-                "Groceries",
+                Name("Groceries"),
                 BudgetItemKind.Consumption,
                 Money("400.00")));
 
@@ -103,7 +103,7 @@ public sealed class BudgetRepositoryTests
         var staleResult = repository.Save(staleRead.Update(addedGroceriesFromStaleRead.Budget));
 
         Assert.IsType<BudgetSaveResult.Saved>(firstResult);
-        Assert.IsType<BudgetSaveResult.Conflict>(staleResult);
+        Assert.IsType<BudgetSaveResult.StaleState>(staleResult);
 
         var updatedBudget = repository.Get(budget.BudgetId);
         Assert.NotNull(updatedBudget);
@@ -123,17 +123,24 @@ public sealed class BudgetRepositoryTests
         var ukBudgetState = repository.Get(ukBudget.BudgetId);
         Assert.NotNull(ukBudgetState);
 
-        var renamedBudget = Assert.IsType<RenameBudgetResult.Renamed>(ukBudgetState.Value.Rename("EU"));
+        var renamedBudget = Assert.IsType<RenameBudgetResult.Renamed>(ukBudgetState.Value.Rename(Name("EU")));
         var result = repository.Save(ukBudgetState.Update(renamedBudget.Budget));
 
-        Assert.IsType<BudgetSaveResult.Conflict>(result);
-        Assert.Equal("UK", repository.Get(ukBudget.BudgetId)?.Value.Name);
+        Assert.IsType<BudgetSaveResult.DuplicateName>(result);
+        Assert.Equal("UK", repository.Get(ukBudget.BudgetId)?.Value.Name.Value);
     }
 
     private static Budget CreateBudget(string name, string currency)
     {
         return Assert.IsType<CreateBudgetResult.Created>(
-            Budget.Create(Guid.NewGuid(), name, Currency(currency))).Budget;
+            Budget.Create(Guid.NewGuid(), Name(name), Currency(currency))).Budget;
+    }
+
+    private static NormalizedName Name(string value)
+    {
+        return NormalizedName.TryCreate(value, out var name)
+            ? name
+            : throw new InvalidOperationException("Invalid test name.");
     }
 
     private static CurrencyCode Currency(string value)

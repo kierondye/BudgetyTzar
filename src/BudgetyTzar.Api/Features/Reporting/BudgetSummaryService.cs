@@ -34,7 +34,7 @@ public sealed class BudgetSummaryService(
 
         var summary = new BudgetSummary(
             budget.BudgetId,
-            budget.Name,
+            budget.Name.Value,
             budget.Currency.Value,
             funding,
             consumption,
@@ -75,7 +75,7 @@ public sealed class BudgetSummaryService(
 
         return new BudgetSummaryItem(
             budgetItem.BudgetItemId,
-            budgetItem.Name,
+            budgetItem.Name.Value,
             budgetItem.PlannedAmount.Value,
             actualAmount,
             budgetItem.PlannedAmount.Value - actualAmount);

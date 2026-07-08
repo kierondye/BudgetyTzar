@@ -10,7 +10,7 @@ public sealed class BudgetDomainTests
     {
         var budget = CreateBudget(" UK ");
 
-        Assert.Equal("UK", budget.Name);
+        Assert.Equal("UK", budget.Name.Value);
         Assert.Empty(budget.BudgetItems);
     }
 
@@ -23,22 +23,22 @@ public sealed class BudgetDomainTests
 
         var added = Assert.IsType<AddBudgetItemResult.Added>(budget.AddBudgetItem(
             budgetItemId,
-            " Salary ",
+            Name(" Salary "),
             BudgetItemKind.Funding,
             plannedAmount));
         var withBudgetItem = added.Budget;
         var renamed = Assert.IsType<RenameBudgetItemResult.Renamed>(
-            withBudgetItem.RenameBudgetItem(budgetItemId, "Pay"));
+            withBudgetItem.RenameBudgetItem(budgetItemId, Name("Pay")));
         var updatedAmount = Assert.IsType<ChangeBudgetItemPlannedAmountResult.Changed>(
             renamed.Budget.ChangeBudgetItemPlannedAmount(budgetItemId, Money("3200.00")));
 
         Assert.Empty(budget.BudgetItems);
-        Assert.Equal("Salary", Assert.Single(withBudgetItem.BudgetItems).Name);
-        Assert.Equal("Pay", Assert.Single(renamed.Budget.BudgetItems).Name);
+        Assert.Equal("Salary", Assert.Single(withBudgetItem.BudgetItems).Name.Value);
+        Assert.Equal("Pay", Assert.Single(renamed.Budget.BudgetItems).Name.Value);
 
         var updatedBudgetItem = Assert.Single(updatedAmount.Budget.BudgetItems);
         Assert.Equal(budgetItemId, updatedBudgetItem.BudgetItemId);
-        Assert.Equal("Pay", updatedBudgetItem.Name);
+        Assert.Equal("Pay", updatedBudgetItem.Name.Value);
         Assert.Equal(BudgetItemKind.Funding, updatedBudgetItem.Kind);
         Assert.Equal("3200.00", updatedBudgetItem.PlannedAmount.FormattedValue);
     }
@@ -48,9 +48,9 @@ public sealed class BudgetDomainTests
     {
         var budget = CreateBudget("UK");
         var added = Assert.IsType<AddBudgetItemResult.Added>(
-            budget.AddBudgetItem(Guid.NewGuid(), "Salary", BudgetItemKind.Funding, Money("3000.00")));
+            budget.AddBudgetItem(Guid.NewGuid(), Name("Salary"), BudgetItemKind.Funding, Money("3000.00")));
 
-        var result = added.Budget.AddBudgetItem(Guid.NewGuid(), " Salary ", BudgetItemKind.Consumption, Money("100.00"));
+        var result = added.Budget.AddBudgetItem(Guid.NewGuid(), Name(" Salary "), BudgetItemKind.Consumption, Money("100.00"));
 
         Assert.IsType<AddBudgetItemResult.DuplicateName>(result);
     }
@@ -61,11 +61,11 @@ public sealed class BudgetDomainTests
         var groceriesId = Guid.NewGuid();
         var budget = CreateBudget("UK");
         var withSalary = Assert.IsType<AddBudgetItemResult.Added>(
-            budget.AddBudgetItem(Guid.NewGuid(), "Salary", BudgetItemKind.Funding, Money("3000.00")));
+            budget.AddBudgetItem(Guid.NewGuid(), Name("Salary"), BudgetItemKind.Funding, Money("3000.00")));
         var withGroceries = Assert.IsType<AddBudgetItemResult.Added>(
-            withSalary.Budget.AddBudgetItem(groceriesId, "Groceries", BudgetItemKind.Consumption, Money("400.00")));
+            withSalary.Budget.AddBudgetItem(groceriesId, Name("Groceries"), BudgetItemKind.Consumption, Money("400.00")));
 
-        var result = withGroceries.Budget.RenameBudgetItem(groceriesId, " Salary ");
+        var result = withGroceries.Budget.RenameBudgetItem(groceriesId, Name(" Salary "));
 
         Assert.IsType<RenameBudgetItemResult.DuplicateName>(result);
     }
@@ -73,7 +73,14 @@ public sealed class BudgetDomainTests
     private static Budget CreateBudget(string name)
     {
         return Assert.IsType<CreateBudgetResult.Created>(
-            Budget.Create(Guid.NewGuid(), name, Currency("GBP"))).Budget;
+            Budget.Create(Guid.NewGuid(), Name(name), Currency("GBP"))).Budget;
+    }
+
+    private static NormalizedName Name(string value)
+    {
+        return NormalizedName.TryCreate(value, out var name)
+            ? name
+            : throw new InvalidOperationException("Invalid test name.");
     }
 
     private static CurrencyCode Currency(string value)

@@ -7,7 +7,7 @@ public sealed class Budget
 {
     private Budget(
         Guid budgetId,
-        string name,
+        NormalizedName name,
         CurrencyCode currency,
         ImmutableArray<BudgetItem> budgetItems)
     {
@@ -19,68 +19,41 @@ public sealed class Budget
 
     public Guid BudgetId { get; }
 
-    public string Name { get; }
+    public NormalizedName Name { get; }
 
     public CurrencyCode Currency { get; }
 
     public ImmutableArray<BudgetItem> BudgetItems { get; }
 
-    public static CreateBudgetResult Create(Guid budgetId, string name, CurrencyCode currency)
+    public static CreateBudgetResult Create(Guid budgetId, NormalizedName name, CurrencyCode currency)
     {
         if (budgetId == Guid.Empty)
         {
             return new CreateBudgetResult.InvalidIdentity();
         }
 
-        if (!TryNormalizeName(name, out var normalizedName))
-        {
-            return new CreateBudgetResult.InvalidName();
-        }
-
-        return new CreateBudgetResult.Created(new Budget(budgetId, normalizedName, currency, []));
+        return new CreateBudgetResult.Created(new Budget(budgetId, name, currency, []));
     }
 
-    public RenameBudgetResult Rename(string name)
+    public RenameBudgetResult Rename(NormalizedName name)
     {
-        if (!TryNormalizeName(name, out var normalizedName))
-        {
-            return new RenameBudgetResult.InvalidName();
-        }
-
-        return new RenameBudgetResult.Renamed(new Budget(BudgetId, normalizedName, Currency, BudgetItems));
+        return new RenameBudgetResult.Renamed(new Budget(BudgetId, name, Currency, BudgetItems));
     }
 
     public AddBudgetItemResult AddBudgetItem(
         Guid budgetItemId,
-        string name,
+        NormalizedName name,
         BudgetItemKind kind,
         PositiveMoneyAmount plannedAmount)
     {
-        if (budgetItemId == Guid.Empty)
-        {
-            return new AddBudgetItemResult.InvalidIdentity();
-        }
-
-        if (!TryNormalizeName(name, out var normalizedName))
-        {
-            return new AddBudgetItemResult.InvalidName();
-        }
-
-        if (HasBudgetItemNamed(normalizedName))
+        if (HasBudgetItemNamed(name))
         {
             return new AddBudgetItemResult.DuplicateName();
         }
 
-        var budgetItemResult = BudgetItem.Create(budgetItemId, normalizedName, kind, plannedAmount);
-
-        if (budgetItemResult is CreateBudgetItemEntityResult.InvalidIdentity)
+        if (BudgetItem.Create(budgetItemId, name, kind, plannedAmount) is not CreateBudgetItemEntityResult.Created created)
         {
             return new AddBudgetItemResult.InvalidIdentity();
-        }
-
-        if (budgetItemResult is not CreateBudgetItemEntityResult.Created created)
-        {
-            return new AddBudgetItemResult.InvalidName();
         }
 
         var budgetItem = created.BudgetItem;
@@ -89,14 +62,9 @@ public sealed class Budget
         return new AddBudgetItemResult.Added(budget, budgetItem);
     }
 
-    public RenameBudgetItemResult RenameBudgetItem(Guid budgetItemId, string name)
+    public RenameBudgetItemResult RenameBudgetItem(Guid budgetItemId, NormalizedName name)
     {
-        if (!TryNormalizeName(name, out var normalizedName))
-        {
-            return new RenameBudgetItemResult.InvalidName();
-        }
-
-        if (HasBudgetItemNamed(normalizedName, budgetItemId))
+        if (HasBudgetItemNamed(name, budgetItemId))
         {
             return new RenameBudgetItemResult.DuplicateName();
         }
@@ -106,12 +74,7 @@ public sealed class Budget
             return new RenameBudgetItemResult.NotFound();
         }
 
-        if (found.BudgetItem.Rename(normalizedName) is not RenameBudgetItemEntityResult.Renamed renamed)
-        {
-            return new RenameBudgetItemResult.InvalidName();
-        }
-
-        var renamedBudgetItem = renamed.BudgetItem;
+        var renamedBudgetItem = found.BudgetItem.Rename(name);
         var budget = ReplaceBudgetItem(budgetItemId, renamedBudgetItem);
 
         return new RenameBudgetItemResult.Renamed(budget, renamedBudgetItem);
@@ -154,16 +117,11 @@ public sealed class Budget
         return new GetBudgetItemResult.NotFound();
     }
 
-    public bool HasBudgetItemNamed(string name, Guid? exceptBudgetItemId = null)
+    public bool HasBudgetItemNamed(NormalizedName name, Guid? exceptBudgetItemId = null)
     {
-        if (!TryNormalizeName(name, out var normalizedName))
-        {
-            return false;
-        }
-
         return BudgetItems.Any(budgetItem =>
             budgetItem.BudgetItemId != exceptBudgetItemId
-            && string.Equals(budgetItem.Name, normalizedName, StringComparison.Ordinal));
+            && budgetItem.Name == name);
     }
 
     private Budget ReplaceBudgetItem(Guid budgetItemId, BudgetItem budgetItem)
@@ -176,19 +134,6 @@ public sealed class Budget
 
         return new Budget(BudgetId, Name, Currency, budgetItems);
     }
-
-    private static bool TryNormalizeName(string name, out string normalizedName)
-    {
-        normalizedName = string.Empty;
-
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return false;
-        }
-
-        normalizedName = name.Trim();
-        return true;
-    }
 }
 
 public abstract record CreateBudgetResult
@@ -196,15 +141,11 @@ public abstract record CreateBudgetResult
     public sealed record Created(Budget Budget) : CreateBudgetResult;
 
     public sealed record InvalidIdentity : CreateBudgetResult;
-
-    public sealed record InvalidName : CreateBudgetResult;
 }
 
 public abstract record RenameBudgetResult
 {
     public sealed record Renamed(Budget Budget) : RenameBudgetResult;
-
-    public sealed record InvalidName : RenameBudgetResult;
 }
 
 public abstract record AddBudgetItemResult
@@ -214,8 +155,6 @@ public abstract record AddBudgetItemResult
     public sealed record DuplicateName : AddBudgetItemResult;
 
     public sealed record InvalidIdentity : AddBudgetItemResult;
-
-    public sealed record InvalidName : AddBudgetItemResult;
 }
 
 public abstract record RenameBudgetItemResult
@@ -225,8 +164,6 @@ public abstract record RenameBudgetItemResult
     public sealed record NotFound : RenameBudgetItemResult;
 
     public sealed record DuplicateName : RenameBudgetItemResult;
-
-    public sealed record InvalidName : RenameBudgetItemResult;
 }
 
 public abstract record ChangeBudgetItemPlannedAmountResult

@@ -20,7 +20,7 @@ public sealed record BudgetResponse(Guid BudgetId, string Name, string Currency,
             .Select(BudgetItemResponse.FromBudgetItem)
             .ToList();
 
-        return new BudgetResponse(budget.BudgetId, budget.Name, budget.Currency.Value, budgetItems);
+        return new BudgetResponse(budget.BudgetId, budget.Name.Value, budget.Currency.Value, budgetItems);
     }
 }
 
@@ -28,7 +28,7 @@ public sealed record BudgetListItemResponse(Guid BudgetId, string Name, string C
 {
     public static BudgetListItemResponse FromBudget(Budget budget)
     {
-        return new BudgetListItemResponse(budget.BudgetId, budget.Name, budget.Currency.Value);
+        return new BudgetListItemResponse(budget.BudgetId, budget.Name.Value, budget.Currency.Value);
     }
 }
 
@@ -38,7 +38,7 @@ public sealed record BudgetItemResponse(Guid BudgetItemId, string Name, string K
     {
         return new BudgetItemResponse(
             budgetItem.BudgetItemId,
-            budgetItem.Name,
+            budgetItem.Name.Value,
             budgetItem.Kind.Value,
             budgetItem.PlannedAmount.FormattedValue);
     }

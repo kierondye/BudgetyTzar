@@ -119,7 +119,7 @@ public static class TransactionEndpoints
 
         if (allocations.HasAllocationForTransaction(transactionId))
         {
-            return Results.Conflict();
+            return TransactionHasAllocation();
         }
 
         transactions.Delete(transactionId);
@@ -149,7 +149,7 @@ public static class TransactionEndpoints
 
         if (transaction.Currency != budgetItemReference.BudgetCurrency)
         {
-            return Results.Conflict();
+            return TransactionCurrencyDoesNotMatchBudget();
         }
 
         var allocation = TransactionAllocation.Allocate(transaction, request.BudgetItemId);
@@ -159,7 +159,7 @@ public static class TransactionEndpoints
         {
             AllocateTransactionResult.Allocated allocated => Results.Ok(
                 TransactionAllocationResponse.FromAllocation(allocated.Allocation)),
-            AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem => Results.Conflict(),
+            AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem => TransactionAlreadyAllocated(),
             _ => throw new InvalidOperationException("Unexpected allocate transaction result.")
         };
     }
@@ -244,6 +244,29 @@ public static class TransactionEndpoints
                 parsedAmount!,
                 parsedCurrency);
     }
+
+    private static IResult TransactionHasAllocation()
+    {
+        return Results.Conflict(new ConflictResponse(
+            "TransactionHasAllocation",
+            "Transaction has an allocation."));
+    }
+
+    private static IResult TransactionCurrencyDoesNotMatchBudget()
+    {
+        return Results.Conflict(new ConflictResponse(
+            "TransactionCurrencyDoesNotMatchBudget",
+            "Transaction currency does not match the budget currency."));
+    }
+
+    private static IResult TransactionAlreadyAllocated()
+    {
+        return Results.Conflict(new ConflictResponse(
+            "TransactionAlreadyAllocated",
+            "Transaction is already allocated to a different budget item."));
+    }
+
+    private sealed record ConflictResponse(string Code, string Message);
 
     private static TransactionFilterValidationResult ValidateFilters(
         string? from,

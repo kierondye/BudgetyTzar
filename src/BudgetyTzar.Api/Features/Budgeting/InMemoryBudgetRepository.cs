@@ -8,7 +8,7 @@ public sealed class InMemoryBudgetRepository
     private readonly object syncRoot = new();
     private readonly Dictionary<Guid, Budget> budgetsById = [];
     private readonly Dictionary<Guid, long> budgetVersionsById = [];
-    private readonly Dictionary<string, Guid> budgetIdsByName = new(StringComparer.Ordinal);
+    private readonly Dictionary<NormalizedName, Guid> budgetIdsByName = [];
     private readonly List<Guid> budgetIds = [];
 
     public BudgetSaveResult Save(Budget budget)
@@ -27,7 +27,7 @@ public sealed class InMemoryBudgetRepository
         }
     }
 
-    public bool HasBudgetNamed(string name, Guid? exceptBudgetId = null)
+    public bool HasBudgetNamed(NormalizedName name, Guid? exceptBudgetId = null)
     {
         lock (syncRoot)
         {
@@ -88,9 +88,9 @@ public sealed class InMemoryBudgetRepository
         }
     }
 
-    private bool HasBudgetNamedCore(string name, Guid? exceptBudgetId)
+    private bool HasBudgetNamedCore(NormalizedName name, Guid? exceptBudgetId)
     {
-        return budgetIdsByName.TryGetValue(NormalizeName(name), out var budgetId)
+        return budgetIdsByName.TryGetValue(name, out var budgetId)
             && budgetId != exceptBudgetId;
     }
 
@@ -106,25 +106,23 @@ public sealed class InMemoryBudgetRepository
         if (expectedVersion.HasValue
             && budgetVersionsById[budget.BudgetId] != expectedVersion.Value)
         {
-            return new BudgetSaveResult.Conflict();
+            return new BudgetSaveResult.StaleState();
         }
 
         if (!expectedVersion.HasValue && hasExistingBudget)
         {
-            return new BudgetSaveResult.Conflict();
+            return new BudgetSaveResult.DuplicateIdentity();
         }
 
-        var normalizedName = NormalizeName(budget.Name);
-
-        if (budgetIdsByName.TryGetValue(normalizedName, out var existingBudgetId)
+        if (budgetIdsByName.TryGetValue(budget.Name, out var existingBudgetId)
             && existingBudgetId != budget.BudgetId)
         {
-            return new BudgetSaveResult.Conflict();
+            return new BudgetSaveResult.DuplicateName();
         }
 
         if (hasExistingBudget)
         {
-            budgetIdsByName.Remove(NormalizeName(existingBudget!.Name));
+            budgetIdsByName.Remove(existingBudget!.Name);
         }
         else
         {
@@ -135,14 +133,9 @@ public sealed class InMemoryBudgetRepository
         budgetVersionsById[budget.BudgetId] = hasExistingBudget
             ? budgetVersionsById[budget.BudgetId] + 1
             : 1;
-        budgetIdsByName[normalizedName] = budget.BudgetId;
+        budgetIdsByName[budget.Name] = budget.BudgetId;
 
         return new BudgetSaveResult.Saved(budget);
-    }
-
-    private static string NormalizeName(string name)
-    {
-        return name.Trim();
     }
 }
 
@@ -152,7 +145,11 @@ public abstract record BudgetSaveResult
 
     public sealed record NotFound : BudgetSaveResult;
 
-    public sealed record Conflict : BudgetSaveResult;
+    public sealed record DuplicateIdentity : BudgetSaveResult;
+
+    public sealed record DuplicateName : BudgetSaveResult;
+
+    public sealed record StaleState : BudgetSaveResult;
 }
 
 public sealed record EntityState<T>(T Value, long Version)
