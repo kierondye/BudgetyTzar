@@ -2,27 +2,24 @@
 
 BudgetyTzar is a personal budgeting application for planning how money should be used, recording what actually happened, and comparing the two.
 
-The project is a .NET 9 HTTP API backed by PostgreSQL. It is currently focused on a small budgeting domain made up of budgets, budget items, transactions, and transaction allocations. The aim is to keep the model simple and expressive while evolving the architecture through small, well-tested changes.
+The project is a .NET 9 HTTP API with in-memory persistence. It is currently focused on a small budgeting domain made up of budgets, budget items, transactions, and transaction allocations. The aim is to keep the model simple and expressive while evolving the architecture through small, well-tested changes.
 
-## Specification
+## Documentation
 
-The source of truth for product behaviour, domain language, API shape, persistence rules, architecture direction, and testing expectations is [SPECIFICATION.md](SPECIFICATION.md).
+- [Specification](SPECIFICATION.md) defines product rules and externally observable behaviour.
+- [Architecture](docs/architecture.md) explains the current structure, responsibilities, request flow, and extension points.
+- [Contributing](CONTRIBUTING.md) provides the development workflow and a concise checklist for adding functionality.
 
-Read the relevant sections of the specification before changing domain behaviour, public APIs, persistence, reporting, authentication, audit behaviour, or workflow design.
+Read the relevant sections of the specification before changing domain behaviour or public APIs, and keep the architecture guide aligned with structural changes.
 
 ## Project Structure
 
-- `src/BudgetyTzar.Api` contains the HTTP API, domain model, application logic, feature endpoints, infrastructure, and contracts.
+- `src/BudgetyTzar.Api` contains the HTTP API, domain model, feature handlers, HTTP contracts, reporting, and in-memory persistence.
 - `tests/BudgetyTzar.Tests` contains the automated test suite.
+- `docs` contains detailed design and extension guides.
 - `scripts` contains local development and release scripts.
 
 ## Local Development
-
-Start local infrastructure:
-
-```bash
-docker compose up -d
-```
 
 Run the API:
 
