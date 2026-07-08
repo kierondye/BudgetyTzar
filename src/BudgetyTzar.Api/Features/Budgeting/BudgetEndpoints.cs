@@ -308,6 +308,7 @@ public static class BudgetEndpoints
             RemoveBudgetItemResult.NotFound => Results.NotFound(),
             RemoveBudgetItemResult.Removed removed => budgets.Save(budgetState.Update(removed.Budget)) switch
             {
+                BudgetSaveResult.BudgetItemHasAllocations => BudgetItemHasAllocations(),
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
                 BudgetSaveResult.StaleState => BudgetWasModified(),
                 BudgetSaveResult.NotFound => Results.NotFound(),
@@ -434,6 +435,13 @@ public static class BudgetEndpoints
         return Results.Conflict(new ConflictResponse(
             "BudgetItemNameAlreadyInUse",
             "Budget item name is already in use."));
+    }
+
+    private static IResult BudgetItemHasAllocations()
+    {
+        return Results.Conflict(new ConflictResponse(
+            "BudgetItemHasAllocations",
+            "Budget item has transaction allocations."));
     }
 
     private sealed record ConflictResponse(string Code, string Message);

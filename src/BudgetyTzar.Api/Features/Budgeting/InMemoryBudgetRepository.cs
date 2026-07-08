@@ -122,10 +122,14 @@ public sealed class InMemoryBudgetRepository
             return new BudgetSaveResult.DuplicateName();
         }
 
+        if (hasExistingBudget && RemovedBudgetItemHasAllocations(existingBudget!, budget))
+        {
+            return new BudgetSaveResult.BudgetItemHasAllocations();
+        }
+
         if (hasExistingBudget)
         {
             store.BudgetIdsByName.Remove(existingBudget!.Name);
-            RemoveAllocationsForRemovedBudgetItems(existingBudget, budget);
         }
         else
         {
@@ -141,27 +145,15 @@ public sealed class InMemoryBudgetRepository
         return new BudgetSaveResult.Saved(budget);
     }
 
-    private void RemoveAllocationsForRemovedBudgetItems(Budget existingBudget, Budget updatedBudget)
+    private bool RemovedBudgetItemHasAllocations(Budget existingBudget, Budget updatedBudget)
     {
         var removedBudgetItemIds = existingBudget.BudgetItems
             .Select(budgetItem => budgetItem.BudgetItemId)
             .Except(updatedBudget.BudgetItems.Select(budgetItem => budgetItem.BudgetItemId))
             .ToHashSet();
 
-        if (removedBudgetItemIds.Count == 0)
-        {
-            return;
-        }
-
-        var affectedTransactionIds = store.AllocationsByTransactionId
-            .Where(entry => removedBudgetItemIds.Contains(entry.Value.BudgetItemId))
-            .Select(entry => entry.Key)
-            .ToList();
-
-        foreach (var transactionId in affectedTransactionIds)
-        {
-            store.AllocationsByTransactionId.Remove(transactionId);
-        }
+        return removedBudgetItemIds.Count > 0
+            && store.AllocationsByTransactionId.Values.Any(allocation => removedBudgetItemIds.Contains(allocation.BudgetItemId));
     }
 }
 
@@ -176,6 +168,8 @@ public abstract record BudgetSaveResult
     public sealed record DuplicateName : BudgetSaveResult;
 
     public sealed record StaleState : BudgetSaveResult;
+
+    public sealed record BudgetItemHasAllocations : BudgetSaveResult;
 }
 
 public sealed record EntityState<T>(T Value, long Version)

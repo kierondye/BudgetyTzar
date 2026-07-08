@@ -82,7 +82,7 @@ public sealed class TransactionAllocationRepositoryTests
     }
 
     [Fact]
-    public void Save_removes_allocations_for_deleted_budget_items_under_the_shared_persistence_boundary()
+    public void Save_rejects_deleted_budget_items_with_allocations_under_the_shared_persistence_boundary()
     {
         var store = new InMemoryDataStore();
         var budgetRepository = new InMemoryBudgetRepository(store);
@@ -104,9 +104,9 @@ public sealed class TransactionAllocationRepositoryTests
         var removeResult = budgetRepository.Save(budgetState.Update(removed.Budget));
 
         Assert.IsType<AllocateTransactionResult.Allocated>(allocateResult);
-        Assert.IsType<BudgetSaveResult.Saved>(removeResult);
-        Assert.Null(budgetRepository.GetBudgetItemReference(budgetItemId));
-        Assert.Null(allocationRepository.Get(transaction.TransactionId));
+        Assert.IsType<BudgetSaveResult.BudgetItemHasAllocations>(removeResult);
+        Assert.NotNull(budgetRepository.GetBudgetItemReference(budgetItemId));
+        Assert.Equal(budgetItemId, allocationRepository.Get(transaction.TransactionId)?.BudgetItemId);
     }
 
     [Fact]

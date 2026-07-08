@@ -467,33 +467,32 @@ public sealed class BudgetApiTests
     }
 
     [Fact]
-    public async Task Delete_budget_item_removes_allocations_to_the_deleted_budget_item()
+    public async Task Delete_budget_item_returns_conflict_when_budget_item_is_allocated()
     {
         await using var server = await TestApiServer.StartAsync();
         var budget = await CreateBudgetAsync(server, "UK", "GBP");
         var budgetItem = await CreateBudgetItemAsync(server, budget.BudgetId, "Groceries", "Consumption", "400.00");
-        var replacementBudgetItem = await CreateBudgetItemAsync(server, budget.BudgetId, "Restaurants", "Consumption", "200.00");
         var transaction = await CreateTransactionAsync(server, "Groceries", "Debit", "2026-07-02", "42.50", "GBP");
         await AllocateTransactionAsync(server, transaction.TransactionId, budgetItem.BudgetItemId);
 
         using var response = await server.Client.DeleteAsync(
             $"/api/budgets/{budget.BudgetId}/budget-items/{budgetItem.BudgetItemId}");
 
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
 
-        using var getDeletedBudgetItemResponse = await server.Client.GetAsync(
+        var retrievedBudgetItem = await server.Client.GetFromJsonAsync<BudgetItemResponse>(
             $"/api/budgets/{budget.BudgetId}/budget-items/{budgetItem.BudgetItemId}");
-        using var getDeletedAllocationResponse = await server.Client.GetAsync(
+        var allocation = await server.Client.GetFromJsonAsync<TransactionAllocationResponse>(
             $"/api/transactions/{transaction.TransactionId}/allocation");
         var budgetItems = await server.Client.GetFromJsonAsync<IReadOnlyList<BudgetItemResponse>>(
             $"/api/budgets/{budget.BudgetId}/budget-items");
 
-        Assert.Equal(HttpStatusCode.NotFound, getDeletedBudgetItemResponse.StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, getDeletedAllocationResponse.StatusCode);
+        Assert.NotNull(retrievedBudgetItem);
+        Assert.Equal(budgetItem.BudgetItemId, retrievedBudgetItem.BudgetItemId);
+        Assert.NotNull(allocation);
+        Assert.Equal(budgetItem.BudgetItemId, allocation.BudgetItemId);
         Assert.NotNull(budgetItems);
-        Assert.Equal(replacementBudgetItem.BudgetItemId, Assert.Single(budgetItems).BudgetItemId);
-
-        await AllocateTransactionAsync(server, transaction.TransactionId, replacementBudgetItem.BudgetItemId);
+        Assert.Equal(budgetItem.BudgetItemId, Assert.Single(budgetItems).BudgetItemId);
     }
 
     [Fact]
@@ -678,6 +677,12 @@ public sealed class BudgetApiTests
         string Description,
         string Type,
         string TransactionDate,
+        string Amount,
+        string Currency);
+
+    private sealed record TransactionAllocationResponse(
+        Guid TransactionId,
+        Guid BudgetItemId,
         string Amount,
         string Currency);
 
