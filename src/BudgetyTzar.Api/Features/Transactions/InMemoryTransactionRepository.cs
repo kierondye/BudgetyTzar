@@ -1,12 +1,18 @@
 using BudgetyTzar.Api.Domain.Entities;
+using BudgetyTzar.Api.Features;
 
 namespace BudgetyTzar.Api.Features.Transactions;
 
 public sealed class InMemoryTransactionRepository
 {
-    private readonly object syncRoot = new();
+    private readonly object syncRoot;
     private readonly Dictionary<Guid, Transaction> transactionsById = [];
     private readonly List<Guid> transactionIds = [];
+
+    public InMemoryTransactionRepository(InMemoryDataStoreLock? dataStoreLock = null)
+    {
+        syncRoot = (dataStoreLock ?? new InMemoryDataStoreLock()).SyncRoot;
+    }
 
     public void Add(Transaction transaction)
     {

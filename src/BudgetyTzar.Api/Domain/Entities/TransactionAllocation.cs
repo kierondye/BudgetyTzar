@@ -24,17 +24,25 @@ public sealed class TransactionAllocation
 
     public CurrencyCode Currency { get; }
 
-    public static TransactionAllocation Allocate(Transaction transaction, Guid budgetItemId)
+    public static AllocateTransactionEntityResult Allocate(Transaction transaction, Guid budgetItemId)
     {
         if (budgetItemId == Guid.Empty)
         {
-            throw new ArgumentException("Budget item identity must not be empty.", nameof(budgetItemId));
+            return new AllocateTransactionEntityResult.InvalidBudgetItemIdentity();
         }
 
-        return new TransactionAllocation(
-            transaction.TransactionId,
-            budgetItemId,
-            transaction.Amount,
-            transaction.Currency);
+        return new AllocateTransactionEntityResult.Allocated(
+            new TransactionAllocation(
+                transaction.TransactionId,
+                budgetItemId,
+                transaction.Amount,
+                transaction.Currency));
     }
+}
+
+public abstract record AllocateTransactionEntityResult
+{
+    public sealed record Allocated(TransactionAllocation Allocation) : AllocateTransactionEntityResult;
+
+    public sealed record InvalidBudgetItemIdentity : AllocateTransactionEntityResult;
 }

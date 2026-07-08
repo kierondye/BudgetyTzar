@@ -1,6 +1,8 @@
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
+using BudgetyTzar.Api.Features;
 using BudgetyTzar.Api.Features.Transactions;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace BudgetyTzar.Api.Features.Budgeting;
 
@@ -8,6 +10,7 @@ public static class BudgetEndpoints
 {
     public static IServiceCollection AddBudgeting(this IServiceCollection services)
     {
+        services.TryAddSingleton<InMemoryDataStoreLock>();
         services.AddSingleton<InMemoryBudgetRepository>();
         return services;
     }
@@ -294,11 +297,6 @@ public static class BudgetEndpoints
         InMemoryBudgetRepository budgets,
         InMemoryTransactionAllocationRepository allocationRepository)
     {
-        if (allocationRepository.HasAllocationForBudgetItem(budgetItemId))
-        {
-            return BudgetItemHasAllocations();
-        }
-
         var budgetState = budgets.Get(budgetId);
 
         if (budgetState is null)
@@ -309,8 +307,12 @@ public static class BudgetEndpoints
         return budgetState.Value.RemoveBudgetItem(budgetItemId) switch
         {
             RemoveBudgetItemResult.NotFound => Results.NotFound(),
-            RemoveBudgetItemResult.Removed removed => budgets.Save(budgetState.Update(removed.Budget)) switch
+            RemoveBudgetItemResult.Removed removed => budgets.SaveRemovalIfBudgetItemHasNoAllocations(
+                budgetState.Update(removed.Budget),
+                budgetItemId,
+                allocationRepository.HasAllocationForBudgetItem) switch
             {
+                BudgetSaveResult.BudgetItemHasAllocations => BudgetItemHasAllocations(),
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
                 BudgetSaveResult.StaleState => BudgetWasModified(),
                 BudgetSaveResult.NotFound => Results.NotFound(),

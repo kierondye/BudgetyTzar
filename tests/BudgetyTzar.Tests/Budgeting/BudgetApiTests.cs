@@ -492,6 +492,28 @@ public sealed class BudgetApiTests
     }
 
     [Fact]
+    public async Task Delete_budget_item_returns_not_found_when_allocated_budget_item_belongs_to_another_budget()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        var householdBudget = await CreateBudgetAsync(server, "Household", "GBP");
+        var holidayBudget = await CreateBudgetAsync(server, "Holiday", "GBP");
+        var groceries = await CreateBudgetItemAsync(server, householdBudget.BudgetId, "Groceries", "Consumption", "400.00");
+        var transaction = await CreateTransactionAsync(server, "Groceries", "Debit", "2026-07-02", "42.50", "GBP");
+        await AllocateTransactionAsync(server, transaction.TransactionId, groceries.BudgetItemId);
+
+        using var response = await server.Client.DeleteAsync(
+            $"/api/budgets/{holidayBudget.BudgetId}/budget-items/{groceries.BudgetItemId}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+
+        var retrievedBudgetItem = await server.Client.GetFromJsonAsync<BudgetItemResponse>(
+            $"/api/budgets/{householdBudget.BudgetId}/budget-items/{groceries.BudgetItemId}");
+
+        Assert.NotNull(retrievedBudgetItem);
+        Assert.Equal(groceries.BudgetItemId, retrievedBudgetItem.BudgetItemId);
+    }
+
+    [Fact]
     public async Task Delete_budget_item_returns_not_found_when_budget_does_not_exist()
     {
         await using var server = await TestApiServer.StartAsync();

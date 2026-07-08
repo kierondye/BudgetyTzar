@@ -1,21 +1,43 @@
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
+using BudgetyTzar.Api.Features;
 
 namespace BudgetyTzar.Api.Features.Budgeting;
 
 public sealed class InMemoryBudgetRepository
 {
-    private readonly object syncRoot = new();
+    private readonly object syncRoot;
     private readonly Dictionary<Guid, Budget> budgetsById = [];
     private readonly Dictionary<Guid, long> budgetVersionsById = [];
     private readonly Dictionary<NormalizedName, Guid> budgetIdsByName = [];
     private readonly List<Guid> budgetIds = [];
+
+    public InMemoryBudgetRepository(InMemoryDataStoreLock? dataStoreLock = null)
+    {
+        syncRoot = (dataStoreLock ?? new InMemoryDataStoreLock()).SyncRoot;
+    }
 
     public BudgetSaveResult Save(Budget budget)
     {
         lock (syncRoot)
         {
             return SaveCore(budget);
+        }
+    }
+
+    public BudgetSaveResult SaveRemovalIfBudgetItemHasNoAllocations(
+        EntityState<Budget> budgetState,
+        Guid budgetItemId,
+        Func<Guid, bool> hasAllocationForBudgetItem)
+    {
+        lock (syncRoot)
+        {
+            if (hasAllocationForBudgetItem(budgetItemId))
+            {
+                return new BudgetSaveResult.BudgetItemHasAllocations();
+            }
+
+            return SaveCore(budgetState.Value, budgetState.Version);
         }
     }
 
@@ -150,6 +172,8 @@ public abstract record BudgetSaveResult
     public sealed record DuplicateName : BudgetSaveResult;
 
     public sealed record StaleState : BudgetSaveResult;
+
+    public sealed record BudgetItemHasAllocations : BudgetSaveResult;
 }
 
 public sealed record EntityState<T>(T Value, long Version)

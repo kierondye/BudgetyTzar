@@ -1,7 +1,9 @@
 using System.Globalization;
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
+using BudgetyTzar.Api.Features;
 using BudgetyTzar.Api.Features.Budgeting;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace BudgetyTzar.Api.Features.Transactions;
 
@@ -9,6 +11,7 @@ public static class TransactionEndpoints
 {
     public static IServiceCollection AddTransactions(this IServiceCollection services)
     {
+        services.TryAddSingleton<InMemoryDataStoreLock>();
         services.AddSingleton<InMemoryTransactionRepository>();
         services.AddSingleton<InMemoryTransactionAllocationRepository>();
         return services;
@@ -58,19 +61,36 @@ public static class TransactionEndpoints
         }
 
         var valid = (CreateTransactionValidationResult.Valid)validation;
-        var transaction = Transaction.Record(
+        return Transaction.Record(
             Guid.NewGuid(),
             valid.Description,
             valid.Type,
             valid.TransactionDate,
             valid.Amount,
-            valid.Currency);
+            valid.Currency) switch
+        {
+            RecordTransactionResult.InvalidIdentity => Results.ValidationProblem(
+                new Dictionary<string, string[]>(StringComparer.Ordinal)
+                {
+                    ["transactionId"] = ["Transaction identity is required."]
+                }),
+            RecordTransactionResult.InvalidDescription => Results.ValidationProblem(
+                new Dictionary<string, string[]>(StringComparer.Ordinal)
+                {
+                    ["description"] = ["Transaction description is required."]
+                }),
+            RecordTransactionResult.Recorded recorded => RecordTransaction(recorded.Transaction),
+            _ => throw new InvalidOperationException("Unexpected record transaction result.")
+        };
 
-        transactions.Add(transaction);
+        IResult RecordTransaction(Transaction transaction)
+        {
+            transactions.Add(transaction);
 
-        return Results.Created(
-            $"/api/transactions/{transaction.TransactionId}",
-            TransactionResponse.FromTransaction(transaction));
+            return Results.Created(
+                $"/api/transactions/{transaction.TransactionId}",
+                TransactionResponse.FromTransaction(transaction));
+        }
     }
 
     private static IResult GetTransactions(
@@ -152,13 +172,25 @@ public static class TransactionEndpoints
             return TransactionCurrencyDoesNotMatchBudget();
         }
 
-        var allocation = TransactionAllocation.Allocate(transaction, request.BudgetItemId);
-        var result = allocations.Allocate(allocation);
+        var allocationResult = TransactionAllocation.Allocate(transaction, request.BudgetItemId);
+
+        if (allocationResult is AllocateTransactionEntityResult.InvalidBudgetItemIdentity)
+        {
+            return Results.NotFound();
+        }
+
+        var allocation = ((AllocateTransactionEntityResult.Allocated)allocationResult).Allocation;
+        var result = allocations.Allocate(
+            allocation,
+            requestedTransactionId => transactions.Get(requestedTransactionId) is not null,
+            requestedBudgetItemId => budgets.GetBudgetItemReference(requestedBudgetItemId) is not null);
 
         return result switch
         {
             AllocateTransactionResult.Allocated allocated => Results.Ok(
                 TransactionAllocationResponse.FromAllocation(allocated.Allocation)),
+            AllocateTransactionResult.TransactionNotFound => Results.NotFound(),
+            AllocateTransactionResult.BudgetItemNotFound => Results.NotFound(),
             AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem => TransactionAlreadyAllocated(),
             _ => throw new InvalidOperationException("Unexpected allocate transaction result.")
         };

@@ -8,41 +8,44 @@ public sealed class TransactionDomainTests
     [Fact]
     public void Record_normalizes_description()
     {
-        var transaction = Transaction.Record(
+        var recorded = Assert.IsType<RecordTransactionResult.Recorded>(Transaction.Record(
             Guid.NewGuid(),
             " Salary ",
             TransactionType.Credit,
             new DateOnly(2026, 7, 1),
             Money("3000.00"),
-            Currency("GBP"));
+            Currency("GBP")));
 
-        Assert.Equal("Salary", transaction.Description);
+        Assert.Equal("Salary", recorded.Transaction.Description);
     }
 
     [Fact]
     public void Record_rejects_empty_identity_and_blank_description()
     {
-        Assert.Throws<ArgumentException>(() => Transaction.Record(
+        var invalidIdentity = Transaction.Record(
             Guid.Empty,
             "Salary",
             TransactionType.Credit,
             new DateOnly(2026, 7, 1),
             Money("3000.00"),
-            Currency("GBP")));
+            Currency("GBP"));
 
-        Assert.Throws<ArgumentException>(() => Transaction.Record(
+        var invalidDescription = Transaction.Record(
             Guid.NewGuid(),
             " ",
             TransactionType.Credit,
             new DateOnly(2026, 7, 1),
             Money("3000.00"),
-            Currency("GBP")));
+            Currency("GBP"));
+
+        Assert.IsType<RecordTransactionResult.InvalidIdentity>(invalidIdentity);
+        Assert.IsType<RecordTransactionResult.InvalidDescription>(invalidDescription);
     }
 
     [Fact]
     public void Allocation_uses_full_transaction_amount_and_currency()
     {
-        var transaction = Transaction.Record(
+        var transaction = CreateTransaction(
             Guid.NewGuid(),
             "Groceries",
             TransactionType.Debit,
@@ -51,7 +54,9 @@ public sealed class TransactionDomainTests
             Currency("GBP"));
         var budgetItemId = Guid.NewGuid();
 
-        var allocation = TransactionAllocation.Allocate(transaction, budgetItemId);
+        var allocated = Assert.IsType<AllocateTransactionEntityResult.Allocated>(
+            TransactionAllocation.Allocate(transaction, budgetItemId));
+        var allocation = allocated.Allocation;
 
         Assert.Equal(transaction.TransactionId, allocation.TransactionId);
         Assert.Equal(budgetItemId, allocation.BudgetItemId);
@@ -62,7 +67,7 @@ public sealed class TransactionDomainTests
     [Fact]
     public void Allocation_rejects_empty_budget_item_identity()
     {
-        var transaction = Transaction.Record(
+        var transaction = CreateTransaction(
             Guid.NewGuid(),
             "Groceries",
             TransactionType.Debit,
@@ -70,7 +75,27 @@ public sealed class TransactionDomainTests
             Money("42.50"),
             Currency("GBP"));
 
-        Assert.Throws<ArgumentException>(() => TransactionAllocation.Allocate(transaction, Guid.Empty));
+        var result = TransactionAllocation.Allocate(transaction, Guid.Empty);
+
+        Assert.IsType<AllocateTransactionEntityResult.InvalidBudgetItemIdentity>(result);
+    }
+
+    private static Transaction CreateTransaction(
+        Guid transactionId,
+        string description,
+        TransactionType type,
+        DateOnly transactionDate,
+        PositiveMoneyAmount amount,
+        CurrencyCode currency)
+    {
+        return Assert.IsType<RecordTransactionResult.Recorded>(
+            Transaction.Record(
+                transactionId,
+                description,
+                type,
+                transactionDate,
+                amount,
+                currency)).Transaction;
     }
 
     private static CurrencyCode Currency(string value)
