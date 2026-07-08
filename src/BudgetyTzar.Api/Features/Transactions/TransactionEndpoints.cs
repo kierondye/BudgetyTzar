@@ -3,6 +3,7 @@ using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
 using BudgetyTzar.Api.Features;
 using BudgetyTzar.Api.Features.Budgeting;
+using BudgetyTzar.Api.Observability;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace BudgetyTzar.Api.Features.Transactions;
@@ -145,12 +146,14 @@ public static class TransactionEndpoints
         AllocateTransactionRequest request,
         InMemoryTransactionRepository transactions,
         InMemoryBudgetRepository budgets,
-        InMemoryTransactionAllocationRepository allocations)
+        InMemoryTransactionAllocationRepository allocations,
+        BudgetyTzarTelemetry telemetry)
     {
         var transaction = transactions.Get(transactionId);
 
         if (transaction is null)
         {
+            telemetry.RecordAllocationFailure("transaction_not_found");
             return Results.NotFound();
         }
 
@@ -158,11 +161,13 @@ public static class TransactionEndpoints
 
         if (budgetItemReference is null)
         {
+            telemetry.RecordAllocationFailure("budget_item_not_found");
             return Results.NotFound();
         }
 
         if (transaction.Currency != budgetItemReference.BudgetCurrency)
         {
+            telemetry.RecordAllocationFailure("currency_mismatch");
             return TransactionCurrencyDoesNotMatchBudget();
         }
 
@@ -170,21 +175,30 @@ public static class TransactionEndpoints
 
         if (allocationResult is AllocateTransactionEntityResult.InvalidBudgetItemIdentity)
         {
+            telemetry.RecordAllocationFailure("budget_item_not_found");
             return Results.NotFound();
         }
 
         var allocation = ((AllocateTransactionEntityResult.Allocated)allocationResult).Allocation;
         var result = allocations.Allocate(allocation);
 
-        return result switch
+        if (result is AllocateTransactionResult.Allocated allocated)
         {
-            AllocateTransactionResult.Allocated allocated => Results.Ok(
-                TransactionAllocationResponse.FromAllocation(allocated.Allocation)),
-            AllocateTransactionResult.TransactionNotFound => Results.NotFound(),
-            AllocateTransactionResult.BudgetItemNotFound => Results.NotFound(),
-            AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem => TransactionAlreadyAllocated(),
+            return Results.Ok(TransactionAllocationResponse.FromAllocation(allocated.Allocation));
+        }
+
+        var (reason, response) = result switch
+        {
+            AllocateTransactionResult.TransactionNotFound => ("transaction_not_found", Results.NotFound()),
+            AllocateTransactionResult.BudgetItemNotFound => ("budget_item_not_found", Results.NotFound()),
+            AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem => (
+                "already_allocated",
+                TransactionAlreadyAllocated()),
             _ => throw new InvalidOperationException("Unexpected allocate transaction result.")
         };
+
+        telemetry.RecordAllocationFailure(reason);
+        return response;
     }
 
     private static IResult GetTransactionAllocation(

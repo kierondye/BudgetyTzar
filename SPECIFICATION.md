@@ -1299,6 +1299,20 @@ Important signals:
 - Budget Summary query latency.
 - Database connection and query health.
 
+Every API response carries an `X-Correlation-ID` header. A single incoming value is
+trusted only when it is 8–64 characters long, starts with an ASCII letter or digit,
+and contains only ASCII letters, digits, `.`, `_`, and `-`; otherwise the API generates
+a new opaque value. Correlation IDs are included in structured log scope and trace
+context.
+
+API request count, error count, and latency use stable route templates rather than raw
+resource URLs. Validation failures, transaction allocation failures, and Budget
+Summary query latency use dedicated low-cardinality signals. Logs, spans, and metric
+dimensions must not contain transaction descriptions, monetary amounts, resource IDs,
+raw authenticated subject identifiers, full request or response bodies, or other
+unnecessary financial data. Exporter configuration is optional and exporter absence
+or failure must not affect request handling or automated tests.
+
 ## 18. Security and Privacy
 
 - Use HTTPS in deployed environments.

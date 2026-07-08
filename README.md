@@ -8,6 +8,7 @@ The project is a .NET 9 HTTP API with in-memory persistence. It is currently foc
 
 - [Specification](SPECIFICATION.md) defines product rules and externally observable behaviour.
 - [Architecture](docs/architecture.md) explains the structure, responsibilities, request flow, and extension points.
+- [Observability](docs/observability.md) documents signals, privacy constraints, exporters, and local verification.
 - [Contributing](CONTRIBUTING.md) provides the development workflow and a concise checklist for adding functionality.
 
 Read the relevant sections of the specification before changing domain behaviour or public APIs, and keep the architecture guide aligned with structural changes.

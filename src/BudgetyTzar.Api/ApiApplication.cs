@@ -1,6 +1,7 @@
 using BudgetyTzar.Api.Features.Budgeting;
 using BudgetyTzar.Api.Features.Reporting;
 using BudgetyTzar.Api.Features.Transactions;
+using BudgetyTzar.Api.Observability;
 using Microsoft.OpenApi.Models;
 
 namespace BudgetyTzar.Api;
@@ -14,6 +15,7 @@ public static class ApiApplication
         var version = RuntimeVersion.Current;
 
         builder.Services.AddHealthChecks();
+        builder.AddBudgetyTzarObservability();
         builder.Services.AddBudgeting();
         builder.Services.AddTransactions();
         builder.Services.AddReporting();
@@ -31,6 +33,7 @@ public static class ApiApplication
 
         app.UseSwagger();
         app.UseSwaggerUI();
+        app.UseMiddleware<RequestObservabilityMiddleware>();
 
         app.MapHealthChecks("/health");
         app.MapGet("/api/version", () => version)

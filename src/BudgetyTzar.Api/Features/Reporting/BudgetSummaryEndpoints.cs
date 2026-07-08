@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using BudgetyTzar.Api.Observability;
+
 namespace BudgetyTzar.Api.Features.Reporting;
 
 public static class BudgetSummaryEndpoints
@@ -19,15 +22,33 @@ public static class BudgetSummaryEndpoints
         return endpoints;
     }
 
-    private static IResult GetBudgetSummary(Guid budgetId, BudgetSummaryService service)
+    private static IResult GetBudgetSummary(
+        Guid budgetId,
+        BudgetSummaryService service,
+        BudgetyTzarTelemetry telemetry)
     {
-        var result = service.Get(budgetId);
+        using var activity = BudgetyTzarTelemetry.StartBudgetSummaryQuery();
+        var started = Stopwatch.GetTimestamp();
+        var outcome = "error";
 
-        return result switch
+        try
         {
-            GetBudgetSummaryResult.NotFound => Results.NotFound(),
-            GetBudgetSummaryResult.Found found => Results.Ok(BudgetSummaryResponse.FromSummary(found.Summary)),
-            _ => throw new InvalidOperationException("Unexpected budget summary result.")
-        };
+            var result = service.Get(budgetId);
+            outcome = result is GetBudgetSummaryResult.Found ? "found" : "not_found";
+            activity?.SetTag("query.outcome", outcome);
+
+            return result switch
+            {
+                GetBudgetSummaryResult.NotFound => Results.NotFound(),
+                GetBudgetSummaryResult.Found found => Results.Ok(BudgetSummaryResponse.FromSummary(found.Summary)),
+                _ => throw new InvalidOperationException("Unexpected budget summary result.")
+            };
+        }
+        finally
+        {
+            telemetry.RecordBudgetSummary(
+                Stopwatch.GetElapsedTime(started).TotalSeconds,
+                outcome);
+        }
     }
 }

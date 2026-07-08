@@ -55,6 +55,7 @@ responsibility and tests that benefit from it.
 | `src/BudgetyTzar.Api/Features/Budgeting` | Budget HTTP contracts, endpoint handlers, and budget persistence. |
 | `src/BudgetyTzar.Api/Features/Transactions` | Transaction and allocation HTTP contracts, endpoint handlers, filters, and persistence. |
 | `src/BudgetyTzar.Api/Features/Reporting` | Budget summary query model, calculation service, contracts, and endpoint. |
+| `src/BudgetyTzar.Api/Observability` | Cross-cutting correlation, privacy-safe request telemetry, tracing, metrics, and exporter registration. |
 | `src/BudgetyTzar.Api/Features/InMemoryDataStore.cs` | Shared in-memory state and the synchronization boundary used by repositories. |
 | `tests/BudgetyTzar.Tests/Support` | Test-only API host and shared test support. |
 | `tests/BudgetyTzar.Tests/<Feature>` | Domain, repository, and API behaviour tests grouped by feature. |
