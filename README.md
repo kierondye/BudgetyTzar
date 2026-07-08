@@ -41,6 +41,45 @@ Build the solution:
 dotnet build BudgetyTzar.sln
 ```
 
+## Container
+
+Build the production API image from the repository root:
+
+```bash
+docker build --tag budgetytzar-api:local .
+```
+
+Run it in the background:
+
+```bash
+docker run --detach --rm \
+  --name budgetytzar-api \
+  --publish 8080:8080 \
+  budgetytzar-api:local
+```
+
+The container runs as a non-root user, listens on port `8080`, and sets the
+ASP.NET Core environment to `Production`. Swagger remains enabled in the
+container and is available at `http://localhost:8080/swagger`.
+
+Verify the health and build version endpoints:
+
+```bash
+curl --fail http://localhost:8080/health
+curl --fail http://localhost:8080/api/version
+```
+
+The version response contains the product version derived from Git tags and
+Conventional Commits, plus an informational version containing the source
+commit. Stop the container after verification:
+
+```bash
+docker stop budgetytzar-api
+```
+
+Persistence is currently in memory. All budgets, transactions, and allocations
+created through the container are lost when it stops or restarts.
+
 ## Versioning and Releases
 
 BudgetyTzar uses product-wide SemVer derived from Git tags and Conventional Commits.
