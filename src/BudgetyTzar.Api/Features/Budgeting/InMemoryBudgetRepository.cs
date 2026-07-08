@@ -21,21 +21,6 @@ public sealed class InMemoryBudgetRepository
         }
     }
 
-    public BudgetSaveResult SaveRemovalIfBudgetItemHasNoAllocations(
-        EntityState<Budget> budgetState,
-        Guid budgetItemId)
-    {
-        lock (store.SyncRoot)
-        {
-            if (store.AllocationsByTransactionId.Values.Any(allocation => allocation.BudgetItemId == budgetItemId))
-            {
-                return new BudgetSaveResult.BudgetItemHasAllocations();
-            }
-
-            return SaveCore(budgetState.Value, budgetState.Version);
-        }
-    }
-
     public BudgetSaveResult Save(EntityState<Budget> budgetState)
     {
         lock (store.SyncRoot)
@@ -140,6 +125,7 @@ public sealed class InMemoryBudgetRepository
         if (hasExistingBudget)
         {
             store.BudgetIdsByName.Remove(existingBudget!.Name);
+            RemoveAllocationsForRemovedBudgetItems(existingBudget, budget);
         }
         else
         {
@@ -154,6 +140,29 @@ public sealed class InMemoryBudgetRepository
 
         return new BudgetSaveResult.Saved(budget);
     }
+
+    private void RemoveAllocationsForRemovedBudgetItems(Budget existingBudget, Budget updatedBudget)
+    {
+        var removedBudgetItemIds = existingBudget.BudgetItems
+            .Select(budgetItem => budgetItem.BudgetItemId)
+            .Except(updatedBudget.BudgetItems.Select(budgetItem => budgetItem.BudgetItemId))
+            .ToHashSet();
+
+        if (removedBudgetItemIds.Count == 0)
+        {
+            return;
+        }
+
+        var affectedTransactionIds = store.AllocationsByTransactionId
+            .Where(entry => removedBudgetItemIds.Contains(entry.Value.BudgetItemId))
+            .Select(entry => entry.Key)
+            .ToList();
+
+        foreach (var transactionId in affectedTransactionIds)
+        {
+            store.AllocationsByTransactionId.Remove(transactionId);
+        }
+    }
 }
 
 public abstract record BudgetSaveResult
@@ -167,8 +176,6 @@ public abstract record BudgetSaveResult
     public sealed record DuplicateName : BudgetSaveResult;
 
     public sealed record StaleState : BudgetSaveResult;
-
-    public sealed record BudgetItemHasAllocations : BudgetSaveResult;
 }
 
 public sealed record EntityState<T>(T Value, long Version)

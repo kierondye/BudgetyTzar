@@ -226,7 +226,8 @@ A budget item kind must not change after the budget item has been created.
 
 The system must allow a user to delete a budget item from a budget.
 
-The system must prevent a budget item from being deleted while any transaction is allocated to it.
+When a budget item is deleted, any transaction allocations that point to that budget item must be removed.
+Those transactions become unallocated and may be allocated to another budget item.
 
 Refunds, corrections, reversals, underpayments, and overpayments must not change the kind of a budget item.
 
@@ -446,9 +447,9 @@ The Budget Summary is shaped for reporting. It does not need to mirror the inter
 ### 6.7 Delete a Budget Item
 
 1. User attempts to delete a budget item.
-2. If no transactions are allocated to the budget item, the system allows the deletion.
-3. If any transaction is allocated to the budget item, the system prevents the deletion.
-4. User must remove the relevant allocations before deleting the budget item.
+2. System deletes the budget item.
+3. System removes any transaction allocations that point to the deleted budget item.
+4. The affected transactions become unallocated and no longer contribute to budget actual amounts, remaining amounts, or Budget Summary totals.
 
 ## 7. Logical Architecture and Boundaries
 
@@ -501,7 +502,7 @@ Responsibilities:
 - Budget access rules for budgets scoped to an individual authenticated identity.
 - Budget item planned amount validation.
 - Budget item kind validation.
-- Prevention of budget item deletion while transactions are allocated to the budget item.
+- Budget item deletion.
 
 Owns:
 
@@ -558,7 +559,7 @@ Does not own:
 
 The Transaction Allocations boundary may need to query or reference transaction, budget item, and budget currency information in order to validate allocations. Those dependencies should be explicit and should not make transactions children of budgets or budget items children of transactions.
 
-The Reporting boundary needs allocation data to calculate budget summaries, and the Budgeting boundary needs allocation existence checks to prevent deletion of allocated budget items. Those read dependencies must be explicit. They must not move allocation ownership out of the Transaction Allocations boundary.
+The Reporting boundary needs allocation data to calculate budget summaries, and deleting a budget item requires any allocations pointing at that item to be removed. Those dependencies must be explicit. They must not move allocation ownership out of the Transaction Allocations boundary.
 
 ### 7.5 Reporting Boundary
 
@@ -1068,7 +1069,7 @@ This section summarises the rules defined throughout the functional requirements
 - Allocating a transaction to a different budget item while it already has an allocation must be rejected.
 - A transaction must not be allocated to a budget item that does not exist.
 - A transaction must not be allocated to a budget item if the transaction currency does not match the budget currency.
-- A budget item must not be deleted while any transaction is allocated to it.
+- Deleting a budget item removes any transaction allocations that point to that budget item.
 - For `Funding` items, `Credit` transactions increase actual funding.
 - For `Funding` items, `Debit` transactions decrease actual funding.
 - For `Consumption` items, `Debit` transactions increase actual consumption.
@@ -1198,7 +1199,7 @@ API behaviour tests should cover:
 - Budget item changes that make total planned consumption exceed total planned funding.
 - Planned deficit visibility in budget and summary views.
 - Rejection of attempts to change a budget item's kind after creation.
-- Rejection of budget item deletion while transactions are allocated to it.
+- Budget item deletion removes any transaction allocations that point to the deleted item.
 - Transaction recording and retrieval.
 - Transaction deletion.
 - Rejection of transaction deletion while the transaction is allocated to a budget item.

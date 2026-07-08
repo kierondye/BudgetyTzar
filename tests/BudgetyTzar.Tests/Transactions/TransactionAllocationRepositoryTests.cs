@@ -72,9 +72,7 @@ public sealed class TransactionAllocationRepositoryTests
 
         var removed = Assert.IsType<RemoveBudgetItemResult.Removed>(
             budgetState.Value.RemoveBudgetItem(budgetItemId));
-        var removeResult = budgetRepository.SaveRemovalIfBudgetItemHasNoAllocations(
-            budgetState.Update(removed.Budget),
-            budgetItemId);
+        var removeResult = budgetRepository.Save(budgetState.Update(removed.Budget));
 
         var allocateResult = allocationRepository.Allocate(CreateAllocation(transaction, budgetItemId));
 
@@ -84,7 +82,7 @@ public sealed class TransactionAllocationRepositoryTests
     }
 
     [Fact]
-    public void Delete_revalidates_budget_item_has_no_allocations_under_the_shared_persistence_boundary()
+    public void Save_removes_allocations_for_deleted_budget_items_under_the_shared_persistence_boundary()
     {
         var store = new InMemoryDataStore();
         var budgetRepository = new InMemoryBudgetRepository(store);
@@ -103,14 +101,12 @@ public sealed class TransactionAllocationRepositoryTests
 
         var removed = Assert.IsType<RemoveBudgetItemResult.Removed>(
             budgetState.Value.RemoveBudgetItem(budgetItemId));
-        var removeResult = budgetRepository.SaveRemovalIfBudgetItemHasNoAllocations(
-            budgetState.Update(removed.Budget),
-            budgetItemId);
+        var removeResult = budgetRepository.Save(budgetState.Update(removed.Budget));
 
         Assert.IsType<AllocateTransactionResult.Allocated>(allocateResult);
-        Assert.IsType<BudgetSaveResult.BudgetItemHasAllocations>(removeResult);
-        Assert.NotNull(budgetRepository.GetBudgetItemReference(budgetItemId));
-        Assert.Equal(budgetItemId, allocationRepository.Get(transaction.TransactionId)?.BudgetItemId);
+        Assert.IsType<BudgetSaveResult.Saved>(removeResult);
+        Assert.Null(budgetRepository.GetBudgetItemReference(budgetItemId));
+        Assert.Null(allocationRepository.Get(transaction.TransactionId));
     }
 
     [Fact]
