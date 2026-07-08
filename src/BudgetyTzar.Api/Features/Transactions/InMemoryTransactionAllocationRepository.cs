@@ -5,47 +5,35 @@ namespace BudgetyTzar.Api.Features.Transactions;
 
 public sealed class InMemoryTransactionAllocationRepository
 {
-    private readonly object syncRoot;
-    private readonly Dictionary<Guid, TransactionAllocation> allocationsByTransactionId = [];
+    private readonly InMemoryDataStore store;
 
-    public InMemoryTransactionAllocationRepository(InMemoryDataStoreLock? dataStoreLock = null)
+    public InMemoryTransactionAllocationRepository(InMemoryDataStore? store = null)
     {
-        syncRoot = (dataStoreLock ?? new InMemoryDataStoreLock()).SyncRoot;
+        this.store = store ?? new InMemoryDataStore();
     }
 
     public AllocateTransactionResult Allocate(TransactionAllocation allocation)
     {
-        return Allocate(
-            allocation,
-            transactionId => true,
-            budgetItemId => true);
-    }
-
-    public AllocateTransactionResult Allocate(
-        TransactionAllocation allocation,
-        Func<Guid, bool> transactionExists,
-        Func<Guid, bool> budgetItemExists)
-    {
-        lock (syncRoot)
+        lock (store.SyncRoot)
         {
-            if (!transactionExists(allocation.TransactionId))
+            if (!store.TransactionsById.ContainsKey(allocation.TransactionId))
             {
                 return new AllocateTransactionResult.TransactionNotFound();
             }
 
-            if (!budgetItemExists(allocation.BudgetItemId))
+            if (!BudgetItemExists(allocation.BudgetItemId))
             {
                 return new AllocateTransactionResult.BudgetItemNotFound();
             }
 
-            if (allocationsByTransactionId.TryGetValue(allocation.TransactionId, out var existingAllocation))
+            if (store.AllocationsByTransactionId.TryGetValue(allocation.TransactionId, out var existingAllocation))
             {
                 return existingAllocation.BudgetItemId == allocation.BudgetItemId
                     ? new AllocateTransactionResult.Allocated(existingAllocation)
                     : new AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem();
             }
 
-            allocationsByTransactionId[allocation.TransactionId] = allocation;
+            store.AllocationsByTransactionId[allocation.TransactionId] = allocation;
 
             return new AllocateTransactionResult.Allocated(allocation);
         }
@@ -53,42 +41,33 @@ public sealed class InMemoryTransactionAllocationRepository
 
     public TransactionAllocation? Get(Guid transactionId)
     {
-        lock (syncRoot)
+        lock (store.SyncRoot)
         {
-            return allocationsByTransactionId.GetValueOrDefault(transactionId);
+            return store.AllocationsByTransactionId.GetValueOrDefault(transactionId);
         }
     }
 
     public IReadOnlyList<TransactionAllocation> GetAll()
     {
-        lock (syncRoot)
+        lock (store.SyncRoot)
         {
-            return allocationsByTransactionId.Values.ToList();
+            return store.AllocationsByTransactionId.Values.ToList();
         }
     }
 
     public void Remove(Guid transactionId)
     {
-        lock (syncRoot)
+        lock (store.SyncRoot)
         {
-            allocationsByTransactionId.Remove(transactionId);
+            store.AllocationsByTransactionId.Remove(transactionId);
         }
     }
 
-    public bool HasAllocationForTransaction(Guid transactionId)
+    private bool BudgetItemExists(Guid budgetItemId)
     {
-        lock (syncRoot)
-        {
-            return allocationsByTransactionId.ContainsKey(transactionId);
-        }
-    }
-
-    public bool HasAllocationForBudgetItem(Guid budgetItemId)
-    {
-        lock (syncRoot)
-        {
-            return allocationsByTransactionId.Values.Any(allocation => allocation.BudgetItemId == budgetItemId);
-        }
+        return store.BudgetsById.Values
+            .SelectMany(budget => budget.BudgetItems)
+            .Any(budgetItem => budgetItem.BudgetItemId == budgetItemId);
     }
 }
 

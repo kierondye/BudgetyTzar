@@ -11,7 +11,7 @@ public static class TransactionEndpoints
 {
     public static IServiceCollection AddTransactions(this IServiceCollection services)
     {
-        services.TryAddSingleton<InMemoryDataStoreLock>();
+        services.TryAddSingleton<InMemoryDataStore>();
         services.AddSingleton<InMemoryTransactionRepository>();
         services.AddSingleton<InMemoryTransactionAllocationRepository>();
         return services;
@@ -129,21 +129,15 @@ public static class TransactionEndpoints
 
     private static IResult DeleteTransaction(
         Guid transactionId,
-        InMemoryTransactionRepository transactions,
-        InMemoryTransactionAllocationRepository allocations)
+        InMemoryTransactionRepository transactions)
     {
-        if (transactions.Get(transactionId) is null)
+        return transactions.Delete(transactionId) switch
         {
-            return Results.NotFound();
-        }
-
-        if (allocations.HasAllocationForTransaction(transactionId))
-        {
-            return TransactionHasAllocation();
-        }
-
-        transactions.Delete(transactionId);
-        return Results.NoContent();
+            TransactionDeleteResult.NotFound => Results.NotFound(),
+            TransactionDeleteResult.TransactionHasAllocation => TransactionHasAllocation(),
+            TransactionDeleteResult.Deleted => Results.NoContent(),
+            _ => throw new InvalidOperationException("Unexpected delete transaction result.")
+        };
     }
 
     private static IResult AllocateTransaction(
@@ -180,10 +174,7 @@ public static class TransactionEndpoints
         }
 
         var allocation = ((AllocateTransactionEntityResult.Allocated)allocationResult).Allocation;
-        var result = allocations.Allocate(
-            allocation,
-            requestedTransactionId => transactions.Get(requestedTransactionId) is not null,
-            requestedBudgetItemId => budgets.GetBudgetItemReference(requestedBudgetItemId) is not null);
+        var result = allocations.Allocate(allocation);
 
         return result switch
         {

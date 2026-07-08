@@ -11,9 +11,14 @@ public sealed class TransactionAllocationRepositoryTests
     [Fact]
     public void Allocate_same_transaction_to_same_budget_item_is_idempotent()
     {
-        var repository = new InMemoryTransactionAllocationRepository();
+        var store = new InMemoryDataStore();
+        var budgetRepository = new InMemoryBudgetRepository(store);
+        var transactionRepository = new InMemoryTransactionRepository(store);
+        var repository = new InMemoryTransactionAllocationRepository(store);
         var transaction = CreateTransaction();
         var budgetItemId = Guid.NewGuid();
+        transactionRepository.Add(transaction);
+        budgetRepository.Save(CreateBudget((budgetItemId, "Groceries")));
         var firstAllocation = CreateAllocation(transaction, budgetItemId);
         var secondAllocation = CreateAllocation(transaction, budgetItemId);
 
@@ -29,10 +34,17 @@ public sealed class TransactionAllocationRepositoryTests
     [Fact]
     public void Allocate_same_transaction_to_different_budget_item_conflicts_and_preserves_first_allocation()
     {
-        var repository = new InMemoryTransactionAllocationRepository();
+        var store = new InMemoryDataStore();
+        var budgetRepository = new InMemoryBudgetRepository(store);
+        var transactionRepository = new InMemoryTransactionRepository(store);
+        var repository = new InMemoryTransactionAllocationRepository(store);
         var transaction = CreateTransaction();
         var firstBudgetItemId = Guid.NewGuid();
         var secondBudgetItemId = Guid.NewGuid();
+        transactionRepository.Add(transaction);
+        budgetRepository.Save(CreateBudget(
+            (firstBudgetItemId, "Groceries"),
+            (secondBudgetItemId, "Restaurants")));
 
         var firstResult = repository.Allocate(CreateAllocation(transaction, firstBudgetItemId));
         var secondResult = repository.Allocate(CreateAllocation(transaction, secondBudgetItemId));
@@ -43,15 +55,17 @@ public sealed class TransactionAllocationRepositoryTests
     }
 
     [Fact]
-    public void Allocate_revalidates_budget_item_exists_under_the_shared_persistence_lock()
+    public void Allocate_revalidates_budget_item_exists_under_the_shared_persistence_boundary()
     {
-        var dataStoreLock = new InMemoryDataStoreLock();
-        var budgetRepository = new InMemoryBudgetRepository(dataStoreLock);
-        var allocationRepository = new InMemoryTransactionAllocationRepository(dataStoreLock);
+        var store = new InMemoryDataStore();
+        var budgetRepository = new InMemoryBudgetRepository(store);
+        var transactionRepository = new InMemoryTransactionRepository(store);
+        var allocationRepository = new InMemoryTransactionAllocationRepository(store);
         var transaction = CreateTransaction();
         var budgetItemId = Guid.NewGuid();
-        var budget = CreateBudget(budgetItemId);
+        var budget = CreateBudget((budgetItemId, "Groceries"));
 
+        transactionRepository.Add(transaction);
         budgetRepository.Save(budget);
         var budgetState = budgetRepository.Get(budget.BudgetId);
         Assert.NotNull(budgetState);
@@ -60,13 +74,9 @@ public sealed class TransactionAllocationRepositoryTests
             budgetState.Value.RemoveBudgetItem(budgetItemId));
         var removeResult = budgetRepository.SaveRemovalIfBudgetItemHasNoAllocations(
             budgetState.Update(removed.Budget),
-            budgetItemId,
-            allocationRepository.HasAllocationForBudgetItem);
+            budgetItemId);
 
-        var allocateResult = allocationRepository.Allocate(
-            CreateAllocation(transaction, budgetItemId),
-            transactionId => transactionId == transaction.TransactionId,
-            requestedBudgetItemId => budgetRepository.GetBudgetItemReference(requestedBudgetItemId) is not null);
+        var allocateResult = allocationRepository.Allocate(CreateAllocation(transaction, budgetItemId));
 
         Assert.IsType<BudgetSaveResult.Saved>(removeResult);
         Assert.IsType<AllocateTransactionResult.BudgetItemNotFound>(allocateResult);
@@ -74,34 +84,53 @@ public sealed class TransactionAllocationRepositoryTests
     }
 
     [Fact]
-    public void Delete_revalidates_budget_item_has_no_allocations_under_the_shared_persistence_lock()
+    public void Delete_revalidates_budget_item_has_no_allocations_under_the_shared_persistence_boundary()
     {
-        var dataStoreLock = new InMemoryDataStoreLock();
-        var budgetRepository = new InMemoryBudgetRepository(dataStoreLock);
-        var allocationRepository = new InMemoryTransactionAllocationRepository(dataStoreLock);
+        var store = new InMemoryDataStore();
+        var budgetRepository = new InMemoryBudgetRepository(store);
+        var transactionRepository = new InMemoryTransactionRepository(store);
+        var allocationRepository = new InMemoryTransactionAllocationRepository(store);
         var transaction = CreateTransaction();
         var budgetItemId = Guid.NewGuid();
-        var budget = CreateBudget(budgetItemId);
+        var budget = CreateBudget((budgetItemId, "Groceries"));
 
+        transactionRepository.Add(transaction);
         budgetRepository.Save(budget);
         var budgetState = budgetRepository.Get(budget.BudgetId);
         Assert.NotNull(budgetState);
 
-        var allocateResult = allocationRepository.Allocate(
-            CreateAllocation(transaction, budgetItemId),
-            transactionId => transactionId == transaction.TransactionId,
-            requestedBudgetItemId => budgetRepository.GetBudgetItemReference(requestedBudgetItemId) is not null);
+        var allocateResult = allocationRepository.Allocate(CreateAllocation(transaction, budgetItemId));
 
         var removed = Assert.IsType<RemoveBudgetItemResult.Removed>(
             budgetState.Value.RemoveBudgetItem(budgetItemId));
         var removeResult = budgetRepository.SaveRemovalIfBudgetItemHasNoAllocations(
             budgetState.Update(removed.Budget),
-            budgetItemId,
-            allocationRepository.HasAllocationForBudgetItem);
+            budgetItemId);
 
         Assert.IsType<AllocateTransactionResult.Allocated>(allocateResult);
         Assert.IsType<BudgetSaveResult.BudgetItemHasAllocations>(removeResult);
         Assert.NotNull(budgetRepository.GetBudgetItemReference(budgetItemId));
+        Assert.Equal(budgetItemId, allocationRepository.Get(transaction.TransactionId)?.BudgetItemId);
+    }
+
+    [Fact]
+    public void Delete_transaction_revalidates_transaction_has_no_allocation_under_the_shared_persistence_boundary()
+    {
+        var store = new InMemoryDataStore();
+        var budgetRepository = new InMemoryBudgetRepository(store);
+        var transactionRepository = new InMemoryTransactionRepository(store);
+        var allocationRepository = new InMemoryTransactionAllocationRepository(store);
+        var transaction = CreateTransaction();
+        var budgetItemId = Guid.NewGuid();
+
+        transactionRepository.Add(transaction);
+        budgetRepository.Save(CreateBudget((budgetItemId, "Groceries")));
+        allocationRepository.Allocate(CreateAllocation(transaction, budgetItemId));
+
+        var deleteResult = transactionRepository.Delete(transaction.TransactionId);
+
+        Assert.IsType<TransactionDeleteResult.TransactionHasAllocation>(deleteResult);
+        Assert.NotNull(transactionRepository.Get(transaction.TransactionId));
         Assert.Equal(budgetItemId, allocationRepository.Get(transaction.TransactionId)?.BudgetItemId);
     }
 
@@ -123,17 +152,22 @@ public sealed class TransactionAllocationRepositoryTests
             TransactionAllocation.Allocate(transaction, budgetItemId)).Allocation;
     }
 
-    private static Budget CreateBudget(Guid budgetItemId)
+    private static Budget CreateBudget(params (Guid BudgetItemId, string Name)[] budgetItems)
     {
         var budget = Assert.IsType<CreateBudgetResult.Created>(
             Budget.Create(Guid.NewGuid(), Name("UK"), Currency("GBP"))).Budget;
 
-        return Assert.IsType<AddBudgetItemResult.Added>(
-            budget.AddBudgetItem(
-                budgetItemId,
-                Name("Groceries"),
-                BudgetItemKind.Consumption,
-                Money("400.00"))).Budget;
+        foreach (var budgetItem in budgetItems)
+        {
+            budget = Assert.IsType<AddBudgetItemResult.Added>(
+                budget.AddBudgetItem(
+                    budgetItem.BudgetItemId,
+                    Name(budgetItem.Name),
+                    BudgetItemKind.Consumption,
+                    Money("400.00"))).Budget;
+        }
+
+        return budget;
     }
 
     private static NormalizedName Name(string value)

@@ -5,55 +5,68 @@ namespace BudgetyTzar.Api.Features.Transactions;
 
 public sealed class InMemoryTransactionRepository
 {
-    private readonly object syncRoot;
-    private readonly Dictionary<Guid, Transaction> transactionsById = [];
-    private readonly List<Guid> transactionIds = [];
+    private readonly InMemoryDataStore store;
 
-    public InMemoryTransactionRepository(InMemoryDataStoreLock? dataStoreLock = null)
+    public InMemoryTransactionRepository(InMemoryDataStore? store = null)
     {
-        syncRoot = (dataStoreLock ?? new InMemoryDataStoreLock()).SyncRoot;
+        this.store = store ?? new InMemoryDataStore();
     }
 
     public void Add(Transaction transaction)
     {
-        lock (syncRoot)
+        lock (store.SyncRoot)
         {
-            transactionsById[transaction.TransactionId] = transaction;
-            transactionIds.Add(transaction.TransactionId);
+            store.TransactionsById[transaction.TransactionId] = transaction;
+            store.TransactionIds.Add(transaction.TransactionId);
         }
     }
 
     public IReadOnlyList<Transaction> GetAll()
     {
-        lock (syncRoot)
+        lock (store.SyncRoot)
         {
-            return transactionIds
-                .Select(transactionId => transactionsById[transactionId])
+            return store.TransactionIds
+                .Select(transactionId => store.TransactionsById[transactionId])
                 .ToList();
         }
     }
 
     public Transaction? Get(Guid transactionId)
     {
-        lock (syncRoot)
+        lock (store.SyncRoot)
         {
-            return transactionsById.GetValueOrDefault(transactionId);
+            return store.TransactionsById.GetValueOrDefault(transactionId);
         }
     }
 
-    public bool Delete(Guid transactionId)
+    public TransactionDeleteResult Delete(Guid transactionId)
     {
-        lock (syncRoot)
+        lock (store.SyncRoot)
         {
-            if (!transactionsById.Remove(transactionId))
+            if (!store.TransactionsById.ContainsKey(transactionId))
             {
-                return false;
+                return new TransactionDeleteResult.NotFound();
             }
 
-            transactionIds.Remove(transactionId);
-            return true;
+            if (store.AllocationsByTransactionId.ContainsKey(transactionId))
+            {
+                return new TransactionDeleteResult.TransactionHasAllocation();
+            }
+
+            store.TransactionsById.Remove(transactionId);
+            store.TransactionIds.Remove(transactionId);
+            return new TransactionDeleteResult.Deleted();
         }
     }
+}
+
+public abstract record TransactionDeleteResult
+{
+    public sealed record Deleted : TransactionDeleteResult;
+
+    public sealed record NotFound : TransactionDeleteResult;
+
+    public sealed record TransactionHasAllocation : TransactionDeleteResult;
 }
 
 public sealed record TransactionFilters(

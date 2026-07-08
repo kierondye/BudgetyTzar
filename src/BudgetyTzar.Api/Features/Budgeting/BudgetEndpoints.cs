@@ -10,7 +10,7 @@ public static class BudgetEndpoints
 {
     public static IServiceCollection AddBudgeting(this IServiceCollection services)
     {
-        services.TryAddSingleton<InMemoryDataStoreLock>();
+        services.TryAddSingleton<InMemoryDataStore>();
         services.AddSingleton<InMemoryBudgetRepository>();
         return services;
     }
@@ -294,8 +294,7 @@ public static class BudgetEndpoints
     private static IResult DeleteBudgetItem(
         Guid budgetId,
         Guid budgetItemId,
-        InMemoryBudgetRepository budgets,
-        InMemoryTransactionAllocationRepository allocationRepository)
+        InMemoryBudgetRepository budgets)
     {
         var budgetState = budgets.Get(budgetId);
 
@@ -309,8 +308,7 @@ public static class BudgetEndpoints
             RemoveBudgetItemResult.NotFound => Results.NotFound(),
             RemoveBudgetItemResult.Removed removed => budgets.SaveRemovalIfBudgetItemHasNoAllocations(
                 budgetState.Update(removed.Budget),
-                budgetItemId,
-                allocationRepository.HasAllocationForBudgetItem) switch
+                budgetItemId) switch
             {
                 BudgetSaveResult.BudgetItemHasAllocations => BudgetItemHasAllocations(),
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
