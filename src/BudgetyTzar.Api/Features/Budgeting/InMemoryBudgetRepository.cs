@@ -7,6 +7,7 @@ public sealed class InMemoryBudgetRepository
 {
     private readonly object syncRoot = new();
     private readonly Dictionary<Guid, Budget> budgetsById = [];
+    private readonly Dictionary<Guid, long> budgetVersionsById = [];
     private readonly Dictionary<string, Guid> budgetIdsByName = new(StringComparer.Ordinal);
     private readonly List<Guid> budgetIds = [];
 
@@ -18,24 +19,11 @@ public sealed class InMemoryBudgetRepository
         }
     }
 
-    public BudgetUpdateResult TryUpdate(
-        Guid budgetId,
-        Func<Budget, Budget> update)
+    public BudgetSaveResult Save(EntityState<Budget> budgetState)
     {
         lock (syncRoot)
         {
-            if (!budgetsById.TryGetValue(budgetId, out var budget))
-            {
-                return new BudgetUpdateResult.NotFound();
-            }
-
-            var updatedBudget = update(budget);
-            return SaveCore(updatedBudget) switch
-            {
-                BudgetSaveResult.Conflict => new BudgetUpdateResult.Conflict(),
-                BudgetSaveResult.Saved saved => new BudgetUpdateResult.Updated(saved.Budget),
-                _ => throw new InvalidOperationException("Unexpected save budget result.")
-            };
+            return SaveCore(budgetState.Value, budgetState.Version);
         }
     }
 
@@ -57,11 +45,13 @@ public sealed class InMemoryBudgetRepository
         }
     }
 
-    public Budget? Get(Guid budgetId)
+    public EntityState<Budget>? Get(Guid budgetId)
     {
         lock (syncRoot)
         {
-            return budgetsById.GetValueOrDefault(budgetId);
+            return budgetsById.TryGetValue(budgetId, out var budget)
+                ? new EntityState<Budget>(budget, budgetVersionsById[budgetId])
+                : null;
         }
     }
 
@@ -69,8 +59,13 @@ public sealed class InMemoryBudgetRepository
     {
         lock (syncRoot)
         {
-            return budgetsById.TryGetValue(budgetId, out var budget)
-                ? budget.BudgetItems.SingleOrDefault(budgetItem => budgetItem.BudgetItemId == budgetItemId)
+            if (!budgetsById.TryGetValue(budgetId, out var budget))
+            {
+                return null;
+            }
+
+            return budget.GetBudgetItem(budgetItemId) is GetBudgetItemResult.Found found
+                ? found.BudgetItem
                 : null;
         }
     }
@@ -99,8 +94,26 @@ public sealed class InMemoryBudgetRepository
             && budgetId != exceptBudgetId;
     }
 
-    private BudgetSaveResult SaveCore(Budget budget)
+    private BudgetSaveResult SaveCore(Budget budget, long? expectedVersion = null)
     {
+        var hasExistingBudget = budgetsById.TryGetValue(budget.BudgetId, out var existingBudget);
+
+        if (expectedVersion.HasValue && !hasExistingBudget)
+        {
+            return new BudgetSaveResult.NotFound();
+        }
+
+        if (expectedVersion.HasValue
+            && budgetVersionsById[budget.BudgetId] != expectedVersion.Value)
+        {
+            return new BudgetSaveResult.Conflict();
+        }
+
+        if (!expectedVersion.HasValue && hasExistingBudget)
+        {
+            return new BudgetSaveResult.Conflict();
+        }
+
         var normalizedName = NormalizeName(budget.Name);
 
         if (budgetIdsByName.TryGetValue(normalizedName, out var existingBudgetId)
@@ -109,9 +122,9 @@ public sealed class InMemoryBudgetRepository
             return new BudgetSaveResult.Conflict();
         }
 
-        if (budgetsById.TryGetValue(budget.BudgetId, out var existingBudget))
+        if (hasExistingBudget)
         {
-            budgetIdsByName.Remove(NormalizeName(existingBudget.Name));
+            budgetIdsByName.Remove(NormalizeName(existingBudget!.Name));
         }
         else
         {
@@ -119,6 +132,9 @@ public sealed class InMemoryBudgetRepository
         }
 
         budgetsById[budget.BudgetId] = budget;
+        budgetVersionsById[budget.BudgetId] = hasExistingBudget
+            ? budgetVersionsById[budget.BudgetId] + 1
+            : 1;
         budgetIdsByName[normalizedName] = budget.BudgetId;
 
         return new BudgetSaveResult.Saved(budget);
@@ -134,16 +150,17 @@ public abstract record BudgetSaveResult
 {
     public sealed record Saved(Budget Budget) : BudgetSaveResult;
 
+    public sealed record NotFound : BudgetSaveResult;
+
     public sealed record Conflict : BudgetSaveResult;
 }
 
-public abstract record BudgetUpdateResult
+public sealed record EntityState<T>(T Value, long Version)
 {
-    public sealed record Updated(Budget Budget) : BudgetUpdateResult;
-
-    public sealed record NotFound : BudgetUpdateResult;
-
-    public sealed record Conflict : BudgetUpdateResult;
+    public EntityState<T> Update(T value)
+    {
+        return this with { Value = value };
+    }
 }
 
 public sealed record BudgetItemReference(Guid BudgetId, CurrencyCode BudgetCurrency, BudgetItem BudgetItem);

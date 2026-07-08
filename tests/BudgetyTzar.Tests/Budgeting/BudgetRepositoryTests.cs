@@ -10,8 +10,8 @@ public sealed class BudgetRepositoryTests
     public void Save_rejects_duplicate_budget_names_without_overwriting_existing_budget()
     {
         var repository = new InMemoryBudgetRepository();
-        var firstBudget = Budget.Create(Guid.NewGuid(), "UK", Currency("GBP"));
-        var duplicateBudget = Budget.Create(Guid.NewGuid(), "UK", Currency("EUR"));
+        var firstBudget = CreateBudget("UK", "GBP");
+        var duplicateBudget = CreateBudget("UK", "EUR");
 
         var firstResult = repository.Save(firstBudget);
         var duplicateResult = repository.Save(duplicateBudget);
@@ -28,8 +28,8 @@ public sealed class BudgetRepositoryTests
     public async Task Save_allows_only_one_budget_to_claim_a_name_when_saves_overlap()
     {
         var repository = new InMemoryBudgetRepository();
-        var firstBudget = Budget.Create(Guid.NewGuid(), "Shared", Currency("GBP"));
-        var duplicateBudget = Budget.Create(Guid.NewGuid(), "Shared", Currency("EUR"));
+        var firstBudget = CreateBudget("Shared", "GBP");
+        var duplicateBudget = CreateBudget("Shared", "EUR");
         using var start = new ManualResetEventSlim();
 
         var firstSave = Task.Run(() =>
@@ -55,12 +55,15 @@ public sealed class BudgetRepositoryTests
     public void Save_updates_the_name_index_when_an_existing_budget_is_renamed()
     {
         var repository = new InMemoryBudgetRepository();
-        var budget = Budget.Create(Guid.NewGuid(), "UK", Currency("GBP"));
+        var budget = CreateBudget("UK", "GBP");
         repository.Save(budget);
 
-        var renamedBudget = budget.Rename("Europe");
-        var renameResult = repository.Save(renamedBudget);
-        var replacementResult = repository.Save(Budget.Create(Guid.NewGuid(), "UK", Currency("GBP")));
+        var budgetState = repository.Get(budget.BudgetId);
+        Assert.NotNull(budgetState);
+
+        var renamedBudget = Assert.IsType<RenameBudgetResult.Renamed>(budgetState.Value.Rename("Europe"));
+        var renameResult = repository.Save(budgetState.Update(renamedBudget.Budget));
+        var replacementResult = repository.Save(CreateBudget("UK", "GBP"));
 
         Assert.IsType<BudgetSaveResult.Saved>(renameResult);
         Assert.IsType<BudgetSaveResult.Saved>(replacementResult);
@@ -69,54 +72,68 @@ public sealed class BudgetRepositoryTests
     }
 
     [Fact]
-    public void TryUpdate_applies_each_update_to_the_latest_stored_budget()
+    public void Save_rejects_stale_updates_without_overwriting_existing_budget()
     {
         var repository = new InMemoryBudgetRepository();
-        var budget = Budget.Create(Guid.NewGuid(), "UK", Currency("GBP"));
+        var budget = CreateBudget("UK", "GBP");
         repository.Save(budget);
 
         var salaryId = Guid.NewGuid();
         var groceriesId = Guid.NewGuid();
+        var firstRead = repository.Get(budget.BudgetId);
+        var staleRead = repository.Get(budget.BudgetId);
 
-        var firstResult = repository.TryUpdate(
-            budget.BudgetId,
-            currentBudget => currentBudget.AddBudgetItem(
+        Assert.NotNull(firstRead);
+        Assert.NotNull(staleRead);
+
+        var addedSalary = Assert.IsType<AddBudgetItemResult.Added>(
+            firstRead.Value.AddBudgetItem(
                 salaryId,
                 "Salary",
                 BudgetItemKind.Funding,
                 Money("3000.00")));
-        var secondResult = repository.TryUpdate(
-            budget.BudgetId,
-            currentBudget => currentBudget.AddBudgetItem(
+        var addedGroceriesFromStaleRead = Assert.IsType<AddBudgetItemResult.Added>(
+            staleRead.Value.AddBudgetItem(
                 groceriesId,
                 "Groceries",
                 BudgetItemKind.Consumption,
                 Money("400.00")));
 
-        Assert.IsType<BudgetUpdateResult.Updated>(firstResult);
-        Assert.IsType<BudgetUpdateResult.Updated>(secondResult);
+        var firstResult = repository.Save(firstRead.Update(addedSalary.Budget));
+        var staleResult = repository.Save(staleRead.Update(addedGroceriesFromStaleRead.Budget));
+
+        Assert.IsType<BudgetSaveResult.Saved>(firstResult);
+        Assert.IsType<BudgetSaveResult.Conflict>(staleResult);
 
         var updatedBudget = repository.Get(budget.BudgetId);
         Assert.NotNull(updatedBudget);
-        Assert.Collection(
-            updatedBudget.BudgetItems,
-            budgetItem => Assert.Equal(salaryId, budgetItem.BudgetItemId),
-            budgetItem => Assert.Equal(groceriesId, budgetItem.BudgetItemId));
+        var budgetItem = Assert.Single(updatedBudget.Value.BudgetItems);
+        Assert.Equal(salaryId, budgetItem.BudgetItemId);
     }
 
     [Fact]
     public void Save_can_report_conflict_without_changing_stored_budget()
     {
         var repository = new InMemoryBudgetRepository();
-        var ukBudget = Budget.Create(Guid.NewGuid(), "UK", Currency("GBP"));
-        var euBudget = Budget.Create(Guid.NewGuid(), "EU", Currency("EUR"));
+        var ukBudget = CreateBudget("UK", "GBP");
+        var euBudget = CreateBudget("EU", "EUR");
         repository.Save(ukBudget);
         repository.Save(euBudget);
 
-        var result = repository.Save(ukBudget.Rename("EU"));
+        var ukBudgetState = repository.Get(ukBudget.BudgetId);
+        Assert.NotNull(ukBudgetState);
+
+        var renamedBudget = Assert.IsType<RenameBudgetResult.Renamed>(ukBudgetState.Value.Rename("EU"));
+        var result = repository.Save(ukBudgetState.Update(renamedBudget.Budget));
 
         Assert.IsType<BudgetSaveResult.Conflict>(result);
-        Assert.Equal("UK", repository.Get(ukBudget.BudgetId)?.Name);
+        Assert.Equal("UK", repository.Get(ukBudget.BudgetId)?.Value.Name);
+    }
+
+    private static Budget CreateBudget(string name, string currency)
+    {
+        return Assert.IsType<CreateBudgetResult.Created>(
+            Budget.Create(Guid.NewGuid(), name, Currency(currency))).Budget;
     }
 
     private static CurrencyCode Currency(string value)

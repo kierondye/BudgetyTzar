@@ -12,13 +12,14 @@ public sealed class BudgetSummaryService(
 {
     public GetBudgetSummaryResult Get(Guid budgetId)
     {
-        var budget = budgetStore.Get(budgetId);
+        var budgetState = budgetStore.Get(budgetId);
 
-        if (budget is null)
+        if (budgetState is null)
         {
             return new GetBudgetSummaryResult.NotFound();
         }
 
+        var budget = budgetState.Value;
         var transactionsById = transactionStore.GetAll()
             .ToDictionary(transaction => transaction.TransactionId);
         var allocationsByBudgetItemId = allocationStore.GetAll()

@@ -24,7 +24,7 @@ public sealed class BudgetItem
 
     public PositiveMoneyAmount PlannedAmount { get; }
 
-    public static BudgetItem Create(
+    public static CreateBudgetItemEntityResult Create(
         Guid budgetItemId,
         string name,
         BudgetItemKind kind,
@@ -32,19 +32,25 @@ public sealed class BudgetItem
     {
         if (budgetItemId == Guid.Empty)
         {
-            throw new ArgumentException("Identity must not be empty.", nameof(budgetItemId));
+            return new CreateBudgetItemEntityResult.InvalidIdentity();
         }
 
-        var normalizedName = NormalizeName(name);
+        if (!TryNormalizeName(name, out var normalizedName))
+        {
+            return new CreateBudgetItemEntityResult.InvalidName();
+        }
 
-        return new BudgetItem(budgetItemId, normalizedName, kind, plannedAmount);
+        return new CreateBudgetItemEntityResult.Created(new BudgetItem(budgetItemId, normalizedName, kind, plannedAmount));
     }
 
-    public BudgetItem Rename(string name)
+    public RenameBudgetItemEntityResult Rename(string name)
     {
-        var normalizedName = NormalizeName(name);
+        if (!TryNormalizeName(name, out var normalizedName))
+        {
+            return new RenameBudgetItemEntityResult.InvalidName();
+        }
 
-        return new BudgetItem(BudgetItemId, normalizedName, Kind, PlannedAmount);
+        return new RenameBudgetItemEntityResult.Renamed(new BudgetItem(BudgetItemId, normalizedName, Kind, PlannedAmount));
     }
 
     public BudgetItem ChangePlannedAmount(PositiveMoneyAmount plannedAmount)
@@ -52,13 +58,32 @@ public sealed class BudgetItem
         return new BudgetItem(BudgetItemId, Name, Kind, plannedAmount);
     }
 
-    private static string NormalizeName(string name)
+    private static bool TryNormalizeName(string name, out string normalizedName)
     {
+        normalizedName = string.Empty;
+
         if (string.IsNullOrWhiteSpace(name))
         {
-            throw new ArgumentException("Budget item name is required.", nameof(name));
+            return false;
         }
 
-        return name.Trim();
+        normalizedName = name.Trim();
+        return true;
     }
+}
+
+public abstract record CreateBudgetItemEntityResult
+{
+    public sealed record Created(BudgetItem BudgetItem) : CreateBudgetItemEntityResult;
+
+    public sealed record InvalidIdentity : CreateBudgetItemEntityResult;
+
+    public sealed record InvalidName : CreateBudgetItemEntityResult;
+}
+
+public abstract record RenameBudgetItemEntityResult
+{
+    public sealed record Renamed(BudgetItem BudgetItem) : RenameBudgetItemEntityResult;
+
+    public sealed record InvalidName : RenameBudgetItemEntityResult;
 }
