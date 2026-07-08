@@ -25,8 +25,7 @@ public sealed class InMemoryBudgetRepository
     {
         lock (store.SyncRoot)
         {
-            var concurrencyState = budgetState.GetPersistenceState<BudgetConcurrencyState>();
-            return SaveCore(budgetState.Value, concurrencyState.Version);
+            return SaveCore(budgetState.Value, budgetState.GetVersion());
         }
     }
 
@@ -53,9 +52,7 @@ public sealed class InMemoryBudgetRepository
         lock (store.SyncRoot)
         {
             return store.BudgetsById.TryGetValue(budgetId, out var budget)
-                ? new EntityState<Budget>(
-                    budget,
-                    new BudgetConcurrencyState(store.BudgetVersionsById[budgetId]))
+                ? new EntityState<Budget>(budget, store.BudgetVersionsById[budgetId])
                 : null;
         }
     }
@@ -158,8 +155,6 @@ public sealed class InMemoryBudgetRepository
         return removedBudgetItemIds.Count > 0
             && store.AllocationsByTransactionId.Values.Any(allocation => removedBudgetItemIds.Contains(allocation.BudgetItemId));
     }
-
-    private sealed record BudgetConcurrencyState(long Version);
 }
 
 public abstract record BudgetSaveResult
@@ -179,27 +174,26 @@ public abstract record BudgetSaveResult
 
 public sealed class EntityState<T>
 {
-    private readonly object persistenceState;
-
-    internal EntityState(T value, object persistenceState)
+    internal EntityState(T value, long version)
     {
         ArgumentNullException.ThrowIfNull(value);
-        ArgumentNullException.ThrowIfNull(persistenceState);
 
         Value = value;
-        this.persistenceState = persistenceState;
+        Version = version;
     }
 
     public T Value { get; }
 
+    private long Version { get; }
+
     public EntityState<T> Update(T value)
     {
-        return new EntityState<T>(value, persistenceState);
+        return new EntityState<T>(value, Version);
     }
 
-    internal TPersistenceState GetPersistenceState<TPersistenceState>()
+    internal long GetVersion()
     {
-        return (TPersistenceState)persistenceState;
+        return Version;
     }
 }
 
