@@ -1,0 +1,21 @@
+**/.DS_Store
+**/.idea
+**/.vs
+**/.vscode
+**/bin
+**/obj
+**/TestResults
+**/coverage
+**/coverage.*
+**/*.suo
+**/*.user
+**/*.secrets.json
+.env
+.env.*
+artifacts
+docs
+tests
+**/appsettings.Development.json
+
+# Git metadata is intentionally included so the existing version script can
+# stamp the published assembly with the source revision and SemVer.
