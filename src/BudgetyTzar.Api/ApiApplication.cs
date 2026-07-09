@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using BudgetyTzar.Api.Authentication;
 using BudgetyTzar.Api.Features.Budgeting;
 using BudgetyTzar.Api.Features.Reporting;
@@ -27,7 +28,8 @@ public static class ApiApplication
         builder.Services.Configure<AuthenticationOptions>(
             builder.Configuration.GetSection(AuthenticationOptions.SectionName));
         builder.Services.AddHttpContextAccessor();
-        builder.Services.AddScoped<AuthenticatedUser>();
+        builder.Services.AddSingleton<InMemoryExternalIdentityStore>();
+        builder.Services.AddScoped<ICurrentUser, CurrentUser>();
         builder.Services.AddAuthentication(authentication.Scheme)
             .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
             {
@@ -41,7 +43,9 @@ public static class ApiApplication
             options.AddPolicy(BusinessApiPolicy, policy =>
             {
                 policy.RequireAuthenticatedUser();
-                policy.RequireClaim(authentication.UserIdClaimType);
+                policy.RequireAssertion(context =>
+                    HasNonBlankClaim(context.User, authentication.ProviderClaimType)
+                    && HasNonBlankClaim(context.User, authentication.SubjectClaimType));
             });
         });
         builder.Services.AddBudgeting();
@@ -60,7 +64,7 @@ public static class ApiApplication
                 Type = SecuritySchemeType.Http,
                 Scheme = JwtBearerDefaults.AuthenticationScheme.ToLowerInvariant(),
                 BearerFormat = "JWT",
-                Description = "A bearer token containing the configured stable user identity claim."
+                Description = "A bearer token containing the configured external provider and subject identity claims."
             });
             options.OperationFilter<AuthorizationOperationFilter>();
         });
@@ -80,5 +84,10 @@ public static class ApiApplication
         app.MapReportingEndpoints();
 
         return app;
+    }
+
+    private static bool HasNonBlankClaim(ClaimsPrincipal principal, string claimType)
+    {
+        return !string.IsNullOrWhiteSpace(principal.FindFirstValue(claimType));
     }
 }

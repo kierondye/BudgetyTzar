@@ -1,12 +1,10 @@
-using BudgetyTzar.Api.Authentication;
-
 namespace BudgetyTzar.Api.Features.Reporting;
 
 public static class BudgetSummaryEndpoints
 {
     public static IServiceCollection AddReporting(this IServiceCollection services)
     {
-        services.AddSingleton<BudgetSummaryService>();
+        services.AddScoped<BudgetSummaryService>();
         return services;
     }
 
@@ -24,10 +22,9 @@ public static class BudgetSummaryEndpoints
 
     private static IResult GetBudgetSummary(
         Guid budgetId,
-        AuthenticatedUser user,
         BudgetSummaryService service)
     {
-        var result = service.Get(user.UserId, budgetId);
+        var result = service.Get(budgetId);
 
         return result switch
         {

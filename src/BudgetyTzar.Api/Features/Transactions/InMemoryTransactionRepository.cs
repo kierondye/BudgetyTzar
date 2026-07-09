@@ -7,26 +7,30 @@ namespace BudgetyTzar.Api.Features.Transactions;
 public sealed class InMemoryTransactionRepository
 {
     private readonly InMemoryDataStore store;
+    private readonly ICurrentUser currentUser;
 
-    public InMemoryTransactionRepository(InMemoryDataStore? store = null)
+    public InMemoryTransactionRepository(InMemoryDataStore store, ICurrentUser currentUser)
     {
-        this.store = store ?? new InMemoryDataStore();
+        this.store = store;
+        this.currentUser = currentUser;
     }
 
-    public void Add(ApplicationUserId userId, Transaction transaction)
+    public void Add(Transaction transaction)
     {
         lock (store.SyncRoot)
         {
             store.TransactionsById[transaction.TransactionId] = transaction;
-            store.TransactionOwnersById[transaction.TransactionId] = userId;
+            store.TransactionOwnersById[transaction.TransactionId] = currentUser.UserId;
             store.TransactionIds.Add(transaction.TransactionId);
         }
     }
 
-    public IReadOnlyList<Transaction> GetAll(ApplicationUserId userId)
+    public IReadOnlyList<Transaction> GetAll()
     {
         lock (store.SyncRoot)
         {
+            var userId = currentUser.UserId;
+
             return store.TransactionIds
                 .Where(transactionId => IsOwner(userId, transactionId))
                 .Select(transactionId => store.TransactionsById[transactionId])
@@ -34,21 +38,21 @@ public sealed class InMemoryTransactionRepository
         }
     }
 
-    public Transaction? Get(ApplicationUserId userId, Guid transactionId)
+    public Transaction? Get(Guid transactionId)
     {
         lock (store.SyncRoot)
         {
-            return IsOwner(userId, transactionId)
+            return IsOwner(currentUser.UserId, transactionId)
                 ? store.TransactionsById.GetValueOrDefault(transactionId)
                 : null;
         }
     }
 
-    public TransactionDeleteResult Delete(ApplicationUserId userId, Guid transactionId)
+    public TransactionDeleteResult Delete(Guid transactionId)
     {
         lock (store.SyncRoot)
         {
-            if (!IsOwner(userId, transactionId)
+            if (!IsOwner(currentUser.UserId, transactionId)
                 || !store.TransactionsById.ContainsKey(transactionId))
             {
                 return new TransactionDeleteResult.NotFound();

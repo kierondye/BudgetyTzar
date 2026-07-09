@@ -44,6 +44,40 @@ public sealed class OwnershipApiTests
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData(" ", "test")]
+    [InlineData("alice", " ")]
+    [InlineData("alice", null)]
+    public async Task Business_api_routes_reject_authenticated_requests_with_blank_identity_claims(
+        string userId,
+        string? provider)
+    {
+        await using var server = await TestApiServer.StartAsync();
+        using var client = server.CreateClient(userId, provider);
+
+        using var response = await client.GetAsync("/api/budgets");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Same_external_subject_from_different_providers_gets_separate_owned_resources()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        using var providerA = server.CreateClient("shared-subject", "provider-a");
+        using var providerB = server.CreateClient("shared-subject", "provider-b");
+
+        var budget = await CreateBudgetAsync(providerA, "Provider A household", "GBP");
+
+        Assert.Empty(await GetAsync<IReadOnlyList<BudgetResponse>>(providerB, "/api/budgets"));
+        await AssertNotFoundAsync(providerB.GetAsync($"/api/budgets/{budget.BudgetId}"));
+
+        var sameProviderBudget = await GetAsync<BudgetResponse>(
+            providerA,
+            $"/api/budgets/{budget.BudgetId}");
+        Assert.Equal("Provider A household", sameProviderBudget.Name);
+    }
+
     [Fact]
     public async Task Authenticated_users_cannot_observe_or_change_each_others_resources()
     {

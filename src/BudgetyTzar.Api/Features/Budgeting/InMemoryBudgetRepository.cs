@@ -8,22 +8,26 @@ namespace BudgetyTzar.Api.Features.Budgeting;
 public sealed class InMemoryBudgetRepository
 {
     private readonly InMemoryDataStore store;
+    private readonly ICurrentUser currentUser;
 
-    public InMemoryBudgetRepository(InMemoryDataStore? store = null)
+    public InMemoryBudgetRepository(InMemoryDataStore store, ICurrentUser currentUser)
     {
-        this.store = store ?? new InMemoryDataStore();
+        this.store = store;
+        this.currentUser = currentUser;
     }
 
-    public BudgetSaveResult Save(ApplicationUserId userId, Budget budget)
+    public BudgetSaveResult Save(Budget budget)
     {
         lock (store.SyncRoot)
         {
-            return SaveCore(userId, budget);
+            return SaveCore(currentUser.UserId, budget);
         }
     }
 
-    public BudgetSaveResult Save(ApplicationUserId userId, EntityState<Budget> budgetState)
+    public BudgetSaveResult Save(EntityState<Budget> budgetState)
     {
+        var userId = currentUser.UserId;
+
         if (budgetState is not InMemoryEntityState<Budget> inMemoryState
             || inMemoryState.UserId != userId)
         {
@@ -37,20 +41,21 @@ public sealed class InMemoryBudgetRepository
     }
 
     public bool HasBudgetNamed(
-        ApplicationUserId userId,
         NormalizedName name,
         Guid? exceptBudgetId = null)
     {
         lock (store.SyncRoot)
         {
-            return HasBudgetNamedCore(userId, name, exceptBudgetId);
+            return HasBudgetNamedCore(currentUser.UserId, name, exceptBudgetId);
         }
     }
 
-    public IReadOnlyList<Budget> GetAll(ApplicationUserId userId)
+    public IReadOnlyList<Budget> GetAll()
     {
         lock (store.SyncRoot)
         {
+            var userId = currentUser.UserId;
+
             return store.BudgetIds
                 .Where(budgetId => IsOwner(userId, budgetId))
                 .Select(budgetId => store.BudgetsById[budgetId])
@@ -58,10 +63,12 @@ public sealed class InMemoryBudgetRepository
         }
     }
 
-    public EntityState<Budget>? Get(ApplicationUserId userId, Guid budgetId)
+    public EntityState<Budget>? Get(Guid budgetId)
     {
         lock (store.SyncRoot)
         {
+            var userId = currentUser.UserId;
+
             return IsOwner(userId, budgetId)
                 && store.BudgetsById.TryGetValue(budgetId, out var budget)
                 ? new InMemoryEntityState<Budget>(userId, budget, store.BudgetVersionsById[budgetId])
@@ -70,12 +77,13 @@ public sealed class InMemoryBudgetRepository
     }
 
     public BudgetItem? GetBudgetItem(
-        ApplicationUserId userId,
         Guid budgetId,
         Guid budgetItemId)
     {
         lock (store.SyncRoot)
         {
+            var userId = currentUser.UserId;
+
             if (!IsOwner(userId, budgetId)
                 || !store.BudgetsById.TryGetValue(budgetId, out var budget))
             {
@@ -88,12 +96,12 @@ public sealed class InMemoryBudgetRepository
         }
     }
 
-    public BudgetItemReference? GetBudgetItemReference(
-        ApplicationUserId userId,
-        Guid budgetItemId)
+    public BudgetItemReference? GetBudgetItemReference(Guid budgetItemId)
     {
         lock (store.SyncRoot)
         {
+            var userId = currentUser.UserId;
+
             foreach (var budgetId in store.BudgetIds.Where(id => IsOwner(userId, id)))
             {
                 var budget = store.BudgetsById[budgetId];

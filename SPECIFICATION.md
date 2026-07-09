@@ -181,9 +181,11 @@ The Budget Summary provides the primary view of progress against a budget by com
 ### 5.0 Authentication and Resource Ownership
 
 Budget, transaction, allocation, and reporting operations require an authenticated
-identity. The application derives one stable user identifier from the configured
-authenticated claim; clients must not supply an owner identifier in a request body,
-route, or query parameter.
+external identity. The application validates the configured external provider and
+subject claims, maps the unique `(provider, subject)` pair to an internal
+application user identifier, and scopes owned resources to that internal identifier.
+Clients must not supply an owner identifier in a request body, route, or query
+parameter.
 
 Budgets, their budget items, transactions, and transaction allocations belong to the
 identity that creates them. Lists and reports include only resources owned by the
@@ -191,10 +193,12 @@ authenticated identity. A transaction may be allocated only to a budget item own
 the same identity.
 
 An unauthenticated request to a business API returns `401 Unauthorized`. An
-authenticated request for another identity's budget, budget item, transaction,
-allocation, or report returns `404 Not Found`, exactly as if the resource did not
-exist. Cross-user commands do not disclose or change the other identity's state.
-Existing resource response contracts do not expose owner identifiers.
+authenticated request with blank or missing configured identity claims is rejected
+by authorization before business logic runs. An authenticated request for another
+identity's budget, budget item, transaction, allocation, or report returns
+`404 Not Found`, exactly as if the resource did not exist. Cross-user commands do
+not disclose or change the other identity's state. Existing resource response
+contracts do not expose owner identifiers.
 
 The `/health` health check, `/api/version` runtime-version endpoint, Swagger UI, and
 OpenAPI document remain anonymous. The OpenAPI document describes authentication on
@@ -496,8 +500,11 @@ Responsibilities:
 
 - User authentication.
 - User profile identity information.
-- Identity claims required by application services.
-- Providing an authenticated identity to application and domain boundary services.
+- Identity claims required to resolve an internal application user identity.
+- Mapping external provider/subject identities to internal application user
+  identities.
+- Providing the current internal application user identity to application and
+  domain boundary services.
 
 Does not own:
 
@@ -510,7 +517,11 @@ Suggested implementation:
 - Use an external identity provider with OpenID Connect where practical.
 - The application should not implement its own password storage or identity management unless there is a deliberate product reason.
 
-Authorisation is a separate concern from authentication. The Identity boundary authenticates the user and supplies identity claims. Domain boundaries use the authenticated identity to enforce ownership and access rules for their own resources.
+Authorisation is a separate concern from authentication. The Identity boundary
+authenticates the user, validates the external identity claims needed by the
+application, and resolves an internal application user identity. Domain boundaries
+use the internal application user identity to enforce ownership and access rules
+for their own resources.
 
 Budgets, transactions, transaction allocations, and audit records are scoped to an individual authenticated identity. A user must not be able to access, mutate, allocate, report on, or audit resources scoped to another identity.
 

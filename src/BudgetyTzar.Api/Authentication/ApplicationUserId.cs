@@ -1,26 +1,24 @@
-using System.Security.Claims;
-
 namespace BudgetyTzar.Api.Authentication;
 
 public readonly record struct ApplicationUserId
 {
-    private ApplicationUserId(string value)
+    private ApplicationUserId(Guid value)
     {
         Value = value;
     }
 
-    public string Value { get; }
+    public Guid Value { get; }
 
-    public static ApplicationUserId FromPrincipal(ClaimsPrincipal principal, string claimType)
+    public static ApplicationUserId New()
     {
-        ArgumentNullException.ThrowIfNull(principal);
+        return new ApplicationUserId(Guid.NewGuid());
+    }
 
-        var value = principal.FindFirstValue(claimType);
-
-        if (string.IsNullOrWhiteSpace(value))
+    public static ApplicationUserId FromGuid(Guid value)
+    {
+        if (value == Guid.Empty)
         {
-            throw new InvalidOperationException(
-                $"The authenticated principal does not contain the configured '{claimType}' user identity claim.");
+            throw new ArgumentException("Application user identity is required.", nameof(value));
         }
 
         return new ApplicationUserId(value);

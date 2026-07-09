@@ -59,7 +59,7 @@ responsibility and tests that benefit from it.
 | `src/BudgetyTzar.Api/Features/Transactions` | Transaction and allocation HTTP contracts, endpoint handlers, filters, and persistence. |
 | `src/BudgetyTzar.Api/Features/Reporting` | Budget summary query model, calculation service, contracts, and endpoint. |
 | `src/BudgetyTzar.Api/Features/InMemoryDataStore.cs` | Shared in-memory state and the synchronization boundary used by repositories. |
-| `src/BudgetyTzar.Api/Authentication` | Authentication registration and conversion of the configured identity claim into an application user identity. |
+| `src/BudgetyTzar.Api/Authentication` | Authentication registration, external provider/subject validation, and mapping to an internal application user identity. |
 | `tests/BudgetyTzar.Tests/Support` | Test-only API host and shared test support. |
 | `tests/BudgetyTzar.Tests/<Feature>` | Domain, repository, and API behaviour tests grouped by feature. |
 | `SPECIFICATION.md` | Product rules and externally observable behaviour. |
@@ -129,9 +129,9 @@ Handlers must not reimplement aggregate invariants or reach into
 but the repository save remains the final consistency guard.
 
 Business endpoint groups require the `BusinessApi` authorization policy. Handlers
-receive the current `AuthenticatedUser` from request scope and pass its application
-user identifier to every persistence operation. Owner identifiers never come from
-transport contracts and are never included in existing response contracts.
+use scoped repositories that resolve ownership through `ICurrentUser`. Owner
+identifiers never come from transport contracts and are never included in existing
+response contracts.
 
 ### Repositories and the shared store
 
@@ -163,13 +163,17 @@ Keep direct access to the shared dictionaries inside repositories. An eventual
 database implementation should preserve the same observable outcomes using database
 transactions, constraints, and concurrency tokens.
 
-Every repository operation that reads or changes user data accepts an
-`ApplicationUserId`. The in-memory store keeps ownership metadata separately from
-domain entities, so the domain and HTTP resource representations remain unchanged.
-Repository lookups apply identity and resource identity together. This makes a
-cross-user lookup indistinguishable from a missing resource and provides the final
-atomic guard for allocations, where the transaction and budget item must share the
-calling identity.
+User-facing repositories are scoped and read the current internal
+`ApplicationUserId` from `ICurrentUser`. The shared in-memory store remains a
+singleton, and it keeps ownership metadata separately from domain entities, so the
+domain and HTTP resource representations remain unchanged. Repository lookups apply
+identity and resource identity together. This makes a cross-user lookup
+indistinguishable from a missing resource and provides the final atomic guard for
+allocations, where the transaction and budget item must share the calling identity.
+
+Do not add administrative or background cross-user operations to these user-facing
+repository methods. Those workflows must use a separate, explicitly user-aware
+interface so cross-user access remains visible at every call site.
 
 ### `EntityState<T>`
 
@@ -236,21 +240,22 @@ existing public read endpoint to verify the result of a write.
 A budget update follows the project's standard `Get -> domain operation -> Save` flow:
 
 1. ASP.NET Core authenticates the request and the `BusinessApi` policy requires the
-   configured stable identity claim.
-2. ASP.NET Core binds the route and JSON body to endpoint parameters.
-3. The endpoint handler resolves the application user identity, validates primitive
-   transport values, and creates value types.
+   configured provider and subject claims to be present and non-blank.
+2. `ICurrentUser` maps the authenticated external `(provider, subject)` identity to
+   an internal `ApplicationUserId` for the request.
+3. ASP.NET Core binds the route and JSON body to endpoint parameters.
+4. The endpoint handler validates primitive transport values and creates value types.
    Invalid input becomes a validation problem.
-4. The handler calls a repository `Get` with that identity. A missing aggregate or one
-   owned by another identity becomes `404 Not Found`.
-5. The handler calls an operation on the immutable aggregate.
-6. The domain returns a specific result. Expected failures are mapped without
+5. The handler calls a scoped repository. A missing aggregate or one owned by another
+   identity becomes `404 Not Found`.
+6. The handler calls an operation on the immutable aggregate.
+7. The domain returns a specific result. Expected failures are mapped without
    exceptions.
-7. For a successful domain change, the handler calls `state.Update(newAggregate)` and
+8. For a successful domain change, the handler calls `state.Update(newAggregate)` and
    saves it.
-8. The repository rechecks ownership and its storage-wide guarantees while holding the
+9. The repository rechecks ownership and its storage-wide guarantees while holding the
    shared lock.
-9. The handler maps the repository result to a success, conflict, not-found, or other
+10. The handler maps the repository result to a success, conflict, not-found, or other
    expected API response and converts domain data to a response contract.
 
 Read-only endpoints skip the domain-operation and save steps. Cross-feature reports use

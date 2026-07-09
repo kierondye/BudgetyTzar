@@ -7,18 +7,20 @@ namespace BudgetyTzar.Api.Features.Transactions;
 public sealed class InMemoryTransactionAllocationRepository
 {
     private readonly InMemoryDataStore store;
+    private readonly ICurrentUser currentUser;
 
-    public InMemoryTransactionAllocationRepository(InMemoryDataStore? store = null)
+    public InMemoryTransactionAllocationRepository(InMemoryDataStore store, ICurrentUser currentUser)
     {
-        this.store = store ?? new InMemoryDataStore();
+        this.store = store;
+        this.currentUser = currentUser;
     }
 
-    public AllocateTransactionResult Allocate(
-        ApplicationUserId userId,
-        TransactionAllocation allocation)
+    public AllocateTransactionResult Allocate(TransactionAllocation allocation)
     {
         lock (store.SyncRoot)
         {
+            var userId = currentUser.UserId;
+
             if (!IsTransactionOwner(userId, allocation.TransactionId)
                 || !store.TransactionsById.ContainsKey(allocation.TransactionId))
             {
@@ -43,20 +45,22 @@ public sealed class InMemoryTransactionAllocationRepository
         }
     }
 
-    public TransactionAllocation? Get(ApplicationUserId userId, Guid transactionId)
+    public TransactionAllocation? Get(Guid transactionId)
     {
         lock (store.SyncRoot)
         {
-            return IsTransactionOwner(userId, transactionId)
+            return IsTransactionOwner(currentUser.UserId, transactionId)
                 ? store.AllocationsByTransactionId.GetValueOrDefault(transactionId)
                 : null;
         }
     }
 
-    public IReadOnlyList<TransactionAllocation> GetAll(ApplicationUserId userId)
+    public IReadOnlyList<TransactionAllocation> GetAll()
     {
         lock (store.SyncRoot)
         {
+            var userId = currentUser.UserId;
+
             return store.AllocationsByTransactionId
                 .Where(pair => IsTransactionOwner(userId, pair.Key))
                 .Select(pair => pair.Value)
@@ -64,11 +68,11 @@ public sealed class InMemoryTransactionAllocationRepository
         }
     }
 
-    public void Remove(ApplicationUserId userId, Guid transactionId)
+    public void Remove(Guid transactionId)
     {
         lock (store.SyncRoot)
         {
-            if (IsTransactionOwner(userId, transactionId))
+            if (IsTransactionOwner(currentUser.UserId, transactionId))
             {
                 store.AllocationsByTransactionId.Remove(transactionId);
             }

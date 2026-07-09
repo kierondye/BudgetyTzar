@@ -30,10 +30,13 @@ dotnet run --project src/BudgetyTzar.Api
 The API is available at `http://localhost:7070`. Swagger is available at `http://localhost:7070/swagger`, and the health check is available at `http://localhost:7070/health`.
 
 Business endpoints require a bearer token. Configure the production JWT authority,
-audience, and stable user-id claim under `Authentication` in configuration or
-environment variables. Health, runtime version, Swagger UI, and the OpenAPI document
-remain available without authentication. Automated API tests use a deterministic
-test-only authentication scheme and do not depend on an external identity provider.
+audience, external identity provider claim, and external subject claim under
+`Authentication` in configuration or environment variables. The API maps each
+unique provider/subject pair to an internal application user identity before
+scoping budgets, transactions, allocations, and reports. Health, runtime version,
+Swagger UI, and the OpenAPI document remain available without authentication.
+Automated API tests use a deterministic test-only authentication scheme and do not
+depend on an external identity provider.
 
 Run the test suite:
 

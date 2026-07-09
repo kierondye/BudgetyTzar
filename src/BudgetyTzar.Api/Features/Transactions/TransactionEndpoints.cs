@@ -1,5 +1,4 @@
 using System.Globalization;
-using BudgetyTzar.Api.Authentication;
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
 using BudgetyTzar.Api.Features;
@@ -13,8 +12,8 @@ public static class TransactionEndpoints
     public static IServiceCollection AddTransactions(this IServiceCollection services)
     {
         services.TryAddSingleton<InMemoryDataStore>();
-        services.AddSingleton<InMemoryTransactionRepository>();
-        services.AddSingleton<InMemoryTransactionAllocationRepository>();
+        services.AddScoped<InMemoryTransactionRepository>();
+        services.AddScoped<InMemoryTransactionAllocationRepository>();
         return services;
     }
 
@@ -50,7 +49,6 @@ public static class TransactionEndpoints
 
     private static IResult CreateTransaction(
         CreateTransactionRequest request,
-        AuthenticatedUser user,
         InMemoryTransactionRepository transactions)
     {
         var validation = Validate(
@@ -90,7 +88,7 @@ public static class TransactionEndpoints
 
         IResult RecordTransaction(Transaction transaction)
         {
-            transactions.Add(user.UserId, transaction);
+            transactions.Add(transaction);
 
             return Results.Created(
                 $"/api/transactions/{transaction.TransactionId}",
@@ -99,7 +97,6 @@ public static class TransactionEndpoints
     }
 
     private static IResult GetTransactions(
-        AuthenticatedUser user,
         InMemoryTransactionRepository transactions,
         InMemoryTransactionAllocationRepository allocations,
         string? from,
@@ -114,10 +111,10 @@ public static class TransactionEndpoints
         }
 
         var valid = (TransactionFilterValidationResult.Valid)validation;
-        var response = transactions.GetAll(user.UserId)
+        var response = transactions.GetAll()
             .Where(transaction => valid.Filters.Matches(
                 transaction,
-                allocations.Get(user.UserId, transaction.TransactionId) is not null))
+                allocations.Get(transaction.TransactionId) is not null))
             .Select(TransactionListItemResponse.FromTransaction)
             .ToList();
 
@@ -126,10 +123,9 @@ public static class TransactionEndpoints
 
     private static IResult GetTransaction(
         Guid transactionId,
-        AuthenticatedUser user,
         InMemoryTransactionRepository transactions)
     {
-        var transaction = transactions.Get(user.UserId, transactionId);
+        var transaction = transactions.Get(transactionId);
 
         return transaction is null
             ? Results.NotFound()
@@ -138,10 +134,9 @@ public static class TransactionEndpoints
 
     private static IResult DeleteTransaction(
         Guid transactionId,
-        AuthenticatedUser user,
         InMemoryTransactionRepository transactions)
     {
-        return transactions.Delete(user.UserId, transactionId) switch
+        return transactions.Delete(transactionId) switch
         {
             TransactionDeleteResult.NotFound => Results.NotFound(),
             TransactionDeleteResult.TransactionHasAllocation => TransactionHasAllocation(),
@@ -153,19 +148,18 @@ public static class TransactionEndpoints
     private static IResult AllocateTransaction(
         Guid transactionId,
         AllocateTransactionRequest request,
-        AuthenticatedUser user,
         InMemoryTransactionRepository transactions,
         InMemoryBudgetRepository budgets,
         InMemoryTransactionAllocationRepository allocations)
     {
-        var transaction = transactions.Get(user.UserId, transactionId);
+        var transaction = transactions.Get(transactionId);
 
         if (transaction is null)
         {
             return Results.NotFound();
         }
 
-        var budgetItemReference = budgets.GetBudgetItemReference(user.UserId, request.BudgetItemId);
+        var budgetItemReference = budgets.GetBudgetItemReference(request.BudgetItemId);
 
         if (budgetItemReference is null)
         {
@@ -185,7 +179,7 @@ public static class TransactionEndpoints
         }
 
         var allocation = ((AllocateTransactionEntityResult.Allocated)allocationResult).Allocation;
-        var result = allocations.Allocate(user.UserId, allocation);
+        var result = allocations.Allocate(allocation);
 
         return result switch
         {
@@ -200,16 +194,15 @@ public static class TransactionEndpoints
 
     private static IResult GetTransactionAllocation(
         Guid transactionId,
-        AuthenticatedUser user,
         InMemoryTransactionRepository transactions,
         InMemoryTransactionAllocationRepository allocations)
     {
-        if (transactions.Get(user.UserId, transactionId) is null)
+        if (transactions.Get(transactionId) is null)
         {
             return Results.NotFound();
         }
 
-        var allocation = allocations.Get(user.UserId, transactionId);
+        var allocation = allocations.Get(transactionId);
 
         return allocation is null
             ? Results.NotFound()
@@ -218,16 +211,15 @@ public static class TransactionEndpoints
 
     private static IResult DeleteTransactionAllocation(
         Guid transactionId,
-        AuthenticatedUser user,
         InMemoryTransactionRepository transactions,
         InMemoryTransactionAllocationRepository allocations)
     {
-        if (transactions.Get(user.UserId, transactionId) is null)
+        if (transactions.Get(transactionId) is null)
         {
             return Results.NotFound();
         }
 
-        allocations.Remove(user.UserId, transactionId);
+        allocations.Remove(transactionId);
 
         return Results.NoContent();
     }

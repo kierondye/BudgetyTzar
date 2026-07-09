@@ -32,7 +32,8 @@ public sealed class TestApiServer : IAsyncDisposable
                     new Dictionary<string, string?>
                     {
                         ["Authentication:Scheme"] = TestAuthenticationHandler.SchemeName,
-                        ["Authentication:UserIdClaimType"] = "sub"
+                        ["Authentication:ProviderClaimType"] = "iss",
+                        ["Authentication:SubjectClaimType"] = "sub"
                     });
                 builder.Services
                     .AddAuthentication()
@@ -45,7 +46,7 @@ public sealed class TestApiServer : IAsyncDisposable
         return new TestApiServer(app);
     }
 
-    public HttpClient CreateClient(string? userId)
+    public HttpClient CreateClient(string? userId, string? provider = "test")
     {
         var client = new HttpClient
         {
@@ -54,7 +55,16 @@ public sealed class TestApiServer : IAsyncDisposable
 
         if (userId is not null)
         {
-            client.DefaultRequestHeaders.Add(TestAuthenticationHandler.UserHeaderName, userId);
+            client.DefaultRequestHeaders.TryAddWithoutValidation(
+                TestAuthenticationHandler.UserHeaderName,
+                userId);
+
+            if (provider is not null)
+            {
+                client.DefaultRequestHeaders.TryAddWithoutValidation(
+                    TestAuthenticationHandler.ProviderHeaderName,
+                    provider);
+            }
         }
 
         clients.Add(client);

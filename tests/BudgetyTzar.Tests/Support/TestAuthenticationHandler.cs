@@ -13,19 +13,26 @@ public sealed class TestAuthenticationHandler(
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     public const string SchemeName = "Test";
+    public const string ProviderHeaderName = "X-Test-Provider";
     public const string UserHeaderName = "X-Test-User";
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        if (!Request.Headers.TryGetValue(UserHeaderName, out var values)
-            || string.IsNullOrWhiteSpace(values.ToString()))
+        if (!Request.Headers.TryGetValue(UserHeaderName, out var values))
         {
             return Task.FromResult(AuthenticateResult.NoResult());
         }
 
-        var identity = new ClaimsIdentity(
-            [new Claim("sub", values.ToString())],
-            SchemeName);
+        var claims = new List<Claim>();
+
+        if (Request.Headers.TryGetValue(ProviderHeaderName, out var providerValues))
+        {
+            claims.Add(new Claim("iss", providerValues.ToString()));
+        }
+
+        claims.Add(new Claim("sub", values.ToString()));
+
+        var identity = new ClaimsIdentity(claims, SchemeName);
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, SchemeName);
 
