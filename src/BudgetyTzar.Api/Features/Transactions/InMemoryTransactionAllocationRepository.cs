@@ -3,7 +3,7 @@ using BudgetyTzar.Api.Features;
 
 namespace BudgetyTzar.Api.Features.Transactions;
 
-public sealed class InMemoryTransactionAllocationRepository
+public sealed class InMemoryTransactionAllocationRepository : ITransactionAllocationRepository
 {
     private readonly InMemoryDataStore store;
 
@@ -69,15 +69,4 @@ public sealed class InMemoryTransactionAllocationRepository
             .SelectMany(budget => budget.BudgetItems)
             .Any(budgetItem => budgetItem.BudgetItemId == budgetItemId);
     }
-}
-
-public abstract record AllocateTransactionResult
-{
-    public sealed record Allocated(TransactionAllocation Allocation) : AllocateTransactionResult;
-
-    public sealed record TransactionNotFound : AllocateTransactionResult;
-
-    public sealed record BudgetItemNotFound : AllocateTransactionResult;
-
-    public sealed record AlreadyAllocatedToDifferentBudgetItem : AllocateTransactionResult;
 }

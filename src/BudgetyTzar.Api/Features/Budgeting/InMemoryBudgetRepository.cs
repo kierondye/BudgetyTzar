@@ -4,7 +4,7 @@ using BudgetyTzar.Api.Features;
 
 namespace BudgetyTzar.Api.Features.Budgeting;
 
-public sealed class InMemoryBudgetRepository
+public sealed class InMemoryBudgetRepository : IBudgetRepository
 {
     private readonly InMemoryDataStore store;
 
@@ -171,36 +171,3 @@ public sealed class InMemoryBudgetRepository
         }
     }
 }
-
-public abstract record BudgetSaveResult
-{
-    public sealed record Saved(Budget Budget) : BudgetSaveResult;
-
-    public sealed record NotFound : BudgetSaveResult;
-
-    public sealed record DuplicateIdentity : BudgetSaveResult;
-
-    public sealed record DuplicateName : BudgetSaveResult;
-
-    public sealed record StaleState : BudgetSaveResult;
-
-    public sealed record BudgetItemHasAllocations : BudgetSaveResult;
-
-    public sealed record InvalidState : BudgetSaveResult;
-}
-
-public abstract class EntityState<T>
-{
-    protected EntityState(T value)
-    {
-        ArgumentNullException.ThrowIfNull(value);
-
-        Value = value;
-    }
-
-    public T Value { get; }
-
-    public abstract EntityState<T> Update(T value);
-}
-
-public sealed record BudgetItemReference(Guid BudgetId, CurrencyCode BudgetCurrency, BudgetItem BudgetItem);

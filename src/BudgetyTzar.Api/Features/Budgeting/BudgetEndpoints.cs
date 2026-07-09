@@ -11,7 +11,7 @@ public static class BudgetEndpoints
     public static IServiceCollection AddBudgeting(this IServiceCollection services)
     {
         services.TryAddSingleton<InMemoryDataStore>();
-        services.AddSingleton<InMemoryBudgetRepository>();
+        services.AddSingleton<IBudgetRepository, InMemoryBudgetRepository>();
         return services;
     }
 
@@ -53,7 +53,7 @@ public static class BudgetEndpoints
         return endpoints;
     }
 
-    private static IResult CreateBudget(CreateBudgetRequest request, InMemoryBudgetRepository budgets)
+    private static IResult CreateBudget(CreateBudgetRequest request, IBudgetRepository budgets)
     {
         var validation = Validate(request);
 
@@ -95,7 +95,7 @@ public static class BudgetEndpoints
         }
     }
 
-    private static IResult GetBudgets(InMemoryBudgetRepository budgets)
+    private static IResult GetBudgets(IBudgetRepository budgets)
     {
         var response = budgets.GetAll()
             .Select(BudgetListItemResponse.FromBudget)
@@ -104,7 +104,7 @@ public static class BudgetEndpoints
         return Results.Ok(response);
     }
 
-    private static IResult GetBudget(Guid budgetId, InMemoryBudgetRepository budgets)
+    private static IResult GetBudget(Guid budgetId, IBudgetRepository budgets)
     {
         var budgetState = budgets.Get(budgetId);
 
@@ -113,7 +113,7 @@ public static class BudgetEndpoints
             : Results.Ok(BudgetResponse.FromBudget(budgetState.Value));
     }
 
-    private static IResult RenameBudget(Guid budgetId, RenameBudgetRequest request, InMemoryBudgetRepository budgets)
+    private static IResult RenameBudget(Guid budgetId, RenameBudgetRequest request, IBudgetRepository budgets)
     {
         var validation = Validate(request);
 
@@ -149,7 +149,7 @@ public static class BudgetEndpoints
         };
     }
 
-    private static IResult CreateBudgetItem(Guid budgetId, CreateBudgetItemRequest request, InMemoryBudgetRepository budgets)
+    private static IResult CreateBudgetItem(Guid budgetId, CreateBudgetItemRequest request, IBudgetRepository budgets)
     {
         var validation = Validate(request);
 
@@ -193,7 +193,7 @@ public static class BudgetEndpoints
         };
     }
 
-    private static IResult GetBudgetItems(Guid budgetId, InMemoryBudgetRepository budgets)
+    private static IResult GetBudgetItems(Guid budgetId, IBudgetRepository budgets)
     {
         var budgetState = budgets.Get(budgetId);
 
@@ -209,7 +209,7 @@ public static class BudgetEndpoints
         return Results.Ok(budgetItems);
     }
 
-    private static IResult GetBudgetItem(Guid budgetId, Guid budgetItemId, InMemoryBudgetRepository budgets)
+    private static IResult GetBudgetItem(Guid budgetId, Guid budgetItemId, IBudgetRepository budgets)
     {
         var budgetItem = budgets.GetBudgetItem(budgetId, budgetItemId);
 
@@ -222,7 +222,7 @@ public static class BudgetEndpoints
         Guid budgetId,
         Guid budgetItemId,
         RenameBudgetItemRequest request,
-        InMemoryBudgetRepository budgets)
+        IBudgetRepository budgets)
     {
         var validation = Validate(request);
 
@@ -259,7 +259,7 @@ public static class BudgetEndpoints
         Guid budgetId,
         Guid budgetItemId,
         ChangeBudgetItemPlannedAmountRequest request,
-        InMemoryBudgetRepository budgets)
+        IBudgetRepository budgets)
     {
         var validation = Validate(request);
 
@@ -294,7 +294,7 @@ public static class BudgetEndpoints
     private static IResult DeleteBudgetItem(
         Guid budgetId,
         Guid budgetItemId,
-        InMemoryBudgetRepository budgets)
+        IBudgetRepository budgets)
     {
         var budgetState = budgets.Get(budgetId);
 

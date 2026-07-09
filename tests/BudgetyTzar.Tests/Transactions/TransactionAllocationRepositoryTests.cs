@@ -6,8 +6,24 @@ using BudgetyTzar.Api.Features.Transactions;
 
 namespace BudgetyTzar.Tests.Transactions;
 
-public sealed class TransactionAllocationRepositoryTests
+public sealed class TransactionAllocationRepositoryContractTests
 {
+    [Fact]
+    public void Allocate_reports_transaction_not_found_without_storing_allocation()
+    {
+        var store = new InMemoryDataStore();
+        var budgetRepository = new InMemoryBudgetRepository(store);
+        ITransactionAllocationRepository repository = new InMemoryTransactionAllocationRepository(store);
+        var transaction = CreateTransaction();
+        var budgetItemId = Guid.NewGuid();
+        budgetRepository.Save(CreateBudget((budgetItemId, "Groceries")));
+
+        var result = repository.Allocate(CreateAllocation(transaction, budgetItemId));
+
+        Assert.IsType<AllocateTransactionResult.TransactionNotFound>(result);
+        Assert.Null(repository.Get(transaction.TransactionId));
+    }
+
     [Fact]
     public void Allocate_same_transaction_to_same_budget_item_is_idempotent()
     {

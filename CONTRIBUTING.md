@@ -30,15 +30,18 @@ Use these constraints when deciding where behaviour belongs:
 1. Data access components, such as repositories, own concurrency and provide the
    final atomic guard for stale state, uniqueness, referential integrity, and other
    storage conflicts.
-2. Domain aggregates protect the invariants they can decide from their own state.
-3. Domain classes are immutable; successful operations return new instances while
+2. Endpoint handlers and reporting services depend on narrow persistence contracts
+   owned by their feature, while storage-specific adapters implement those contracts.
+   Do not introduce generic repositories, speculative operations, or a unit of work.
+3. Domain aggregates protect the invariants they can decide from their own state.
+4. Domain classes are immutable; successful operations return new instances while
    preserving entity identity.
-4. Domain classes express intent through named operations rather than general
+5. Domain classes express intent through named operations rather than general
    setters or mutable collections.
-5. Expected domain outcomes use explicit, operation-specific result types rather
-   than exceptions, `null`, or ambiguous booleans.
-6. Domain methods do not return `null`; absence and rejection are named result cases.
-7. Domain properties are non-nullable, using validated value types and immutable
+6. Expected domain and persistence outcomes use explicit, operation-specific result
+   types rather than exceptions, `null`, or ambiguous booleans.
+7. Domain methods do not return `null`; absence and rejection are named result cases.
+8. Domain properties are non-nullable, using validated value types and immutable
    collections to keep constructed objects valid.
 
 Aggregate updates follow `Get -> domain operation -> Save`. `EntityState<T>` carries
@@ -52,8 +55,9 @@ transactional database, using the shared synchronization boundary when an invari
 spans repositories or collections.
 
 Cover the complete workflow with API behaviour tests, supplemented by focused domain
-tests for invariants and repository tests for concurrency and storage conflicts. See
-[Architecture](docs/architecture.md) for the detailed rationale and examples.
+tests for invariants and repository contract tests for concurrency and storage
+conflicts. See [Architecture](docs/architecture.md) for the detailed rationale and
+examples.
 
 ## Adding functionality
 
@@ -64,16 +68,17 @@ tests for invariants and repository tests for concurrency and storage conflicts.
 - Give expected domain outcomes an operation-specific result type.
 - Follow `Get -> domain operation -> Save` for aggregate updates, carrying
   `EntityState<T>` through the workflow.
-- Extend a repository only when persistence has a new responsibility, and preserve
-  concurrency, uniqueness, and referential checks atomically.
+- Extend a feature persistence contract only when a current use case gives persistence
+  a new responsibility. Implement it in each adapter and preserve concurrency,
+  uniqueness, and referential checks atomically.
 - In the endpoint handler, coordinate validation, domain and persistence outcomes, and
   HTTP mapping. If a handler is extracted, return application outcomes from it while
   retaining HTTP mapping in the endpoint. Keep request and response records in the
   feature's contracts file.
 - Register the endpoint and dependencies through the feature's `Map*` and `Add*`
   methods.
-- Add domain tests for invariant logic, repository tests for persistence guarantees,
-  and API behaviour tests for the public workflow.
+- Add domain tests for invariant logic, repository contract tests for every expected
+  persistence outcome, and API behaviour tests for the public workflow.
 - Run the build and full test suite, and update
   [the architecture guide](docs/architecture.md) if responsibilities or request flow
   changed.

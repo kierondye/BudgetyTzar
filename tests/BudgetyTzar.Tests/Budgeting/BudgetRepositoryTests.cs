@@ -4,7 +4,7 @@ using BudgetyTzar.Api.Domain.ValueTypes;
 
 namespace BudgetyTzar.Tests.Budgeting;
 
-public sealed class BudgetRepositoryTests
+public sealed class BudgetRepositoryContractTests
 {
     [Fact]
     public void Entity_state_exposes_only_the_loaded_value_and_update_operation()
@@ -46,6 +46,36 @@ public sealed class BudgetRepositoryTests
         var budget = Assert.Single(repository.GetAll());
         Assert.Equal(firstBudget.BudgetId, budget.BudgetId);
         Assert.Equal("GBP", budget.Currency.Value);
+    }
+
+    [Fact]
+    public void Save_rejects_duplicate_budget_identity_without_overwriting_existing_budget()
+    {
+        IBudgetRepository repository = new InMemoryBudgetRepository();
+        var budget = CreateBudget("UK", "GBP");
+
+        var firstResult = repository.Save(budget);
+        var duplicateResult = repository.Save(budget);
+
+        Assert.IsType<BudgetSaveResult.Saved>(firstResult);
+        Assert.IsType<BudgetSaveResult.DuplicateIdentity>(duplicateResult);
+        Assert.Same(budget, Assert.Single(repository.GetAll()));
+    }
+
+    [Fact]
+    public void Save_reports_not_found_when_loaded_state_targets_missing_storage()
+    {
+        IBudgetRepository populatedRepository = new InMemoryBudgetRepository();
+        IBudgetRepository emptyRepository = new InMemoryBudgetRepository();
+        var budget = CreateBudget("UK", "GBP");
+        populatedRepository.Save(budget);
+        var budgetState = populatedRepository.Get(budget.BudgetId);
+        Assert.NotNull(budgetState);
+
+        var result = emptyRepository.Save(budgetState);
+
+        Assert.IsType<BudgetSaveResult.NotFound>(result);
+        Assert.Empty(emptyRepository.GetAll());
     }
 
     [Fact]

@@ -28,15 +28,16 @@ Endpoint delegate / handler  ---> response contract ---> HTTP response
 Domain aggregate or entity
     |
     v
-Repository ---> shared InMemoryDataStore
+Persistence contract <--- in-memory adapter ---> shared InMemoryDataStore
 ```
 
 Dependencies point inward from HTTP and persistence coordination toward the domain:
 
 - Domain code does not depend on endpoints, repositories, ASP.NET Core, or storage.
 - Feature code depends on domain types to execute use cases.
-- Repositories depend on domain types because they store and return them.
-- Endpoints coordinate domain and repository results and translate them into HTTP.
+- Persistence contracts depend on domain types because they store and return them.
+- In-memory adapters implement those contracts and own storage-specific behaviour.
+- Endpoints coordinate domain and persistence results and translate them into HTTP.
 - Tests may exercise any boundary, but API behaviour tests use only the public HTTP API.
 
 This is a logical separation inside one deployable project, not a set of separately
@@ -52,8 +53,8 @@ responsibility and tests that benefit from it.
 | `src/BudgetyTzar.Api/ApiApplication.cs` | Composition root. Registers feature services and maps endpoint groups. |
 | `src/BudgetyTzar.Api/Domain/Entities` | Immutable entities, aggregates, their operations, and operation-specific result types. |
 | `src/BudgetyTzar.Api/Domain/ValueTypes` | Validated domain values such as names, currencies, money amounts, and kinds. |
-| `src/BudgetyTzar.Api/Features/Budgeting` | Budget HTTP contracts, endpoint handlers, and budget persistence. |
-| `src/BudgetyTzar.Api/Features/Transactions` | Transaction and allocation HTTP contracts, endpoint handlers, filters, and persistence. |
+| `src/BudgetyTzar.Api/Features/Budgeting` | Budget HTTP contracts, endpoint handlers, persistence contracts, and the in-memory adapter. |
+| `src/BudgetyTzar.Api/Features/Transactions` | Transaction and allocation HTTP contracts, endpoint handlers, filters, persistence contracts, and in-memory adapters. |
 | `src/BudgetyTzar.Api/Features/Reporting` | Budget summary query model, calculation service, contracts, and endpoint. |
 | `src/BudgetyTzar.Api/Features/InMemoryDataStore.cs` | Shared in-memory state and the synchronization boundary used by repositories. |
 | `tests/BudgetyTzar.Tests/Support` | Test-only API host and shared test support. |
@@ -62,9 +63,10 @@ responsibility and tests that benefit from it.
 | `CONTRIBUTING.md` | Contributor workflow and the checklist for adding functionality. |
 | `scripts` and `.githooks` | Versioning, release, and commit-message tooling. |
 
-Application handling lives in private methods on endpoint classes, persistence
-implementations live beside their feature, and HTTP contracts use `*Request` and
-`*Response` records in `*Contracts.cs`. Reflect structural changes in this guide.
+Application handling lives in private methods on endpoint classes. Narrow persistence
+contracts and their adapters live beside their owning feature, and HTTP contracts use
+`*Request` and `*Response` records in `*Contracts.cs`. Reflect structural changes in
+this guide.
 
 ## Responsibilities and placement
 
@@ -120,17 +122,26 @@ If coordination becomes substantial or is reused outside HTTP, extract a named h
 in the same feature. An extracted handler should return application outcomes, not
 `IResult`; the endpoint remains responsible for HTTP mapping.
 
-Handlers must not reimplement aggregate invariants or reach into
-`InMemoryDataStore`. A pre-check such as `HasBudgetNamed` can provide friendly feedback,
-but the repository save remains the final consistency guard.
+Handlers depend on feature persistence contracts, not adapter classes. They must not
+reimplement aggregate invariants or reach into `InMemoryDataStore`. A pre-check such as
+`HasBudgetNamed` can provide friendly feedback, but the repository save remains the
+final consistency guard.
 
-### Repositories and the shared store
+### Persistence contracts, adapters, and the shared store
 
-The repositories are concrete in-memory classes in their owning features.
-Their public methods and result records form the persistence contract; there
-are no repository interfaces yet.
+Each owning feature defines a narrow persistence contract containing only the operations
+required by its current handlers and reporting consumers:
 
-Repositories:
+- `IBudgetRepository`;
+- `ITransactionRepository`; and
+- `ITransactionAllocationRepository`.
+
+Operation-specific persistence result records and opaque `EntityState<T>` live with
+these contracts. Application code depends on the contracts and their outcomes without
+knowing how state is stored. Do not introduce a generic repository, unit of work, or
+unused operation in anticipation of a future adapter.
+
+Persistence adapters:
 
 - load and store domain objects;
 - own persistence metadata and concurrency checks;
@@ -138,11 +149,12 @@ Repositories:
 - return explicit result types for expected conflicts; and
 - preserve insertion order where the public list behaviour requires it.
 
-`InMemoryDataStore` is registered once and shared by all repositories. Its `SyncRoot`
-is the transaction boundary for operations involving budgets, transactions, and
-allocations. This is important for checks such as preventing deletion of an allocated
-transaction or budget item: the check and write happen under the same lock as the
-related allocation state.
+The current `InMemory*Repository` classes implement the feature contracts.
+`InMemoryDataStore` is registered once and shared by all in-memory adapters. Its
+`SyncRoot` is the transaction boundary for operations involving budgets, transactions,
+and allocations. This is important for checks such as preventing deletion of an
+allocated transaction or budget item: the check and write happen under the same lock
+as the related allocation state.
 
 The shared InMemoryDataStore synchronization boundary allows the in-memory
 repositories to emulate referential-integrity constraints across repository boundaries.
@@ -150,9 +162,11 @@ This also introduces cross-boundary coupling: for example, Budgeting must know w
 Transaction Allocations reference a budget item. That dependency should be acknowledged
 and kept explicit, without moving ownership of allocations into Budgeting.
 
-Keep direct access to the shared dictionaries inside repositories. An eventual
-database implementation should preserve the same observable outcomes using database
-transactions, constraints, and concurrency tokens.
+Keep direct access to the shared dictionaries inside the in-memory adapters. A future
+database adapter should implement the same feature contract and reproduce its tested
+outcomes using database transactions, constraints, and concurrency tokens. Register the
+chosen adapter at the composition boundary; handlers and reporting services should not
+need to change.
 
 ### `EntityState<T>`
 
@@ -194,9 +208,9 @@ it.
 
 ### Reporting services
 
-Reporting provides read-only views of domain data. It coordinates data from multiple
-features and produces report-specific models without modifying domain or repository
-state. Put calculations and query coordination in a service such as
+Reporting provides read-only views of domain data. It coordinates data through feature
+persistence contracts and produces report-specific models without modifying domain or
+persistence state. Put calculations and query coordination in a service such as
 `BudgetSummaryService`, with its models and result types in the reporting feature.
 
 ### Tests
@@ -206,7 +220,7 @@ Tests have distinct jobs:
 | Test type | Place | Proves |
 | --- | --- | --- |
 | Domain test | `<Feature>/*DomainTests.cs` | An aggregate or value operation protects an invariant and remains immutable. |
-| Repository test | `<Feature>/*RepositoryTests.cs` | Atomic uniqueness, stale-write, idempotency, or referential-integrity behaviour at the persistence boundary. |
+| Repository contract test | `<Feature>/*RepositoryTests.cs` | Every adapter reproduces atomic uniqueness, stale-write, idempotency, and referential-integrity outcomes at the persistence boundary. |
 | API behaviour test | `<Feature>/*ApiTests.cs` | The complete public request-to-response workflow, including status, body, and persisted observable state. |
 | Bootstrap test | `ApiBootstrapTests.cs` | Cross-cutting host surfaces such as health, version, and OpenAPI metadata. |
 
@@ -307,9 +321,10 @@ This operation needs no new repository method: `Get` plus
 concurrency check. Do not add an operation-specific repository method merely because a
 new endpoint exists.
 
-Extend the repository contract when persistence has a new responsibility, such as a
-new lookup, atomic cross-record check, or storage conflict. Give expected outcomes
-specific result variants.
+Extend the owning feature's persistence contract only when persistence has a new
+responsibility, such as a new lookup, atomic cross-record check, or storage conflict.
+Give expected outcomes specific result variants and add a repository contract test that
+future adapters must reproduce.
 
 ### 4. Preserve concurrency and integrity in memory
 
@@ -365,7 +380,7 @@ For this operation:
 
 - `BudgetDomainTests` proves that item updates return a new aggregate without mutating
   the old one.
-- `BudgetRepositoryTests` proves stale updates cannot overwrite newer stored state.
+- `BudgetRepositoryContractTests` proves stale updates cannot overwrite newer stored state.
 - `BudgetApiTests` sends the request over HTTP and verifies both the response and a
   subsequent public read.
 

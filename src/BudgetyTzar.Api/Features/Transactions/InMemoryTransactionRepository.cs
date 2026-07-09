@@ -3,7 +3,7 @@ using BudgetyTzar.Api.Features;
 
 namespace BudgetyTzar.Api.Features.Transactions;
 
-public sealed class InMemoryTransactionRepository
+public sealed class InMemoryTransactionRepository : ITransactionRepository
 {
     private readonly InMemoryDataStore store;
 
@@ -58,15 +58,6 @@ public sealed class InMemoryTransactionRepository
             return new TransactionDeleteResult.Deleted();
         }
     }
-}
-
-public abstract record TransactionDeleteResult
-{
-    public sealed record Deleted : TransactionDeleteResult;
-
-    public sealed record NotFound : TransactionDeleteResult;
-
-    public sealed record TransactionHasAllocation : TransactionDeleteResult;
 }
 
 public sealed record TransactionFilters(
