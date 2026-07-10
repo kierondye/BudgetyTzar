@@ -4,6 +4,9 @@ using BudgetyTzar.Tests.Support;
 
 namespace BudgetyTzar.Tests;
 
+// These are host-level ownership tests using TestApiServer's deterministic
+// authentication scheme. They verify API ownership behaviour after authentication,
+// not production JWT bearer-token validation.
 public sealed class OwnershipApiTests
 {
     public static TheoryData<HttpMethod, string> ProtectedRoutes =>

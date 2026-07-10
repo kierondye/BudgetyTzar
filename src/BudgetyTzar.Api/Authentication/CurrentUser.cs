@@ -8,11 +8,7 @@ public interface ICurrentUser
     ApplicationUserId UserId { get; }
 }
 
-public sealed class CurrentUser(
-    IHttpContextAccessor httpContextAccessor,
-    IOptions<AuthenticationOptions> options,
-    InMemoryExternalIdentityStore identityStore)
-    : ICurrentUser
+public sealed class CurrentUser : ICurrentUser
 {
     private ApplicationUserId? userId;
 
@@ -20,35 +16,42 @@ public sealed class CurrentUser(
     {
         get
         {
-            userId ??= identityStore.GetOrCreateUserId(GetExternalIdentity());
-            return userId.Value;
+            return userId
+                ?? throw new InvalidOperationException(
+                    "The current user was not resolved before application logic ran.");
         }
     }
 
-    private ExternalUserIdentity GetExternalIdentity()
+    public void Set(ApplicationUserId resolvedUserId)
     {
-        var principal = httpContextAccessor.HttpContext?.User
-            ?? throw new InvalidOperationException("There is no active HTTP request.");
-
-        var authentication = options.Value;
-        return ExternalUserIdentity.Create(
-            principal.GetRequiredClaimValue(authentication.ProviderClaimType),
-            principal.GetRequiredClaimValue(authentication.SubjectClaimType));
+        userId = resolvedUserId;
     }
 }
 
-internal static class ClaimsPrincipalExtensions
+public sealed class CurrentUserResolver(
+    IOptions<AuthenticationOptions> options,
+    InMemoryExternalIdentityStore identityStore)
 {
-    public static string GetRequiredClaimValue(this ClaimsPrincipal principal, string claimType)
+    public ResolveCurrentUserResult Resolve(ClaimsPrincipal principal)
     {
-        var value = principal.FindFirstValue(claimType);
+        var authentication = options.Value;
 
-        if (string.IsNullOrWhiteSpace(value))
+        if (!ExternalUserIdentity.TryCreate(
+                principal.FindFirstValue(authentication.ProviderClaimType),
+                principal.FindFirstValue(authentication.SubjectClaimType),
+                out var externalIdentity))
         {
-            throw new InvalidOperationException(
-                $"The authenticated principal does not contain the configured '{claimType}' identity claim.");
+            return new ResolveCurrentUserResult.InvalidExternalIdentity();
         }
 
-        return value;
+        return new ResolveCurrentUserResult.Resolved(
+            identityStore.GetOrCreateUserId(externalIdentity));
     }
+}
+
+public abstract record ResolveCurrentUserResult
+{
+    public sealed record Resolved(ApplicationUserId UserId) : ResolveCurrentUserResult;
+
+    public sealed record InvalidExternalIdentity : ResolveCurrentUserResult;
 }

@@ -6,6 +6,11 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace BudgetyTzar.Tests.Support;
 
+/// <summary>
+/// Host-level API test harness that replaces production bearer-token authentication
+/// with deterministic test claims. It exercises application authorization and
+/// ownership behaviour after authentication, not JWT validation itself.
+/// </summary>
 public sealed class TestApiServer : IAsyncDisposable
 {
     public const string DefaultUserId = "default-test-user";

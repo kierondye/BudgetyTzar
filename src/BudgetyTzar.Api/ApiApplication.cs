@@ -3,6 +3,7 @@ using BudgetyTzar.Api.Authentication;
 using BudgetyTzar.Api.Features.Budgeting;
 using BudgetyTzar.Api.Features.Reporting;
 using BudgetyTzar.Api.Features.Transactions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.OpenApi.Models;
 
@@ -27,9 +28,10 @@ public static class ApiApplication
         builder.Services.AddHealthChecks();
         builder.Services.Configure<AuthenticationOptions>(
             builder.Configuration.GetSection(AuthenticationOptions.SectionName));
-        builder.Services.AddHttpContextAccessor();
         builder.Services.AddSingleton<InMemoryExternalIdentityStore>();
-        builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+        builder.Services.AddScoped<CurrentUser>();
+        builder.Services.AddScoped<ICurrentUser>(services => services.GetRequiredService<CurrentUser>());
+        builder.Services.AddScoped<CurrentUserResolver>();
         builder.Services.AddAuthentication(authentication.Scheme)
             .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
             {
@@ -75,6 +77,30 @@ public static class ApiApplication
         app.UseSwaggerUI();
         app.UseAuthentication();
         app.UseAuthorization();
+        app.Use(async (context, next) =>
+        {
+            if (!RequiresBusinessApiPolicy(context.GetEndpoint()))
+            {
+                await next(context);
+                return;
+            }
+
+            var resolver = context.RequestServices.GetRequiredService<CurrentUserResolver>();
+            var currentUser = context.RequestServices.GetRequiredService<CurrentUser>();
+
+            switch (resolver.Resolve(context.User))
+            {
+                case ResolveCurrentUserResult.Resolved resolved:
+                    currentUser.Set(resolved.UserId);
+                    await next(context);
+                    break;
+                case ResolveCurrentUserResult.InvalidExternalIdentity:
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    break;
+                default:
+                    throw new InvalidOperationException("Unexpected current user resolution result.");
+            }
+        });
 
         app.MapHealthChecks("/health");
         app.MapGet("/api/version", () => version)
@@ -89,5 +115,12 @@ public static class ApiApplication
     private static bool HasNonBlankClaim(ClaimsPrincipal principal, string claimType)
     {
         return !string.IsNullOrWhiteSpace(principal.FindFirstValue(claimType));
+    }
+
+    private static bool RequiresBusinessApiPolicy(Endpoint? endpoint)
+    {
+        return endpoint?.Metadata.GetOrderedMetadata<IAuthorizeData>()
+            .Any(data => string.Equals(data.Policy, BusinessApiPolicy, StringComparison.Ordinal))
+            == true;
     }
 }

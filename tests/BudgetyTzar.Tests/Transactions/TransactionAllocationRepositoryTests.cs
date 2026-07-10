@@ -118,6 +118,37 @@ public sealed class TransactionAllocationRepositoryTests
     }
 
     [Fact]
+    public void Save_allows_deleting_budget_item_when_only_another_user_has_allocation_with_same_item_identity()
+    {
+        var store = new InMemoryDataStore();
+        var alice = new FixedCurrentUser(ApplicationUserId.New());
+        var bob = new FixedCurrentUser(ApplicationUserId.New());
+        var aliceBudgetRepository = new InMemoryBudgetRepository(store, alice);
+        var aliceTransactionRepository = new InMemoryTransactionRepository(store, alice);
+        var aliceAllocationRepository = new InMemoryTransactionAllocationRepository(store, alice);
+        var bobBudgetRepository = new InMemoryBudgetRepository(store, bob);
+        var transaction = CreateTransaction();
+        var budgetItemId = Guid.NewGuid();
+
+        aliceTransactionRepository.Add(transaction);
+        aliceBudgetRepository.Save(CreateBudget((budgetItemId, "Groceries")));
+        aliceAllocationRepository.Allocate(CreateAllocation(transaction, budgetItemId));
+
+        var bobBudget = CreateBudget((budgetItemId, "Groceries"));
+        bobBudgetRepository.Save(bobBudget);
+        var bobBudgetState = bobBudgetRepository.Get(bobBudget.BudgetId);
+        Assert.NotNull(bobBudgetState);
+
+        var removed = Assert.IsType<RemoveBudgetItemResult.Removed>(
+            bobBudgetState.Value.RemoveBudgetItem(budgetItemId));
+        var removeResult = bobBudgetRepository.Save(bobBudgetState.Update(removed.Budget));
+
+        Assert.IsType<BudgetSaveResult.Saved>(removeResult);
+        Assert.Empty(bobBudgetRepository.Get(bobBudget.BudgetId)?.Value.BudgetItems ?? []);
+        Assert.Equal(budgetItemId, aliceAllocationRepository.Get(transaction.TransactionId)?.BudgetItemId);
+    }
+
+    [Fact]
     public void Delete_transaction_revalidates_transaction_has_no_allocation_under_the_shared_persistence_boundary()
     {
         var store = new InMemoryDataStore();

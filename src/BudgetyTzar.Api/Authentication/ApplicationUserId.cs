@@ -1,6 +1,8 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace BudgetyTzar.Api.Authentication;
 
-public readonly record struct ApplicationUserId
+public sealed record ApplicationUserId
 {
     private ApplicationUserId(Guid value)
     {
@@ -14,13 +16,17 @@ public readonly record struct ApplicationUserId
         return new ApplicationUserId(Guid.NewGuid());
     }
 
-    public static ApplicationUserId FromGuid(Guid value)
+    public static bool TryCreate(
+        Guid value,
+        [NotNullWhen(true)] out ApplicationUserId? userId)
     {
         if (value == Guid.Empty)
         {
-            throw new ArgumentException("Application user identity is required.", nameof(value));
+            userId = null;
+            return false;
         }
 
-        return new ApplicationUserId(value);
+        userId = new ApplicationUserId(value);
+        return true;
     }
 }

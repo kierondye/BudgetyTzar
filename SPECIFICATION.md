@@ -188,9 +188,10 @@ Clients must not supply an owner identifier in a request body, route, or query
 parameter.
 
 Budgets, their budget items, transactions, and transaction allocations belong to the
-identity that creates them. Lists and reports include only resources owned by the
-authenticated identity. A transaction may be allocated only to a budget item owned by
-the same identity.
+internal application user identity that creates them. Lists and reports include only
+resources owned by the current internal application user identity. A transaction may
+be allocated only to a budget item owned by the same internal application user
+identity.
 
 An unauthenticated request to a business API returns `401 Unauthorized`. An
 authenticated request with blank or missing configured identity claims is rejected
@@ -523,7 +524,10 @@ application, and resolves an internal application user identity. Domain boundari
 use the internal application user identity to enforce ownership and access rules
 for their own resources.
 
-Budgets, transactions, transaction allocations, and audit records are scoped to an individual authenticated identity. A user must not be able to access, mutate, allocate, report on, or audit resources scoped to another identity.
+Budgets, transactions, transaction allocations, and audit records are scoped to an
+individual internal application user identity. A user must not be able to access,
+mutate, allocate, report on, or audit resources scoped to another internal
+application user identity.
 
 ### 7.2 Budgeting Boundary
 
@@ -531,7 +535,8 @@ Responsibilities:
 
 - Budget creation and management.
 - Budget item creation and management.
-- Budget access rules for budgets scoped to an individual authenticated identity.
+- Budget access rules for budgets scoped to an individual internal application user
+  identity.
 - Budget item planned amount validation.
 - Budget item kind validation.
 - Prevention of budget item deletion while transactions are allocated to the budget item.
@@ -552,7 +557,8 @@ Responsibilities:
 
 - Transaction recording.
 - Transaction retrieval.
-- Transaction access rules for transactions scoped to an individual authenticated identity.
+- Transaction access rules for transactions scoped to an individual internal
+  application user identity.
 
 Owns:
 
@@ -573,10 +579,12 @@ Responsibilities:
 - Transaction allocation.
 - Transaction allocation retrieval.
 - Transaction allocation removal.
-- Transaction allocation access rules for allocations scoped to an individual authenticated identity.
+- Transaction allocation access rules for allocations scoped to an individual
+  internal application user identity.
 - Enforcement that a transaction may be allocated to at most one budget item.
 - Enforcement that an allocation applies the full transaction amount.
-- Enforcement that the transaction and budget item belong to the same authenticated identity.
+- Enforcement that the transaction and budget item belong to the same internal
+  application user identity.
 - Enforcement that transaction currency matches the selected budget item's budget currency.
 
 Owns:
@@ -620,7 +628,8 @@ Owns:
 
 - Audit records.
 
-Audit records are scoped to the authenticated identity that owns the affected resource.
+Audit records are scoped to the internal application user identity that owns the
+affected resource.
 
 Each audit record must include enough information to understand:
 
@@ -1336,8 +1345,10 @@ Important signals:
 
 - Use HTTPS in deployed environments.
 - Protect APIs with authentication.
-- Enforce domain resource authorisation using the authenticated identity supplied by the Identity boundary.
-- Scope budgets, transactions, transaction allocations, and audit records to an individual authenticated identity.
+- Enforce domain resource authorisation using the internal application user identity
+  resolved by the Identity boundary.
+- Scope budgets, transactions, transaction allocations, and audit records to an
+  individual internal application user identity.
 - Store secrets outside source control.
 - Avoid logging full bank transaction descriptions if they may contain sensitive information.
 - Avoid logging unnecessary financial details.

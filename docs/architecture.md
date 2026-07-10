@@ -133,6 +133,12 @@ use scoped repositories that resolve ownership through `ICurrentUser`. Owner
 identifiers never come from transport contracts and are never included in existing
 response contracts.
 
+In production, JWT bearer authentication is the trust boundary for external
+identity. Configure the accepted authority/issuer, audience, signing keys or OIDC
+metadata, and the claim types allowed to provide the external provider and subject.
+Only claims from a token that passed that validation are mapped to an internal
+`ApplicationUserId`.
+
 ### Repositories and the shared store
 
 The repositories are concrete in-memory classes in their owning features.
@@ -232,30 +238,40 @@ Tests have distinct jobs:
 | Bootstrap test | `ApiBootstrapTests.cs` | Cross-cutting host surfaces such as health, version, and OpenAPI metadata. |
 
 API tests start a real application through `TestApiServer` and communicate through
-`HttpClient`. Do not inspect repository dictionaries from an API test. Prefer an
-existing public read endpoint to verify the result of a write.
+`HttpClient`. `TestApiServer` is a host-level harness: it replaces production JWT
+bearer authentication with a deterministic test scheme so feature tests can exercise
+ownership behaviour quickly. These tests verify authorization and ownership after an
+identity has been authenticated; they do not validate real bearer-token settings,
+issuer metadata, signing keys, or token parsing. Tests for those concerns should use
+the production bearer path directly, and longer-running container or integration tests
+should cover the deployed authentication boundary when that infrastructure exists.
+Do not inspect repository dictionaries from an API test. Prefer an existing public
+read endpoint to verify the result of a write.
 
 ## Request lifecycle
 
 A budget update follows the project's standard `Get -> domain operation -> Save` flow:
 
-1. ASP.NET Core authenticates the request and the `BusinessApi` policy requires the
-   configured provider and subject claims to be present and non-blank.
-2. `ICurrentUser` maps the authenticated external `(provider, subject)` identity to
-   an internal `ApplicationUserId` for the request.
-3. ASP.NET Core binds the route and JSON body to endpoint parameters.
-4. The endpoint handler validates primitive transport values and creates value types.
+1. ASP.NET Core authenticates the request. In production, JWT bearer authentication
+   validates the token issuer/authority, audience, signing keys, and metadata before
+   claims are trusted.
+2. The `BusinessApi` policy requires the configured provider and subject claims to be
+   present and non-blank.
+3. Request setup maps the authenticated external `(provider, subject)` identity to an
+   internal `ApplicationUserId` and stores it in `ICurrentUser` for the request.
+4. ASP.NET Core binds the route and JSON body to endpoint parameters.
+5. The endpoint handler validates primitive transport values and creates value types.
    Invalid input becomes a validation problem.
-5. The handler calls a scoped repository. A missing aggregate or one owned by another
+6. The handler calls a scoped repository. A missing aggregate or one owned by another
    identity becomes `404 Not Found`.
-6. The handler calls an operation on the immutable aggregate.
-7. The domain returns a specific result. Expected failures are mapped without
+7. The handler calls an operation on the immutable aggregate.
+8. The domain returns a specific result. Expected failures are mapped without
    exceptions.
-8. For a successful domain change, the handler calls `state.Update(newAggregate)` and
+9. For a successful domain change, the handler calls `state.Update(newAggregate)` and
    saves it.
-9. The repository rechecks ownership and its storage-wide guarantees while holding the
+10. The repository rechecks ownership and its storage-wide guarantees while holding the
    shared lock.
-10. The handler maps the repository result to a success, conflict, not-found, or other
+11. The handler maps the repository result to a success, conflict, not-found, or other
    expected API response and converts domain data to a response contract.
 
 Read-only endpoints skip the domain-operation and save steps. Cross-feature reports use

@@ -156,7 +156,7 @@ public sealed class InMemoryBudgetRepository
             return new BudgetSaveResult.DuplicateName();
         }
 
-        if (hasExistingBudget && RemovedBudgetItemHasAllocations(existingBudget!, budget))
+        if (hasExistingBudget && RemovedBudgetItemHasAllocations(userId, existingBudget!, budget))
         {
             return new BudgetSaveResult.BudgetItemHasAllocations();
         }
@@ -180,7 +180,10 @@ public sealed class InMemoryBudgetRepository
         return new BudgetSaveResult.Saved(budget);
     }
 
-    private bool RemovedBudgetItemHasAllocations(Budget existingBudget, Budget updatedBudget)
+    private bool RemovedBudgetItemHasAllocations(
+        ApplicationUserId userId,
+        Budget existingBudget,
+        Budget updatedBudget)
     {
         var removedBudgetItemIds = existingBudget.BudgetItems
             .Select(budgetItem => budgetItem.BudgetItemId)
@@ -188,12 +191,20 @@ public sealed class InMemoryBudgetRepository
             .ToHashSet();
 
         return removedBudgetItemIds.Count > 0
-            && store.AllocationsByTransactionId.Values.Any(allocation => removedBudgetItemIds.Contains(allocation.BudgetItemId));
+            && store.AllocationsByTransactionId.Any(pair =>
+                IsTransactionOwner(userId, pair.Key)
+                && removedBudgetItemIds.Contains(pair.Value.BudgetItemId));
     }
 
     private bool IsOwner(ApplicationUserId userId, Guid budgetId)
     {
         return store.BudgetOwnersById.TryGetValue(budgetId, out var ownerId)
+            && ownerId == userId;
+    }
+
+    private bool IsTransactionOwner(ApplicationUserId userId, Guid transactionId)
+    {
+        return store.TransactionOwnersById.TryGetValue(transactionId, out var ownerId)
             && ownerId == userId;
     }
 

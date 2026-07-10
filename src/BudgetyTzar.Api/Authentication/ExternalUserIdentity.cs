@@ -1,6 +1,8 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace BudgetyTzar.Api.Authentication;
 
-public readonly record struct ExternalUserIdentity
+public sealed record ExternalUserIdentity
 {
     private ExternalUserIdentity(string provider, string subject)
     {
@@ -12,18 +14,24 @@ public readonly record struct ExternalUserIdentity
 
     public string Subject { get; }
 
-    public static ExternalUserIdentity Create(string provider, string subject)
+    public static bool TryCreate(
+        string? provider,
+        string? subject,
+        [NotNullWhen(true)] out ExternalUserIdentity? externalIdentity)
     {
         if (string.IsNullOrWhiteSpace(provider))
         {
-            throw new ArgumentException("External identity provider is required.", nameof(provider));
+            externalIdentity = null;
+            return false;
         }
 
         if (string.IsNullOrWhiteSpace(subject))
         {
-            throw new ArgumentException("External identity subject is required.", nameof(subject));
+            externalIdentity = null;
+            return false;
         }
 
-        return new ExternalUserIdentity(provider.Trim(), subject.Trim());
+        externalIdentity = new ExternalUserIdentity(provider.Trim(), subject.Trim());
+        return true;
     }
 }
