@@ -28,6 +28,7 @@ The core product model is intentionally small:
 - Build a maintainable, well-structured codebase with clear architectural boundaries and high cohesion.
 - Model the budgeting domain using expressive ubiquitous language and domain-driven design principles.
 - Keep the domain model simple while making business invariants explicit and illegal states difficult to represent.
+- Prefer immutable, valid-by-construction types throughout the application where practical, not only in the domain model.
 - Evolve the architecture incrementally through small, reviewable changes rather than large-scale redesigns.
 - Prefer clarity and correctness over unnecessary abstraction or premature optimisation.
 - Design for observability so that the application's behaviour can be understood through logging, metrics, tracing, and health monitoring.
