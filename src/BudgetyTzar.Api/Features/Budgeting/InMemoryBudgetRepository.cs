@@ -1,16 +1,29 @@
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
 using BudgetyTzar.Api.Features;
+using BudgetyTzar.Api.Features.Identity;
 
 namespace BudgetyTzar.Api.Features.Budgeting;
 
 public sealed class InMemoryBudgetRepository
 {
     private readonly InMemoryDataStore store;
+    private readonly ICurrentUser currentUser;
 
-    public InMemoryBudgetRepository(InMemoryDataStore? store = null)
+    public InMemoryBudgetRepository()
+        : this(new InMemoryDataStore(), CurrentUser.TestDefault)
     {
-        this.store = store ?? new InMemoryDataStore();
+    }
+
+    public InMemoryBudgetRepository(InMemoryDataStore store)
+        : this(store, CurrentUser.TestDefault)
+    {
+    }
+
+    public InMemoryBudgetRepository(InMemoryDataStore store, ICurrentUser currentUser)
+    {
+        this.store = store;
+        this.currentUser = currentUser;
     }
 
     public BudgetSaveResult Save(Budget budget)
@@ -46,7 +59,7 @@ public sealed class InMemoryBudgetRepository
     {
         lock (store.SyncRoot)
         {
-            return store.BudgetIds
+            return store.BudgetIdsByOwner.GetValueOrDefault(currentUser.UserId, [])
                 .Select(budgetId => store.BudgetsById[budgetId])
                 .ToList();
         }
@@ -56,7 +69,8 @@ public sealed class InMemoryBudgetRepository
     {
         lock (store.SyncRoot)
         {
-            return store.BudgetsById.TryGetValue(budgetId, out var budget)
+            return BudgetBelongsToCurrentUser(budgetId)
+                && store.BudgetsById.TryGetValue(budgetId, out var budget)
                 ? new InMemoryEntityState<Budget>(budget, store.BudgetVersionsById[budgetId])
                 : null;
         }
@@ -66,7 +80,8 @@ public sealed class InMemoryBudgetRepository
     {
         lock (store.SyncRoot)
         {
-            if (!store.BudgetsById.TryGetValue(budgetId, out var budget))
+            if (!BudgetBelongsToCurrentUser(budgetId)
+                || !store.BudgetsById.TryGetValue(budgetId, out var budget))
             {
                 return null;
             }
@@ -81,8 +96,9 @@ public sealed class InMemoryBudgetRepository
     {
         lock (store.SyncRoot)
         {
-            foreach (var budget in store.BudgetsById.Values)
+            foreach (var budgetId in store.BudgetIdsByOwner.GetValueOrDefault(currentUser.UserId, []))
             {
+                var budget = store.BudgetsById[budgetId];
                 var budgetItem = budget.BudgetItems.SingleOrDefault(budgetItem => budgetItem.BudgetItemId == budgetItemId);
 
                 if (budgetItem is not null)
@@ -97,7 +113,9 @@ public sealed class InMemoryBudgetRepository
 
     private bool HasBudgetNamedCore(NormalizedName name, Guid? exceptBudgetId)
     {
-        return store.BudgetIdsByName.TryGetValue(name, out var budgetId)
+        return store.BudgetIdsByOwnerAndName.TryGetValue(
+                new BudgetNameIndexKey(currentUser.UserId, name),
+                out var budgetId)
             && budgetId != exceptBudgetId;
     }
 
@@ -108,6 +126,13 @@ public sealed class InMemoryBudgetRepository
         if (expectedVersion.HasValue && !hasExistingBudget)
         {
             return new BudgetSaveResult.NotFound();
+        }
+
+        if (hasExistingBudget && !BudgetBelongsToCurrentUser(budget.BudgetId))
+        {
+            return expectedVersion.HasValue
+                ? new BudgetSaveResult.NotFound()
+                : new BudgetSaveResult.DuplicateIdentity();
         }
 
         if (expectedVersion.HasValue
@@ -121,7 +146,9 @@ public sealed class InMemoryBudgetRepository
             return new BudgetSaveResult.DuplicateIdentity();
         }
 
-        if (store.BudgetIdsByName.TryGetValue(budget.Name, out var existingBudgetId)
+        var nameIndexKey = new BudgetNameIndexKey(currentUser.UserId, budget.Name);
+
+        if (store.BudgetIdsByOwnerAndName.TryGetValue(nameIndexKey, out var existingBudgetId)
             && existingBudgetId != budget.BudgetId)
         {
             return new BudgetSaveResult.DuplicateName();
@@ -134,18 +161,19 @@ public sealed class InMemoryBudgetRepository
 
         if (hasExistingBudget)
         {
-            store.BudgetIdsByName.Remove(existingBudget!.Name);
+            store.BudgetIdsByOwnerAndName.Remove(new BudgetNameIndexKey(currentUser.UserId, existingBudget!.Name));
         }
         else
         {
-            store.BudgetIds.Add(budget.BudgetId);
+            store.BudgetOwnersById[budget.BudgetId] = currentUser.UserId;
+            GetOrCreateBudgetIdsForCurrentUser().Add(budget.BudgetId);
         }
 
         store.BudgetsById[budget.BudgetId] = budget;
         store.BudgetVersionsById[budget.BudgetId] = hasExistingBudget
             ? store.BudgetVersionsById[budget.BudgetId] + 1
             : 1;
-        store.BudgetIdsByName[budget.Name] = budget.BudgetId;
+        store.BudgetIdsByOwnerAndName[nameIndexKey] = budget.BudgetId;
 
         return new BudgetSaveResult.Saved(budget);
     }
@@ -159,6 +187,23 @@ public sealed class InMemoryBudgetRepository
 
         return removedBudgetItemIds.Count > 0
             && store.AllocationsByTransactionId.Values.Any(allocation => removedBudgetItemIds.Contains(allocation.BudgetItemId));
+    }
+
+    private bool BudgetBelongsToCurrentUser(Guid budgetId)
+    {
+        return store.BudgetOwnersById.TryGetValue(budgetId, out var ownerId)
+            && ownerId == currentUser.UserId;
+    }
+
+    private List<Guid> GetOrCreateBudgetIdsForCurrentUser()
+    {
+        if (!store.BudgetIdsByOwner.TryGetValue(currentUser.UserId, out var budgetIds))
+        {
+            budgetIds = [];
+            store.BudgetIdsByOwner[currentUser.UserId] = budgetIds;
+        }
+
+        return budgetIds;
     }
 
     private sealed class InMemoryEntityState<T>(T value, long version) : EntityState<T>(value)

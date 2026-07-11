@@ -1,15 +1,28 @@
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Features;
+using BudgetyTzar.Api.Features.Identity;
 
 namespace BudgetyTzar.Api.Features.Transactions;
 
 public sealed class InMemoryTransactionRepository
 {
     private readonly InMemoryDataStore store;
+    private readonly ICurrentUser currentUser;
 
-    public InMemoryTransactionRepository(InMemoryDataStore? store = null)
+    public InMemoryTransactionRepository()
+        : this(new InMemoryDataStore(), CurrentUser.TestDefault)
     {
-        this.store = store ?? new InMemoryDataStore();
+    }
+
+    public InMemoryTransactionRepository(InMemoryDataStore store)
+        : this(store, CurrentUser.TestDefault)
+    {
+    }
+
+    public InMemoryTransactionRepository(InMemoryDataStore store, ICurrentUser currentUser)
+    {
+        this.store = store;
+        this.currentUser = currentUser;
     }
 
     public void Add(Transaction transaction)
@@ -17,7 +30,8 @@ public sealed class InMemoryTransactionRepository
         lock (store.SyncRoot)
         {
             store.TransactionsById[transaction.TransactionId] = transaction;
-            store.TransactionIds.Add(transaction.TransactionId);
+            store.TransactionOwnersById[transaction.TransactionId] = currentUser.UserId;
+            GetOrCreateTransactionIdsForCurrentUser().Add(transaction.TransactionId);
         }
     }
 
@@ -25,7 +39,7 @@ public sealed class InMemoryTransactionRepository
     {
         lock (store.SyncRoot)
         {
-            return store.TransactionIds
+            return store.TransactionIdsByOwner.GetValueOrDefault(currentUser.UserId, [])
                 .Select(transactionId => store.TransactionsById[transactionId])
                 .ToList();
         }
@@ -35,7 +49,9 @@ public sealed class InMemoryTransactionRepository
     {
         lock (store.SyncRoot)
         {
-            return store.TransactionsById.GetValueOrDefault(transactionId);
+            return TransactionBelongsToCurrentUser(transactionId)
+                ? store.TransactionsById.GetValueOrDefault(transactionId)
+                : null;
         }
     }
 
@@ -43,7 +59,8 @@ public sealed class InMemoryTransactionRepository
     {
         lock (store.SyncRoot)
         {
-            if (!store.TransactionsById.ContainsKey(transactionId))
+            if (!TransactionBelongsToCurrentUser(transactionId)
+                || !store.TransactionsById.ContainsKey(transactionId))
             {
                 return new TransactionDeleteResult.NotFound();
             }
@@ -54,9 +71,27 @@ public sealed class InMemoryTransactionRepository
             }
 
             store.TransactionsById.Remove(transactionId);
-            store.TransactionIds.Remove(transactionId);
+            store.TransactionOwnersById.Remove(transactionId);
+            store.TransactionIdsByOwner[currentUser.UserId].Remove(transactionId);
             return new TransactionDeleteResult.Deleted();
         }
+    }
+
+    private bool TransactionBelongsToCurrentUser(Guid transactionId)
+    {
+        return store.TransactionOwnersById.TryGetValue(transactionId, out var ownerId)
+            && ownerId == currentUser.UserId;
+    }
+
+    private List<Guid> GetOrCreateTransactionIdsForCurrentUser()
+    {
+        if (!store.TransactionIdsByOwner.TryGetValue(currentUser.UserId, out var transactionIds))
+        {
+            transactionIds = [];
+            store.TransactionIdsByOwner[currentUser.UserId] = transactionIds;
+        }
+
+        return transactionIds;
     }
 }
 

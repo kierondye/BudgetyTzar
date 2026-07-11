@@ -179,6 +179,29 @@ The Budget Summary provides the primary view of progress against a budget by com
 
 ## 5. Functional Requirements
 
+### 5.0 Authentication and Resource Ownership
+
+Business API endpoints for budgets, budget items, transactions, transaction
+allocations, and budget summaries require an authenticated caller. Requests to those
+endpoints without a valid authenticated identity return `401 Unauthorized`.
+
+The application derives a stable internal application user identity from the
+authenticated principal. User identity is not accepted from request bodies or query
+parameters. Existing resource response contracts do not expose owner identity.
+
+Budgets, transactions, transaction allocations, and reports are scoped to the owning
+application user. A user can list, retrieve, change, delete, allocate, remove
+allocations from, and report on only resources owned by that same user. Cross-user
+resource access must not disclose whether another user's resource exists; those
+requests return `404 Not Found`.
+
+When allocating a transaction, the transaction and selected budget item must both
+belong to the authenticated user. A request to allocate a transaction to another
+user's budget item returns `404 Not Found`.
+
+The health endpoint, runtime version endpoint, and API documentation remain publicly
+available.
+
 ### 5.1 Budget Management
 
 The system must allow a user to create a budget.

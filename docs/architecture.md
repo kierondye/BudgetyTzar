@@ -14,7 +14,7 @@ product or operational reason for them.
 flowchart LR
     user["BudgetyTzar user"]
     operator["Operator / maintainer"]
-    identity["External identity provider<br/>(future OIDC integration)"]
+    identity["External identity provider<br/>(configurable auth scheme)"]
     app["BudgetyTzar API"]
 
     user -->|"HTTP / JSON"| app
@@ -22,9 +22,10 @@ flowchart LR
     operator -->|"health, version, logs"| app
 ```
 
-The API owns the budgeting workflows. An external identity provider is the preferred
-future authentication boundary; the application should not implement password storage
-or identity management unless the product deliberately changes direction.
+The API owns the budgeting workflows. Authentication is handled through configured
+ASP.NET Core authentication schemes. The application derives an internal application
+user identity from authenticated claims, but it does not implement password storage,
+registration, or identity-provider deployment.
 
 Authentication resolves identity. It does not own the domain-specific access rules for
 budgets, transactions, allocations, reports, or audit records. Those rules live with
@@ -98,6 +99,7 @@ ownership of their data.
 | `src/BudgetyTzar.Api/ApiApplication.cs` | Composition root. Registers services and endpoint groups. |
 | `src/BudgetyTzar.Api/Domain/Entities` | Immutable entities, aggregates, operations, and result types. |
 | `src/BudgetyTzar.Api/Domain/ValueTypes` | Validated domain values such as names, currencies, money amounts, and kinds. |
+| `src/BudgetyTzar.Api/Features/Identity` | Authentication scheme setup, current-user resolution, and stable application user identity. |
 | `src/BudgetyTzar.Api/Features/Budgeting` | Budget endpoints, contracts, handlers, and persistence. |
 | `src/BudgetyTzar.Api/Features/Transactions` | Transaction and allocation endpoints, contracts, handlers, and persistence. |
 | `src/BudgetyTzar.Api/Features/Reporting` | Budget summary query model, calculation service, contracts, and endpoint. |
@@ -132,10 +134,10 @@ sequenceDiagram
     Endpoint-->>Client: mapped HTTP response
 ```
 
-Handlers coordinate the request. They validate transport input, call domain or
-application operations, pass repository-owned state back to repositories, and map
-explicit outcomes to HTTP responses. They should not know how persistence versions,
-storage locks, or database tokens work.
+Handlers coordinate the request. They validate transport input, rely on user-scoped
+repositories, call domain or application operations, pass repository-owned state back
+to repositories, and map explicit outcomes to HTTP responses. They should not know
+how persistence versions, storage locks, database tokens, or owner indexes work.
 
 `EntityState<T>` carries opaque repository-owned concurrency state through
 `Get -> domain operation -> Save`. It exists so repositories can enforce stale-write
@@ -169,7 +171,7 @@ back to the boundary that owns the language.
 
 | Boundary | Owns | Why |
 | --- | --- | --- |
-| Identity | Authentication and resolved current-user identity. | Authentication proves who is making the request; domain boundaries decide what that user may do with their resources. |
+| Identity | Authentication and resolved current-user identity. | Authentication proves who is making the request; user-facing repositories scope resource access to that internal user identity. |
 | Budgeting | Budgets, budget items, and budget access rules. | Budget names, items, planned amounts, and deletion rules use budgeting language. |
 | Transactions | Transactions and transaction access rules. | Transactions are real-world financial events and are not children of budgets. |
 | Transaction Allocations | Allocation creation, removal, lookup, and allocation access rules. | Allocation is its own relationship between transaction usage and budget planning. |
@@ -186,10 +188,11 @@ Repositories own storage-wide consistency and concurrency state because those ru
 depend on stored data, not only on a single aggregate's in-memory state. Aggregates own
 the invariants they can decide from their own state.
 
-User-facing operations should be scoped to the current internal application user. If
-future admin, migration, support, or background workflows need cross-user access, give
-them a separate explicitly user-aware API that requires the target application user at
-the call site.
+User-facing repositories are scoped to the current internal application user. Cross-user
+access is treated as missing data so the API does not disclose another user's resource
+existence. If future admin, migration, support, or background workflows need cross-user
+access, give them a separate explicitly user-aware API that requires the target
+application user at the call site.
 
 ## Before Changing Structure
 

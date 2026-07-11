@@ -1,22 +1,36 @@
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Features;
+using BudgetyTzar.Api.Features.Identity;
 
 namespace BudgetyTzar.Api.Features.Transactions;
 
 public sealed class InMemoryTransactionAllocationRepository
 {
     private readonly InMemoryDataStore store;
+    private readonly ICurrentUser currentUser;
 
-    public InMemoryTransactionAllocationRepository(InMemoryDataStore? store = null)
+    public InMemoryTransactionAllocationRepository()
+        : this(new InMemoryDataStore(), CurrentUser.TestDefault)
     {
-        this.store = store ?? new InMemoryDataStore();
+    }
+
+    public InMemoryTransactionAllocationRepository(InMemoryDataStore store)
+        : this(store, CurrentUser.TestDefault)
+    {
+    }
+
+    public InMemoryTransactionAllocationRepository(InMemoryDataStore store, ICurrentUser currentUser)
+    {
+        this.store = store;
+        this.currentUser = currentUser;
     }
 
     public AllocateTransactionResult Allocate(TransactionAllocation allocation)
     {
         lock (store.SyncRoot)
         {
-            if (!store.TransactionsById.ContainsKey(allocation.TransactionId))
+            if (!TransactionBelongsToCurrentUser(allocation.TransactionId)
+                || !store.TransactionsById.ContainsKey(allocation.TransactionId))
             {
                 return new AllocateTransactionResult.TransactionNotFound();
             }
@@ -43,7 +57,9 @@ public sealed class InMemoryTransactionAllocationRepository
     {
         lock (store.SyncRoot)
         {
-            return store.AllocationsByTransactionId.GetValueOrDefault(transactionId);
+            return TransactionBelongsToCurrentUser(transactionId)
+                ? store.AllocationsByTransactionId.GetValueOrDefault(transactionId)
+                : null;
         }
     }
 
@@ -51,7 +67,10 @@ public sealed class InMemoryTransactionAllocationRepository
     {
         lock (store.SyncRoot)
         {
-            return store.AllocationsByTransactionId.Values.ToList();
+            return store.AllocationsByTransactionId
+                .Where(entry => TransactionBelongsToCurrentUser(entry.Key))
+                .Select(entry => entry.Value)
+                .ToList();
         }
     }
 
@@ -59,15 +78,25 @@ public sealed class InMemoryTransactionAllocationRepository
     {
         lock (store.SyncRoot)
         {
-            store.AllocationsByTransactionId.Remove(transactionId);
+            if (TransactionBelongsToCurrentUser(transactionId))
+            {
+                store.AllocationsByTransactionId.Remove(transactionId);
+            }
         }
     }
 
     private bool BudgetItemExists(Guid budgetItemId)
     {
-        return store.BudgetsById.Values
+        return store.BudgetIdsByOwner.GetValueOrDefault(currentUser.UserId, [])
+            .Select(budgetId => store.BudgetsById[budgetId])
             .SelectMany(budget => budget.BudgetItems)
             .Any(budgetItem => budgetItem.BudgetItemId == budgetItemId);
+    }
+
+    private bool TransactionBelongsToCurrentUser(Guid transactionId)
+    {
+        return store.TransactionOwnersById.TryGetValue(transactionId, out var ownerId)
+            && ownerId == currentUser.UserId;
     }
 }
 

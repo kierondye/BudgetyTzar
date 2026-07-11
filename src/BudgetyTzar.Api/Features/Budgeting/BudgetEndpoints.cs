@@ -11,14 +11,15 @@ public static class BudgetEndpoints
     public static IServiceCollection AddBudgeting(this IServiceCollection services)
     {
         services.TryAddSingleton<InMemoryDataStore>();
-        services.AddSingleton<InMemoryBudgetRepository>();
+        services.AddScoped<InMemoryBudgetRepository>();
         return services;
     }
 
     public static IEndpointRouteBuilder MapBudgetEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var budgets = endpoints.MapGroup("/api/budgets")
-            .WithTags("Budgets");
+            .WithTags("Budgets")
+            .RequireAuthorization();
 
         budgets.MapPost("/", CreateBudget)
             .WithName("CreateBudget");
