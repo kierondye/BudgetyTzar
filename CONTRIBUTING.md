@@ -24,15 +24,16 @@ git config core.hooksPath .githooks
 
 ## Principles
 
-- Prefer immutable, valid-by-construction types where practical.
-- Make expected failures explicit.
-- Keep domain logic pure and independent of transport, persistence, and framework
-  concerns.
-- Keep handlers as coordinators.
-- Keep persistence concerns behind repositories.
-- Test externally observable behaviour through public boundaries first.
-- Do not fake the behaviour under test.
-- Keep identity and ownership concepts explicit.
+- Represent domain and application concepts as first-class internal models, distinct from external transport, provider, storage, or integration-specific representations.
+- Prefer immutable, valid-by-construction types that make invalid, insecure, or ambiguous states difficult to represent.
+- Model expected failures as explicit outcomes rather than hidden control flow.
+- Keep domain logic pure and independent of transport, persistence, framework, and infrastructure concerns.
+- Keep handlers focused on coordinating use cases, not owning domain, persistence, identity, or integration rules.
+- Keep persistence concerns behind repositories or equivalent persistence boundaries.
+- Keep production composition free of test-only behaviour, defaults, identities, schemes, and shortcuts.
+- Test externally observable behaviour through public boundaries before relying on lower-level tests.
+- Exercise the real behaviour under test rather than replacing it with fakes, mocks, shortcuts, or test-only paths.
+- Keep identity and ownership concepts explicit, stable, and modeled at the boundary that owns them.
 
 ## Specific Guidelines
 
