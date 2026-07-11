@@ -53,49 +53,129 @@ git config core.hooksPath .githooks
 Principles: Prefer immutable, valid-by-construction types. Keep identity and ownership
 concepts explicit.
 
-- Prefer: Construct an `ICurrentUser` implementation only after authentication has
-  resolved a valid internal application user.
-- Avoid: Creating a mutable current-user holder that middleware or handlers populate
-  later with raw provider claim values.
+Prefer:
+
+```csharp
+public sealed record CurrentUser(ApplicationUserId UserId) : ICurrentUser;
+
+return ApplicationUserId.TryCreate(providerSubject, out var userId)
+    ? new CurrentUserResolution.Authenticated(new CurrentUser(userId))
+    : new CurrentUserResolution.Unauthenticated();
+```
+
+Avoid:
+
+```csharp
+public sealed class CurrentUser : ICurrentUser
+{
+    public string? ProviderSubject { get; set; }
+    public Guid? UserId { get; set; }
+}
+```
 
 ### Explicit domain outcomes
 
 Principles: Make expected failures explicit. Keep domain logic pure.
 
-- Prefer: Return `RenameBudgetItemResult.DuplicateName` or
-  `TransactionDeleteResult.TransactionHasAllocation` for expected business-rule
-  failures.
-- Avoid: Throwing exceptions, returning `null`, or returning `false` for ordinary
-  domain outcomes that callers must map deliberately.
+Prefer:
+
+```csharp
+if (store.AllocationsByTransactionId.ContainsKey(transactionId))
+{
+    return new TransactionDeleteResult.TransactionHasAllocation();
+}
+
+return new TransactionDeleteResult.Deleted();
+```
+
+Avoid:
+
+```csharp
+if (store.AllocationsByTransactionId.ContainsKey(transactionId))
+{
+    throw new InvalidOperationException("Transaction has an allocation.");
+}
+
+return true;
+```
 
 ### Repository-owned persistence state
 
 Principles: Keep persistence concerns behind repositories. Keep domain logic pure.
 
-- Prefer: Carry `EntityState<T>` from repository `Get`, through aggregate `Update`, and
-  back to repository `Save`.
-- Avoid: Adding concurrency tokens, database versions, or storage metadata to domain
-  entities.
+Prefer:
+
+```csharp
+var budgetState = budgets.Get(budgetId);
+
+if (budgetState?.Value.Rename(name) is not RenameBudgetResult.Renamed renamed)
+{
+    return Results.NotFound();
+}
+
+var save = budgets.Save(budgetState.Update(renamed.Budget));
+```
+
+Avoid:
+
+```csharp
+budget.Version++;
+budget.Name = name;
+
+var save = budgets.Save(budget, expectedVersion: budget.Version);
+```
 
 ### Behaviour-first tests through the public API
 
 Principles: Test externally observable behaviour through public boundaries first. Keep
 handlers as coordinators.
 
-- Prefer: Send an HTTP command, assert the response, then use a public read endpoint to
-  verify observable state.
-- Avoid: Treating a repository or handler test as the only proof for behaviour that a
-  real API client, user, or operator depends on.
+Prefer:
+
+```csharp
+using var renameResponse = await server.Client.PutAsJsonAsync(
+    $"/api/budgets/{createdBudget.BudgetId}/name",
+    new RenameBudgetRequest("UK 2026"));
+
+Assert.Equal(HttpStatusCode.OK, renameResponse.StatusCode);
+
+var retrievedBudget = await server.Client.GetFromJsonAsync<BudgetResponse>(
+    $"/api/budgets/{createdBudget.BudgetId}");
+
+Assert.Equal("UK 2026", retrievedBudget?.Name);
+```
+
+Avoid:
+
+```csharp
+var handler = new RenameBudgetHandler(budgets);
+
+await handler.RenameBudget(createdBudget.BudgetId, "UK 2026");
+
+Assert.Equal("UK 2026", budgets.Get(createdBudget.BudgetId)?.Value.Name.ToString());
+```
 
 ### Authentication and ownership tests
 
 Principles and guidelines: Do not fake the behaviour under test. User-facing
 repositories are scoped to the current internal application user.
 
-- Prefer: Exercise the real authentication and authorisation path when the requirement
-  is about current-user identity, ownership, privacy, or cross-user access.
-- Avoid: Replacing authentication with a fake current user as the primary proof for an
-  ownership or privacy rule.
+Prefer:
+
+```csharp
+using var response = await userA.Client.GetAsync($"/api/budgets/{userBBudgetId}");
+
+Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+```
+
+Avoid:
+
+```csharp
+var currentUser = new FakeCurrentUser(userAId);
+var budgets = new InMemoryBudgetRepository(currentUser);
+
+Assert.Null(budgets.Get(userBBudgetId));
+```
 
 ## Adding Functionality
 
