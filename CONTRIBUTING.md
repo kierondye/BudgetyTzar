@@ -5,10 +5,9 @@ Thank you for contributing to BudgetyTzar.
 Before changing behaviour, read the relevant parts of
 [the product specification](SPECIFICATION.md). It is the source of truth for product
 rules and externally observable behaviour. Read
-[the architecture guide](docs/architecture.md) for the code structure,
-responsibility boundaries, request flow, and worked example.
+[the architecture guide](docs/architecture.md) for where code belongs and why.
 
-## Local checks
+## Local Checks
 
 Build and test the solution:
 
@@ -23,60 +22,169 @@ Enable the repository's Conventional Commit hook once per clone:
 git config core.hooksPath .githooks
 ```
 
-## Domain, persistence, and application patterns
+## Principles
 
-Use these constraints when deciding where behaviour belongs:
+- Prefer immutable, valid-by-construction types where practical.
+- Make expected failures explicit.
+- Keep domain logic pure and independent of transport, persistence, and framework
+  concerns.
+- Keep handlers as coordinators.
+- Keep persistence concerns behind repositories.
+- Test externally observable behaviour through public boundaries first.
+- Do not fake the behaviour under test.
+- Keep identity and ownership concepts explicit.
 
-1. Data access components, such as repositories, own concurrency and provide the
-   final atomic guard for stale state, uniqueness, referential integrity, and other
-   storage conflicts.
-2. Domain aggregates protect the invariants they can decide from their own state.
-3. Domain classes are immutable; successful operations return new instances while
-   preserving entity identity.
-4. Domain classes express intent through named operations rather than general
-   setters or mutable collections.
-5. Expected domain outcomes use explicit, operation-specific result types rather
-   than exceptions, `null`, or ambiguous booleans.
-6. Domain methods do not return `null`; absence and rejection are named result cases.
-7. Domain properties are non-nullable, using validated value types and immutable
-   collections to keep constructed objects valid.
+## Specific Guidelines
 
-Aggregate updates follow `Get -> domain operation -> Save`. `EntityState<T>` carries
-persistence-owned, opaque concurrency state through that workflow; aggregates neither
-track nor inspect persistence versions. Handlers coordinate request validation, domain
-and persistence outcomes, and API response mapping.
+- Aggregate updates follow `Get -> domain operation -> Save`.
+- Use `EntityState<T>` to carry repository-owned concurrency state through that flow.
+- Do not put persistence versions, database concerns, or storage tokens on domain
+  entities.
+- User-facing repositories are scoped to the current internal application user.
+- Use a separate explicitly user-aware API for admin, migration, support, or background
+  cross-user workflows.
+- Exercise the real authentication and authorisation path when authentication or
+  ownership is the behaviour under test.
 
-Friendly pre-checks can improve feedback, but they are never the consistency guarantee.
-In-memory repositories must preserve the same observable consistency rules as a
-transactional database, using the shared synchronization boundary when an invariant
-spans repositories or collections.
+## Examples
 
-Cover the complete workflow with API behaviour tests, supplemented by focused domain
-tests for invariants and repository tests for concurrency and storage conflicts. See
-[Architecture](docs/architecture.md) for the detailed rationale and examples.
+### Immutable current user
 
-## Adding functionality
+Principles: Prefer immutable, valid-by-construction types. Keep identity and ownership
+concepts explicit.
+
+Prefer:
+
+```csharp
+public sealed record CurrentUser(ApplicationUserId UserId) : ICurrentUser;
+
+return ApplicationUserId.TryCreate(providerSubject, out var userId)
+    ? new CurrentUserResolution.Authenticated(new CurrentUser(userId))
+    : new CurrentUserResolution.Unauthenticated();
+```
+
+Avoid:
+
+```csharp
+public sealed class CurrentUser : ICurrentUser
+{
+    public string? ProviderSubject { get; set; }
+    public Guid? UserId { get; set; }
+}
+```
+
+### Explicit domain outcomes
+
+Principles: Make expected failures explicit. Keep domain logic pure.
+
+Prefer:
+
+```csharp
+if (store.AllocationsByTransactionId.ContainsKey(transactionId))
+{
+    return new TransactionDeleteResult.TransactionHasAllocation();
+}
+
+return new TransactionDeleteResult.Deleted();
+```
+
+Avoid:
+
+```csharp
+if (store.AllocationsByTransactionId.ContainsKey(transactionId))
+{
+    throw new InvalidOperationException("Transaction has an allocation.");
+}
+
+return true;
+```
+
+### Repository-owned persistence state
+
+Principles: Keep persistence concerns behind repositories. Keep domain logic pure.
+
+Prefer:
+
+```csharp
+var budgetState = budgets.Get(budgetId);
+
+if (budgetState?.Value.Rename(name) is not RenameBudgetResult.Renamed renamed)
+{
+    return Results.NotFound();
+}
+
+var save = budgets.Save(budgetState.Update(renamed.Budget));
+```
+
+Avoid:
+
+```csharp
+budget.Version++;
+budget.Name = name;
+
+var save = budgets.Save(budget, expectedVersion: budget.Version);
+```
+
+### Behaviour-first tests through the public API
+
+Principles: Test externally observable behaviour through public boundaries first. Keep
+handlers as coordinators.
+
+Prefer:
+
+```csharp
+using var renameResponse = await server.Client.PutAsJsonAsync(
+    $"/api/budgets/{createdBudget.BudgetId}/name",
+    new RenameBudgetRequest("UK 2026"));
+
+Assert.Equal(HttpStatusCode.OK, renameResponse.StatusCode);
+
+var retrievedBudget = await server.Client.GetFromJsonAsync<BudgetResponse>(
+    $"/api/budgets/{createdBudget.BudgetId}");
+
+Assert.Equal("UK 2026", retrievedBudget?.Name);
+```
+
+Avoid:
+
+```csharp
+var handler = new RenameBudgetHandler(budgets);
+
+await handler.RenameBudget(createdBudget.BudgetId, "UK 2026");
+
+Assert.Equal("UK 2026", budgets.Get(createdBudget.BudgetId)?.Value.Name.ToString());
+```
+
+### Authentication and ownership tests
+
+Principles and guidelines: Do not fake the behaviour under test. User-facing
+repositories are scoped to the current internal application user.
+
+Prefer:
+
+```csharp
+using var response = await userA.Client.GetAsync($"/api/budgets/{userBBudgetId}");
+
+Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+```
+
+Avoid:
+
+```csharp
+var currentUser = new FakeCurrentUser(userAId);
+var budgets = new InMemoryBudgetRepository(currentUser);
+
+Assert.Null(budgets.Get(userBBudgetId));
+```
+
+## Adding Functionality
 
 - Confirm the intended behaviour and language in `SPECIFICATION.md`; update it when
   externally observable behaviour changes.
-- Put validated domain values in `Domain/ValueTypes` and invariant-protecting,
-  immutable behaviour in the owning aggregate under `Domain/Entities`.
-- Give expected domain outcomes an operation-specific result type.
-- Follow `Get -> domain operation -> Save` for aggregate updates, carrying
-  `EntityState<T>` through the workflow.
-- Extend a repository only when persistence has a new responsibility, and preserve
-  concurrency, uniqueness, and referential checks atomically.
-- In the endpoint handler, coordinate validation, domain and persistence outcomes, and
-  HTTP mapping. If a handler is extracted, return application outcomes from it while
-  retaining HTTP mapping in the endpoint. Keep request and response records in the
-  feature's contracts file.
-- Register the endpoint and dependencies through the feature's `Map*` and `Add*`
-  methods.
-- Add domain tests for invariant logic, repository tests for persistence guarantees,
-  and API behaviour tests for the public workflow.
-- Run the build and full test suite, and update
-  [the architecture guide](docs/architecture.md) if responsibilities or request flow
-  changed.
-
-The detailed rationale and an end-to-end example are in
-[Architecture](docs/architecture.md#worked-vertical-slice-change-a-budget-items-planned-amount).
+- Follow the placement and ownership guidance in [Architecture](docs/architecture.md).
+- Apply the principles and specific guidelines above.
+- Add the smallest useful set of tests for the risk: public-boundary behaviour tests
+  for user-visible workflows, domain tests for invariant logic, and repository tests
+  for persistence guarantees.
+- Run the build and full test suite, and update the architecture guide if
+  responsibilities, request flow, or persistence boundaries changed.

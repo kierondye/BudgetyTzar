@@ -1,380 +1,198 @@
 # Architecture
 
-This guide explains how the code is arranged, how its parts collaborate, and where to
-put new functionality. It describes the implementation rather than defining
-product behaviour. Use [the specification](../SPECIFICATION.md) for product rules and
-externally observable behaviour, and [the contributing guide](../CONTRIBUTING.md) for
-the short development checklist.
+This guide explains where code belongs and why. It describes the implementation
+structure rather than defining product behaviour or coding style.
 
-## System shape
+BudgetyTzar is currently a modular monolith: one .NET 9 Minimal API process, one
+in-memory persistence boundary, and one xUnit test project. The design keeps feature
+boundaries explicit without introducing extra deployable services before there is a
+product or operational reason for them.
 
-BudgetyTzar uses Vertical Slice Architecture in a single .NET 9 Minimal API and a
-single xUnit test project. Each feature folder brings together the HTTP endpoints,
-application coordination, persistence, and contracts needed by that slice. Shared
-domain concepts remain under `Domain` so feature slices can use the same ubiquitous
-language and invariant-protecting types.
+## System Context
 
-The API process owns the domain model, request coordination, HTTP endpoints, reporting,
-and in-memory persistence.
+```mermaid
+flowchart LR
+    user["BudgetyTzar user"]
+    operator["Operator / maintainer"]
+    identity["External identity provider<br/>(future OIDC integration)"]
+    app["BudgetyTzar API"]
 
-```text
-HTTP request
-    |
-    v
-Endpoint delegate / handler  ---> response contract ---> HTTP response
-    |           |
-    |           +-----------> reporting service (queries only)
-    v
-Domain aggregate or entity
-    |
-    v
-Repository ---> shared InMemoryDataStore
+    user -->|"HTTP / JSON"| app
+    app -.->|"authenticate user"| identity
+    operator -->|"health, version, logs"| app
 ```
 
-Dependencies point inward from HTTP and persistence coordination toward the domain:
+The API owns the budgeting workflows. An external identity provider is the preferred
+future authentication boundary; the application should not implement password storage
+or identity management unless the product deliberately changes direction.
 
-- Domain code does not depend on endpoints, repositories, ASP.NET Core, or storage.
-- Feature code depends on domain types to execute use cases.
-- Repositories depend on domain types because they store and return them.
-- Endpoints coordinate domain and repository results and translate them into HTTP.
-- Tests may exercise any boundary, but API behaviour tests use only the public HTTP API.
+Authentication resolves identity. It does not own the domain-specific access rules for
+budgets, transactions, allocations, reports, or audit records. Those rules live with
+the boundary that owns the resource language.
 
-This is a logical separation inside one deployable project, not a set of separately
-compiled architectural projects. Do not introduce a new project or abstraction merely
-to make the folder tree look layered. Add a boundary when it has a concrete
-responsibility and tests that benefit from it.
+## Containers
 
-## Repository map
+```mermaid
+flowchart TB
+    client["HTTP client"]
+    api["BudgetyTzar.Api<br/>.NET 9 Minimal API"]
+    memory["In-memory store<br/>process-local persistence"]
+    tests["BudgetyTzar.Tests<br/>xUnit + TestApiServer"]
+    scripts["scripts and .githooks<br/>versioning and release tooling"]
+
+    client -->|"public API"| api
+    api -->|"load / save"| memory
+    tests -->|"HTTP through TestApiServer"| api
+    scripts -.->|"build, release, commit checks"| api
+```
+
+The production container runs only `BudgetyTzar.Api`. Tests and scripts are separate
+executable parts of the repository, but not deployed application services.
+
+Persistence is intentionally in memory today. The observable behaviour should survive
+a future database implementation, with transactions, constraints, and concurrency
+tokens replacing the current lock and dictionaries.
+
+## API Component Model
+
+```mermaid
+flowchart TB
+    program["Program.cs"]
+    composition["ApiApplication.cs<br/>composition root"]
+    budget["Budgeting feature<br/>endpoints, contracts, repository"]
+    transaction["Transactions feature<br/>endpoints, contracts, repositories"]
+    reporting["Reporting feature<br/>summary query service and contracts"]
+    domain["Domain<br/>entities, aggregates, value types, result types"]
+    store["InMemoryDataStore<br/>shared synchronization boundary"]
+
+    program --> composition
+    composition --> budget
+    composition --> transaction
+    composition --> reporting
+    budget --> domain
+    transaction --> domain
+    reporting --> domain
+    budget --> store
+    transaction --> store
+    reporting --> store
+```
+
+Feature folders own the HTTP endpoints, request and response contracts, handler
+coordination, and persistence adapters for their use cases. Keeping those files
+together makes a vertical slice easy to review and prevents a small API from becoming
+layered by folder ceremony rather than responsibility.
+
+Shared domain types live under `Domain` because Budgeting, Transactions, Allocations,
+and Reporting use the same ubiquitous language and invariant-protecting values.
+Domain code does not depend on endpoints, repositories, ASP.NET Core, or storage.
+
+Reporting reads across boundaries because a budget summary combines budgets, budget
+items, transactions, and allocations. It does not mutate those boundaries or take
+ownership of their data.
+
+## Repository Map
 
 | Path | Responsibility |
 | --- | --- |
 | `src/BudgetyTzar.Api/Program.cs` | Process entry point. Creates and runs the web application. |
-| `src/BudgetyTzar.Api/ApiApplication.cs` | Composition root. Registers feature services and maps endpoint groups. |
-| `src/BudgetyTzar.Api/Domain/Entities` | Immutable entities, aggregates, their operations, and operation-specific result types. |
+| `src/BudgetyTzar.Api/ApiApplication.cs` | Composition root. Registers services and endpoint groups. |
+| `src/BudgetyTzar.Api/Domain/Entities` | Immutable entities, aggregates, operations, and result types. |
 | `src/BudgetyTzar.Api/Domain/ValueTypes` | Validated domain values such as names, currencies, money amounts, and kinds. |
-| `src/BudgetyTzar.Api/Features/Budgeting` | Budget HTTP contracts, endpoint handlers, and budget persistence. |
-| `src/BudgetyTzar.Api/Features/Transactions` | Transaction and allocation HTTP contracts, endpoint handlers, filters, and persistence. |
+| `src/BudgetyTzar.Api/Features/Budgeting` | Budget endpoints, contracts, handlers, and persistence. |
+| `src/BudgetyTzar.Api/Features/Transactions` | Transaction and allocation endpoints, contracts, handlers, and persistence. |
 | `src/BudgetyTzar.Api/Features/Reporting` | Budget summary query model, calculation service, contracts, and endpoint. |
-| `src/BudgetyTzar.Api/Features/InMemoryDataStore.cs` | Shared in-memory state and the synchronization boundary used by repositories. |
+| `src/BudgetyTzar.Api/Features/InMemoryDataStore.cs` | Shared in-memory state and synchronization boundary. |
 | `tests/BudgetyTzar.Tests/Support` | Test-only API host and shared test support. |
 | `tests/BudgetyTzar.Tests/<Feature>` | Domain, repository, and API behaviour tests grouped by feature. |
-| `SPECIFICATION.md` | Product rules and externally observable behaviour. |
-| `CONTRIBUTING.md` | Contributor workflow and the checklist for adding functionality. |
-| `scripts` and `.githooks` | Versioning, release, and commit-message tooling. |
+| `SPECIFICATION.md` | Product and system requirements. |
+| `CONTRIBUTING.md` | Development workflow plus coding and testing style. |
 
-Application handling lives in private methods on endpoint classes, persistence
-implementations live beside their feature, and HTTP contracts use `*Request` and
-`*Response` records in `*Contracts.cs`. Reflect structural changes in this guide.
+## Key Request Flows
 
-## Responsibilities and placement
+### Command flow
 
-### Value types
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Endpoint
+    participant Domain
+    participant Repository
+    participant Store as InMemoryDataStore
 
-Create a value type in `Domain/ValueTypes` when a value has domain-wide validation or
-semantics that should not be represented by a primitive. Existing value types use
-`TryCreate` and an `Empty` value or nullable out value to report parsing failure without
-throwing.
-
-Value types must not know about JSON, HTTP status codes, repositories, or persistence
-versions.
-
-### Entities and aggregates
-
-Create an entity in `Domain/Entities` when the concept has an identity and domain
-behaviour. Put an operation on the aggregate that owns the invariant it changes.
-`Budget`, for example, owns its collection of `BudgetItem` values and protects
-collection-level rules.
-
-Domain types should make invalid states difficult or impossible to represent. Create
-validated value types before invoking aggregate operations, so a method such as
-`Budget.Rename` can accept a `NormalizedName` without also handling invalid strings.
-
-Domain objects are immutable. An operation returns a new object with the same identity
-instead of modifying the existing object. Collections exposed by aggregates are
-immutable too.
-
-Expected outcomes use operation-specific result types next to the operation:
-`AddBudgetItemResult.Added`, `AddBudgetItemResult.DuplicateName`, and
-`AddBudgetItemResult.InvalidIdentity` are examples. This keeps intent visible to callers
-and avoids `null`, booleans with ambiguous meaning, or exceptions for expected domain
-failures.
-
-The aggregate protects rules it can decide from its own state. A rule requiring a
-storage-wide view belongs to the repository's atomic save boundary.
-
-### Endpoint delegates and handlers
-
-The private methods in `BudgetEndpoints`, `TransactionEndpoints`, and
-`BudgetSummaryEndpoints` are the application's handlers. They:
-
-1. parse and validate transport input;
-2. load current state;
-3. call a domain operation or query service;
-4. persist the resulting state where required; and
-5. map every expected outcome to an HTTP response.
-
-Keep route registration in `Map*Endpoints` and dependency registration in
-`Add*`. Keep request and response records in the feature's `*Contracts.cs`.
-
-If coordination becomes substantial or is reused outside HTTP, extract a named handler
-in the same feature. An extracted handler should return application outcomes, not
-`IResult`; the endpoint remains responsible for HTTP mapping.
-
-Handlers must not reimplement aggregate invariants or reach into
-`InMemoryDataStore`. A pre-check such as `HasBudgetNamed` can provide friendly feedback,
-but the repository save remains the final consistency guard.
-
-### Repositories and the shared store
-
-The repositories are concrete in-memory classes in their owning features.
-Their public methods and result records form the persistence contract; there
-are no repository interfaces yet.
-
-Repositories:
-
-- load and store domain objects;
-- own persistence metadata and concurrency checks;
-- enforce storage-wide uniqueness and referential integrity atomically;
-- return explicit result types for expected conflicts; and
-- preserve insertion order where the public list behaviour requires it.
-
-`InMemoryDataStore` is registered once and shared by all repositories. Its `SyncRoot`
-is the transaction boundary for operations involving budgets, transactions, and
-allocations. This is important for checks such as preventing deletion of an allocated
-transaction or budget item: the check and write happen under the same lock as the
-related allocation state.
-
-The shared InMemoryDataStore synchronization boundary allows the in-memory
-repositories to emulate referential-integrity constraints across repository boundaries.
-This also introduces cross-boundary coupling: for example, Budgeting must know whether
-Transaction Allocations reference a budget item. That dependency should be acknowledged
-and kept explicit, without moving ownership of allocations into Budgeting.
-
-Keep direct access to the shared dictionaries inside repositories. An eventual
-database implementation should preserve the same observable outcomes using database
-transactions, constraints, and concurrency tokens.
-
-### `EntityState<T>`
-
-`EntityState<T>` pairs a loaded aggregate with opaque concurrency state:
-
-```csharp
-var state = budgets.Get(budgetId);
-
-if (state is null)
-{
-    return Results.NotFound();
-}
-
-if (state.Value.ChangeBudgetItemPlannedAmount(budgetItemId, amount)
-    is not ChangeBudgetItemPlannedAmountResult.Changed changed)
-{
-    return Results.NotFound();
-}
-
-var saveResult = budgets.Save(state.Update(changed.Budget));
+    Client->>Endpoint: HTTP command
+    Endpoint->>Endpoint: validate transport input
+    Endpoint->>Repository: Get aggregate
+    Repository->>Store: read under persistence rules
+    Repository-->>Endpoint: EntityState<T>
+    Endpoint->>Domain: invoke named operation
+    Domain-->>Endpoint: explicit operation result
+    Endpoint->>Repository: Save updated EntityState<T>
+    Repository->>Store: check consistency and write atomically
+    Repository-->>Endpoint: explicit persistence result
+    Endpoint-->>Client: mapped HTTP response
 ```
 
-`Update` replaces the immutable value while retaining the concurrency state returned by
-`Get`. `Save(EntityState<Budget>)` gives that state back to the repository when
-attempting the write.
+Handlers coordinate the request. They validate transport input, call domain or
+application operations, pass repository-owned state back to repositories, and map
+explicit outcomes to HTTP responses. They should not know how persistence versions,
+storage locks, or database tokens work.
 
-`EntityState<T>` is opaque to application code: callers only carry it from `Get`,
-through `Update`, to `Save`. Each repository can therefore encode whatever concurrency
-state its persistence mechanism requires without exposing that choice to domain or
-application code. A repository returns its own private `EntityState<T>` implementation
-and rejects state created by a different repository implementation.
+`EntityState<T>` carries opaque repository-owned concurrency state through
+`Get -> domain operation -> Save`. It exists so repositories can enforce stale-write
+protection without putting persistence versions on domain entities.
 
-`InMemoryBudgetRepository` represents the concurrency state with its own private
-numeric token and compares it under the repository lock. If another writer has already
-saved the aggregate, the repository returns `BudgetSaveResult.StaleState` without
-overwriting the newer value. This state belongs to persistence, not the domain: do not
-add it to `Budget`, expose it through domain operations, or let the aggregate change
-it.
+### Query flow
 
-### Reporting services
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Endpoint
+    participant Report as Reporting service
+    participant Budgeting
+    participant Transactions
+    participant Allocations
 
-Reporting provides read-only views of domain data. It coordinates data from multiple
-features and produces report-specific models without modifying domain or repository
-state. Put calculations and query coordination in a service such as
-`BudgetSummaryService`, with its models and result types in the reporting feature.
+    Client->>Endpoint: HTTP query
+    Endpoint->>Report: request summary
+    Report->>Budgeting: read budget data
+    Report->>Transactions: read transaction data
+    Report->>Allocations: read allocation data
+    Report-->>Endpoint: report model
+    Endpoint-->>Client: response contract
+```
 
-### Tests
+Read models may combine data from several boundaries, but they should stay read-only.
+If a query starts enforcing a command rule or changing state, move that responsibility
+back to the boundary that owns the language.
 
-Tests have distinct jobs:
+## Boundary Ownership
 
-| Test type | Place | Proves |
+| Boundary | Owns | Why |
 | --- | --- | --- |
-| Domain test | `<Feature>/*DomainTests.cs` | An aggregate or value operation protects an invariant and remains immutable. |
-| Repository test | `<Feature>/*RepositoryTests.cs` | Atomic uniqueness, stale-write, idempotency, or referential-integrity behaviour at the persistence boundary. |
-| API behaviour test | `<Feature>/*ApiTests.cs` | The complete public request-to-response workflow, including status, body, and persisted observable state. |
-| Bootstrap test | `ApiBootstrapTests.cs` | Cross-cutting host surfaces such as health, version, and OpenAPI metadata. |
+| Identity | Authentication and resolved current-user identity. | Authentication proves who is making the request; domain boundaries decide what that user may do with their resources. |
+| Budgeting | Budgets, budget items, and budget access rules. | Budget names, items, planned amounts, and deletion rules use budgeting language. |
+| Transactions | Transactions and transaction access rules. | Transactions are real-world financial events and are not children of budgets. |
+| Transaction Allocations | Allocation creation, removal, lookup, and allocation access rules. | Allocation is its own relationship between transaction usage and budget planning. |
+| Reporting | Budget summary calculations and report response shapes. | Reports combine owned data from other boundaries without mutating it. |
+| Audit | Durable change records and audit timelines. | Audit is an architectural concern, not a new concept in the core budgeting model. |
+| Web application | User interface and authentication flow. | The frontend should use API responses shaped for user workflows. |
 
-API tests start a real application through `TestApiServer` and communicate through
-`HttpClient`. Do not inspect repository dictionaries from an API test. Prefer an
-existing public read endpoint to verify the result of a write.
+The shared `InMemoryDataStore` is the current persistence boundary. It lets repositories
+emulate database-style constraints atomically while the application is in memory. For
+example, deleting a budget item and checking whether an allocation references it must
+happen under the same synchronization boundary.
 
-## Request lifecycle
+Repositories own storage-wide consistency and concurrency state because those rules
+depend on stored data, not only on a single aggregate's in-memory state. Aggregates own
+the invariants they can decide from their own state.
 
-A budget update follows the project's standard `Get -> domain operation -> Save` flow:
+User-facing operations should be scoped to the current internal application user. If
+future admin, migration, support, or background workflows need cross-user access, give
+them a separate explicitly user-aware API that requires the target application user at
+the call site.
 
-1. ASP.NET Core binds the route and JSON body to endpoint parameters.
-2. The endpoint handler validates primitive transport values and creates value types.
-   Invalid input becomes a validation problem.
-3. The handler calls a repository `Get`. A missing aggregate becomes `404 Not Found`.
-4. The handler calls an operation on the immutable aggregate.
-5. The domain returns a specific result. Expected failures are mapped without
-   exceptions.
-6. For a successful domain change, the handler calls `state.Update(newAggregate)` and
-   saves it.
-7. The repository rechecks its storage-wide guarantees while holding the shared lock.
-8. The handler maps the repository result to a success, conflict, not-found, or other
-   expected API response and converts domain data to a response contract.
+## Before Changing Structure
 
-Read-only endpoints skip the domain-operation and save steps. Cross-feature reports use
-a query service between the handler and repositories.
-
-## Consistency and failures
-
-Different boundaries answer different questions:
-
-- **Aggregate invariants:** decided by the aggregate from its own state. Duplicate
-  budget-item names are detected by `Budget`, for example.
-- **Uniqueness:** finally decided by the repository under its synchronization boundary.
-  The budget name index makes the check and write atomic.
-- **Optimistic concurrency:** represented by `EntityState<T>` and a repository
-  `StaleState` result.
-- **Referential integrity:** decided atomically where all involved stored state is
-  visible. The shared store prevents an allocation racing with deletion of its
-  transaction or budget item.
-- **Idempotency:** made explicit in repository outcomes. Allocating a transaction to
-  the same item returns the existing successful allocation.
-
-Expected domain, application, and persistence outcomes are records in an
-operation-specific result hierarchy and are mapped explicitly by the handler.
-Exceptions are reserved for programming errors and genuinely unexpected results; the
-existing switch defaults make that distinction visible.
-
-HTTP conflict bodies use stable codes and human-readable messages. Keep transport
-formatting out of domain and repository result types.
-
-## Naming conventions
-
-- Feature folders and endpoint classes use the ubiquitous feature name:
-  `Budgeting/BudgetEndpoints`, `Transactions/TransactionEndpoints`.
-- Transport types end in `Request` or `Response`.
-- Domain result families describe one operation:
-  `RenameBudgetItemResult`, `TransactionDeleteResult`.
-- Successful and failed variants use outcome names:
-  `Renamed`, `NotFound`, `StaleState`, `DuplicateName`.
-- In-memory adapters start with `InMemory`; a future adapter should identify its
-  persistence technology without changing domain names.
-- Tests name the unit and observable behaviour:
-  `Save_rejects_stale_updates_without_overwriting_existing_budget`.
-- Public C# types and members use `PascalCase`; locals and parameters use `camelCase`.
-- Money and dates cross the HTTP boundary as invariant strings and are
-  formatted in response contracts.
-
-## Worked vertical slice: change a budget item's planned amount
-
-The existing planned-amount update is a representative budget operation to copy when
-adding a similar command.
-
-### 1. Define intent and domain outcomes
-
-`ChangeBudgetItemPlannedAmountResult` lives next to `Budget` and names the only domain
-outcomes: `Changed` carries the new `Budget` and updated `BudgetItem`; `NotFound`
-represents a missing item. The validated `PositiveMoneyAmount` makes an invalid amount
-impossible at this boundary.
-
-For a new operation, first identify the aggregate method's intent and enumerate its
-expected outcomes. Add only outcomes the domain itself can decide.
-
-### 2. Protect the invariant in the immutable aggregate
-
-`Budget.ChangeBudgetItemPlannedAmount` finds the owned item, creates a replacement
-through `BudgetItem.ChangePlannedAmount`, and returns a new `Budget` containing it.
-Neither the original budget nor item is changed.
-
-A similar operation belongs on `Budget` if it changes an owned budget item or depends
-on the budget's state. Return the new aggregate so persistence receives a complete,
-valid snapshot.
-
-### 3. Extend persistence only when persistence has new work
-
-This operation needs no new repository method: `Get` plus
-`Save(EntityState<Budget>)` already expresses loading and replacing an aggregate with a
-concurrency check. Do not add an operation-specific repository method merely because a
-new endpoint exists.
-
-Extend the repository contract when persistence has a new responsibility, such as a
-new lookup, atomic cross-record check, or storage conflict. Give expected outcomes
-specific result variants.
-
-### 4. Preserve concurrency and integrity in memory
-
-The handler retains the opaque persistence state loaded with the budget:
-
-```csharp
-var budgetState = budgets.Get(budgetId);
-
-if (budgetState is null)
-{
-    return Results.NotFound();
-}
-
-if (budgetState.Value.ChangeBudgetItemPlannedAmount(budgetItemId, amount)
-    is not ChangeBudgetItemPlannedAmountResult.Changed changed)
-{
-    return Results.NotFound();
-}
-
-var save = budgets.Save(budgetState.Update(changed.Budget));
-```
-
-`InMemoryBudgetRepository.Save` performs its concurrency, uniqueness, and referential
-checks while holding `InMemoryDataStore.SyncRoot`. A new persistence rule must be
-checked in the same critical section as its write and must leave stored state untouched
-on failure.
-
-### 5. Coordinate and map outcomes in the handler
-
-`ChangeBudgetItemPlannedAmount` in `BudgetEndpoints` validates the request, loads the
-budget, calls the domain method, saves the new state, and maps:
-
-- invalid input to a validation problem;
-- a missing budget or item to `404`;
-- stale persistence state to a conflict; and
-- a successful save to `200` with `BudgetItemResponse`.
-
-Map every expected domain and repository result deliberately. Do not let repository
-types or domain objects become the wire response.
-
-### 6. Expose the endpoint
-
-The `MapBudgetEndpoints` method registers the `PUT` route and gives it a stable OpenAPI
-name. The body record lives in `BudgetContracts.cs`, and `BudgetItemResponse` performs
-the outward formatting.
-
-Place a new budget route in the same group, following the existing resource-oriented
-route shape and naming style.
-
-### 7. Test each boundary for its own responsibility
-
-For this operation:
-
-- `BudgetDomainTests` proves that item updates return a new aggregate without mutating
-  the old one.
-- `BudgetRepositoryTests` proves stale updates cannot overwrite newer stored state.
-- `BudgetApiTests` sends the request over HTTP and verifies both the response and a
-  subsequent public read.
-
-A new operation does not automatically require all three test types. Add a domain test
-for new invariant logic, a repository test for new persistence or race behaviour, and
-an API behaviour test for every new or changed public workflow.
-
-## Before changing the structure
-
-Keep the implementation and this guide aligned. When responsibilities or request flow
-change, update the project map, dependency rules, lifecycle, and worked example in the
-same pull request.
+Keep the implementation and this guide aligned. When responsibilities, request flow,
+or persistence boundaries change, update the diagrams, repository map, and ownership
+notes in the same pull request.
