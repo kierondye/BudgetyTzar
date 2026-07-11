@@ -30,6 +30,18 @@ dotnet run --project src/BudgetyTzar.Api
 
 The API is available at `http://localhost:7070`. Swagger is available at `http://localhost:7070/swagger`, and the health check is available at `http://localhost:7070/health`.
 
+Business endpoints require authentication. Local development uses the deterministic
+`BudgetyTzar.Test` scheme and authenticates requests as `test-user` unless an
+`X-Test-User` header is supplied:
+
+```bash
+curl http://localhost:7070/api/budgets --header 'X-Test-User: user-a'
+```
+
+The default configured runtime scheme accepts `Authorization: BudgetyTzar <subject>`
+as a placeholder for an external identity provider integration. Health, runtime
+version, and Swagger endpoints remain anonymous.
+
 Run the test suite:
 
 ```bash

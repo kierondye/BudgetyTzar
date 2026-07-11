@@ -59,6 +59,7 @@ tokens replacing the current lock and dictionaries.
 flowchart TB
     program["Program.cs"]
     composition["ApiApplication.cs<br/>composition root"]
+    identity["Identity feature<br/>authentication and current user"]
     budget["Budgeting feature<br/>endpoints, contracts, repository"]
     transaction["Transactions feature<br/>endpoints, contracts, repositories"]
     reporting["Reporting feature<br/>summary query service and contracts"]
@@ -66,9 +67,13 @@ flowchart TB
     store["InMemoryDataStore<br/>shared synchronization boundary"]
 
     program --> composition
+    composition --> identity
     composition --> budget
     composition --> transaction
     composition --> reporting
+    budget --> identity
+    transaction --> identity
+    reporting --> identity
     budget --> domain
     transaction --> domain
     reporting --> domain
@@ -98,6 +103,7 @@ ownership of their data.
 | `src/BudgetyTzar.Api/ApiApplication.cs` | Composition root. Registers services and endpoint groups. |
 | `src/BudgetyTzar.Api/Domain/Entities` | Immutable entities, aggregates, operations, and result types. |
 | `src/BudgetyTzar.Api/Domain/ValueTypes` | Validated domain values such as names, currencies, money amounts, and kinds. |
+| `src/BudgetyTzar.Api/Features/Identity` | Authentication scheme registration, deterministic test authentication, and current-user identity resolution. |
 | `src/BudgetyTzar.Api/Features/Budgeting` | Budget endpoints, contracts, handlers, and persistence. |
 | `src/BudgetyTzar.Api/Features/Transactions` | Transaction and allocation endpoints, contracts, handlers, and persistence. |
 | `src/BudgetyTzar.Api/Features/Reporting` | Budget summary query model, calculation service, contracts, and endpoint. |
@@ -136,6 +142,11 @@ Handlers coordinate the request. They validate transport input, call domain or
 application operations, pass repository-owned state back to repositories, and map
 explicit outcomes to HTTP responses. They should not know how persistence versions,
 storage locks, or database tokens work.
+
+Business endpoint groups require authentication before handlers run. Handlers resolve
+the current application user from authenticated claims and pass that identity into the
+feature repositories or query services. Request bodies, route values, and query
+parameters never supply the acting user identity.
 
 `EntityState<T>` carries opaque repository-owned concurrency state through
 `Get -> domain operation -> Save`. It exists so repositories can enforce stale-write
@@ -190,6 +201,10 @@ User-facing operations should be scoped to the current internal application user
 future admin, migration, support, or background workflows need cross-user access, give
 them a separate explicitly user-aware API that requires the target application user at
 the call site.
+
+The current in-memory store keeps owner indexes beside resources rather than adding
+owner fields to domain entities or response contracts. Repository methods collapse
+cross-user access into the same not-found result used for missing resources.
 
 ## Before Changing Structure
 

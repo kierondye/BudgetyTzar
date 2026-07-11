@@ -1,6 +1,7 @@
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
 using BudgetyTzar.Api.Features;
+using BudgetyTzar.Api.Features.Identity;
 
 namespace BudgetyTzar.Api.Features.Budgeting;
 
@@ -15,13 +16,23 @@ public sealed class InMemoryBudgetRepository
 
     public BudgetSaveResult Save(Budget budget)
     {
+        return Save(ApplicationUserId.DefaultTestUser, budget);
+    }
+
+    public BudgetSaveResult Save(ApplicationUserId ownerId, Budget budget)
+    {
         lock (store.SyncRoot)
         {
-            return SaveCore(budget);
+            return SaveCore(ownerId, budget);
         }
     }
 
     public BudgetSaveResult Save(EntityState<Budget> budgetState)
+    {
+        return Save(ApplicationUserId.DefaultTestUser, budgetState);
+    }
+
+    public BudgetSaveResult Save(ApplicationUserId ownerId, EntityState<Budget> budgetState)
     {
         if (budgetState is not InMemoryEntityState<Budget> inMemoryState)
         {
@@ -30,23 +41,39 @@ public sealed class InMemoryBudgetRepository
 
         lock (store.SyncRoot)
         {
-            return SaveCore(inMemoryState.Value, inMemoryState.Version);
+            if (inMemoryState.OwnerId != ownerId)
+            {
+                return new BudgetSaveResult.NotFound();
+            }
+
+            return SaveCore(ownerId, inMemoryState.Value, inMemoryState.Version);
         }
     }
 
     public bool HasBudgetNamed(NormalizedName name, Guid? exceptBudgetId = null)
     {
+        return HasBudgetNamed(ApplicationUserId.DefaultTestUser, name, exceptBudgetId);
+    }
+
+    public bool HasBudgetNamed(ApplicationUserId ownerId, NormalizedName name, Guid? exceptBudgetId = null)
+    {
         lock (store.SyncRoot)
         {
-            return HasBudgetNamedCore(name, exceptBudgetId);
+            return HasBudgetNamedCore(ownerId, name, exceptBudgetId);
         }
     }
 
     public IReadOnlyList<Budget> GetAll()
     {
+        return GetAll(ApplicationUserId.DefaultTestUser);
+    }
+
+    public IReadOnlyList<Budget> GetAll(ApplicationUserId ownerId)
+    {
         lock (store.SyncRoot)
         {
             return store.BudgetIds
+                .Where(budgetId => store.BudgetOwnersById[budgetId] == ownerId)
                 .Select(budgetId => store.BudgetsById[budgetId])
                 .ToList();
         }
@@ -54,19 +81,31 @@ public sealed class InMemoryBudgetRepository
 
     public EntityState<Budget>? Get(Guid budgetId)
     {
+        return Get(ApplicationUserId.DefaultTestUser, budgetId);
+    }
+
+    public EntityState<Budget>? Get(ApplicationUserId ownerId, Guid budgetId)
+    {
         lock (store.SyncRoot)
         {
             return store.BudgetsById.TryGetValue(budgetId, out var budget)
-                ? new InMemoryEntityState<Budget>(budget, store.BudgetVersionsById[budgetId])
+                && store.BudgetOwnersById[budgetId] == ownerId
+                ? new InMemoryEntityState<Budget>(ownerId, budget, store.BudgetVersionsById[budgetId])
                 : null;
         }
     }
 
     public BudgetItem? GetBudgetItem(Guid budgetId, Guid budgetItemId)
     {
+        return GetBudgetItem(ApplicationUserId.DefaultTestUser, budgetId, budgetItemId);
+    }
+
+    public BudgetItem? GetBudgetItem(ApplicationUserId ownerId, Guid budgetId, Guid budgetItemId)
+    {
         lock (store.SyncRoot)
         {
-            if (!store.BudgetsById.TryGetValue(budgetId, out var budget))
+            if (!store.BudgetsById.TryGetValue(budgetId, out var budget)
+                || store.BudgetOwnersById[budgetId] != ownerId)
             {
                 return null;
             }
@@ -79,10 +118,21 @@ public sealed class InMemoryBudgetRepository
 
     public BudgetItemReference? GetBudgetItemReference(Guid budgetItemId)
     {
+        return GetBudgetItemReference(ApplicationUserId.DefaultTestUser, budgetItemId);
+    }
+
+    public BudgetItemReference? GetBudgetItemReference(ApplicationUserId ownerId, Guid budgetItemId)
+    {
         lock (store.SyncRoot)
         {
-            foreach (var budget in store.BudgetsById.Values)
+            foreach (var budgetId in store.BudgetIds)
             {
+                if (store.BudgetOwnersById[budgetId] != ownerId)
+                {
+                    continue;
+                }
+
+                var budget = store.BudgetsById[budgetId];
                 var budgetItem = budget.BudgetItems.SingleOrDefault(budgetItem => budgetItem.BudgetItemId == budgetItemId);
 
                 if (budgetItem is not null)
@@ -95,19 +145,25 @@ public sealed class InMemoryBudgetRepository
         }
     }
 
-    private bool HasBudgetNamedCore(NormalizedName name, Guid? exceptBudgetId)
+    private bool HasBudgetNamedCore(ApplicationUserId ownerId, NormalizedName name, Guid? exceptBudgetId)
     {
-        return store.BudgetIdsByName.TryGetValue(name, out var budgetId)
+        return store.BudgetIdsByOwnerAndName.TryGetValue(new OwnedBudgetName(ownerId, name), out var budgetId)
             && budgetId != exceptBudgetId;
     }
 
-    private BudgetSaveResult SaveCore(Budget budget, long? expectedVersion = null)
+    private BudgetSaveResult SaveCore(ApplicationUserId ownerId, Budget budget, long? expectedVersion = null)
     {
         var hasExistingBudget = store.BudgetsById.TryGetValue(budget.BudgetId, out var existingBudget);
+        var hasDifferentOwner = hasExistingBudget && store.BudgetOwnersById[budget.BudgetId] != ownerId;
 
-        if (expectedVersion.HasValue && !hasExistingBudget)
+        if (expectedVersion.HasValue && (!hasExistingBudget || hasDifferentOwner))
         {
             return new BudgetSaveResult.NotFound();
+        }
+
+        if (!expectedVersion.HasValue && hasExistingBudget)
+        {
+            return new BudgetSaveResult.DuplicateIdentity();
         }
 
         if (expectedVersion.HasValue
@@ -116,12 +172,7 @@ public sealed class InMemoryBudgetRepository
             return new BudgetSaveResult.StaleState();
         }
 
-        if (!expectedVersion.HasValue && hasExistingBudget)
-        {
-            return new BudgetSaveResult.DuplicateIdentity();
-        }
-
-        if (store.BudgetIdsByName.TryGetValue(budget.Name, out var existingBudgetId)
+        if (store.BudgetIdsByOwnerAndName.TryGetValue(new OwnedBudgetName(ownerId, budget.Name), out var existingBudgetId)
             && existingBudgetId != budget.BudgetId)
         {
             return new BudgetSaveResult.DuplicateName();
@@ -134,18 +185,19 @@ public sealed class InMemoryBudgetRepository
 
         if (hasExistingBudget)
         {
-            store.BudgetIdsByName.Remove(existingBudget!.Name);
+            store.BudgetIdsByOwnerAndName.Remove(new OwnedBudgetName(ownerId, existingBudget!.Name));
         }
         else
         {
             store.BudgetIds.Add(budget.BudgetId);
+            store.BudgetOwnersById[budget.BudgetId] = ownerId;
         }
 
         store.BudgetsById[budget.BudgetId] = budget;
         store.BudgetVersionsById[budget.BudgetId] = hasExistingBudget
             ? store.BudgetVersionsById[budget.BudgetId] + 1
             : 1;
-        store.BudgetIdsByName[budget.Name] = budget.BudgetId;
+        store.BudgetIdsByOwnerAndName[new OwnedBudgetName(ownerId, budget.Name)] = budget.BudgetId;
 
         return new BudgetSaveResult.Saved(budget);
     }
@@ -158,16 +210,20 @@ public sealed class InMemoryBudgetRepository
             .ToHashSet();
 
         return removedBudgetItemIds.Count > 0
-            && store.AllocationsByTransactionId.Values.Any(allocation => removedBudgetItemIds.Contains(allocation.BudgetItemId));
+            && store.AllocationsByTransactionId.Any(allocation =>
+                store.AllocationOwnersByTransactionId[allocation.Key] == store.BudgetOwnersById[existingBudget.BudgetId]
+                && removedBudgetItemIds.Contains(allocation.Value.BudgetItemId));
     }
 
-    private sealed class InMemoryEntityState<T>(T value, long version) : EntityState<T>(value)
+    private sealed class InMemoryEntityState<T>(ApplicationUserId ownerId, T value, long version) : EntityState<T>(value)
     {
+        public ApplicationUserId OwnerId { get; } = ownerId;
+
         public long Version { get; } = version;
 
         public override EntityState<T> Update(T value)
         {
-            return new InMemoryEntityState<T>(value, Version);
+            return new InMemoryEntityState<T>(OwnerId, value, Version);
         }
     }
 }

@@ -1,6 +1,8 @@
+using System.Security.Claims;
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
 using BudgetyTzar.Api.Features;
+using BudgetyTzar.Api.Features.Identity;
 using BudgetyTzar.Api.Features.Transactions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -18,7 +20,8 @@ public static class BudgetEndpoints
     public static IEndpointRouteBuilder MapBudgetEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var budgets = endpoints.MapGroup("/api/budgets")
-            .WithTags("Budgets");
+            .WithTags("Budgets")
+            .RequireAuthorization();
 
         budgets.MapPost("/", CreateBudget)
             .WithName("CreateBudget");
@@ -53,8 +56,9 @@ public static class BudgetEndpoints
         return endpoints;
     }
 
-    private static IResult CreateBudget(CreateBudgetRequest request, InMemoryBudgetRepository budgets)
+    private static IResult CreateBudget(CreateBudgetRequest request, ClaimsPrincipal user, InMemoryBudgetRepository budgets)
     {
+        var currentUser = CurrentUser.FromPrincipal(user);
         var validation = Validate(request);
 
         if (validation is CreateBudgetValidationResult.Invalid invalid)
@@ -77,12 +81,12 @@ public static class BudgetEndpoints
 
         IResult SaveNewBudget(Budget budget)
         {
-            if (budgets.HasBudgetNamed(budget.Name))
+            if (budgets.HasBudgetNamed(currentUser.UserId, budget.Name))
             {
                 return BudgetNameAlreadyInUse();
             }
 
-            return budgets.Save(budget) switch
+            return budgets.Save(currentUser.UserId, budget) switch
             {
                 BudgetSaveResult.DuplicateIdentity => BudgetIdentityAlreadyExists(),
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
@@ -95,26 +99,33 @@ public static class BudgetEndpoints
         }
     }
 
-    private static IResult GetBudgets(InMemoryBudgetRepository budgets)
+    private static IResult GetBudgets(ClaimsPrincipal user, InMemoryBudgetRepository budgets)
     {
-        var response = budgets.GetAll()
+        var currentUser = CurrentUser.FromPrincipal(user);
+        var response = budgets.GetAll(currentUser.UserId)
             .Select(BudgetListItemResponse.FromBudget)
             .ToList();
 
         return Results.Ok(response);
     }
 
-    private static IResult GetBudget(Guid budgetId, InMemoryBudgetRepository budgets)
+    private static IResult GetBudget(Guid budgetId, ClaimsPrincipal user, InMemoryBudgetRepository budgets)
     {
-        var budgetState = budgets.Get(budgetId);
+        var currentUser = CurrentUser.FromPrincipal(user);
+        var budgetState = budgets.Get(currentUser.UserId, budgetId);
 
         return budgetState is null
             ? Results.NotFound()
             : Results.Ok(BudgetResponse.FromBudget(budgetState.Value));
     }
 
-    private static IResult RenameBudget(Guid budgetId, RenameBudgetRequest request, InMemoryBudgetRepository budgets)
+    private static IResult RenameBudget(
+        Guid budgetId,
+        RenameBudgetRequest request,
+        ClaimsPrincipal user,
+        InMemoryBudgetRepository budgets)
     {
+        var currentUser = CurrentUser.FromPrincipal(user);
         var validation = Validate(request);
 
         if (validation is RenameBudgetValidationResult.Invalid invalid)
@@ -123,21 +134,21 @@ public static class BudgetEndpoints
         }
 
         var valid = (RenameBudgetValidationResult.Valid)validation;
-        var budgetState = budgets.Get(budgetId);
+        var budgetState = budgets.Get(currentUser.UserId, budgetId);
 
         if (budgetState is null)
         {
             return Results.NotFound();
         }
 
-        if (budgets.HasBudgetNamed(valid.Name, budgetId))
+        if (budgets.HasBudgetNamed(currentUser.UserId, valid.Name, budgetId))
         {
             return BudgetNameAlreadyInUse();
         }
 
         return budgetState.Value.Rename(valid.Name) switch
         {
-            RenameBudgetResult.Renamed renamed => budgets.Save(budgetState.Update(renamed.Budget)) switch
+            RenameBudgetResult.Renamed renamed => budgets.Save(currentUser.UserId, budgetState.Update(renamed.Budget)) switch
             {
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
                 BudgetSaveResult.StaleState => BudgetWasModified(),
@@ -149,8 +160,13 @@ public static class BudgetEndpoints
         };
     }
 
-    private static IResult CreateBudgetItem(Guid budgetId, CreateBudgetItemRequest request, InMemoryBudgetRepository budgets)
+    private static IResult CreateBudgetItem(
+        Guid budgetId,
+        CreateBudgetItemRequest request,
+        ClaimsPrincipal user,
+        InMemoryBudgetRepository budgets)
     {
+        var currentUser = CurrentUser.FromPrincipal(user);
         var validation = Validate(request);
 
         if (validation is BudgetItemValidationResult.Invalid invalid)
@@ -160,7 +176,7 @@ public static class BudgetEndpoints
 
         var valid = (BudgetItemValidationResult.Valid)validation;
         var budgetItemId = Guid.NewGuid();
-        var budgetState = budgets.Get(budgetId);
+        var budgetState = budgets.Get(currentUser.UserId, budgetId);
 
         if (budgetState is null)
         {
@@ -179,7 +195,7 @@ public static class BudgetEndpoints
                 {
                     ["budgetItemId"] = ["Budget item identity is required."]
                 }),
-            AddBudgetItemResult.Added added => budgets.Save(budgetState.Update(added.Budget)) switch
+            AddBudgetItemResult.Added added => budgets.Save(currentUser.UserId, budgetState.Update(added.Budget)) switch
             {
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
                 BudgetSaveResult.StaleState => BudgetWasModified(),
@@ -193,9 +209,10 @@ public static class BudgetEndpoints
         };
     }
 
-    private static IResult GetBudgetItems(Guid budgetId, InMemoryBudgetRepository budgets)
+    private static IResult GetBudgetItems(Guid budgetId, ClaimsPrincipal user, InMemoryBudgetRepository budgets)
     {
-        var budgetState = budgets.Get(budgetId);
+        var currentUser = CurrentUser.FromPrincipal(user);
+        var budgetState = budgets.Get(currentUser.UserId, budgetId);
 
         if (budgetState is null)
         {
@@ -209,9 +226,14 @@ public static class BudgetEndpoints
         return Results.Ok(budgetItems);
     }
 
-    private static IResult GetBudgetItem(Guid budgetId, Guid budgetItemId, InMemoryBudgetRepository budgets)
+    private static IResult GetBudgetItem(
+        Guid budgetId,
+        Guid budgetItemId,
+        ClaimsPrincipal user,
+        InMemoryBudgetRepository budgets)
     {
-        var budgetItem = budgets.GetBudgetItem(budgetId, budgetItemId);
+        var currentUser = CurrentUser.FromPrincipal(user);
+        var budgetItem = budgets.GetBudgetItem(currentUser.UserId, budgetId, budgetItemId);
 
         return budgetItem is null
             ? Results.NotFound()
@@ -222,8 +244,10 @@ public static class BudgetEndpoints
         Guid budgetId,
         Guid budgetItemId,
         RenameBudgetItemRequest request,
+        ClaimsPrincipal user,
         InMemoryBudgetRepository budgets)
     {
+        var currentUser = CurrentUser.FromPrincipal(user);
         var validation = Validate(request);
 
         if (validation is RenameBudgetItemValidationResult.Invalid invalid)
@@ -232,7 +256,7 @@ public static class BudgetEndpoints
         }
 
         var valid = (RenameBudgetItemValidationResult.Valid)validation;
-        var budgetState = budgets.Get(budgetId);
+        var budgetState = budgets.Get(currentUser.UserId, budgetId);
 
         if (budgetState is null)
         {
@@ -243,7 +267,7 @@ public static class BudgetEndpoints
         {
             RenameBudgetItemResult.NotFound => Results.NotFound(),
             RenameBudgetItemResult.DuplicateName => BudgetItemNameAlreadyInUse(),
-            RenameBudgetItemResult.Renamed renamed => budgets.Save(budgetState.Update(renamed.Budget)) switch
+            RenameBudgetItemResult.Renamed renamed => budgets.Save(currentUser.UserId, budgetState.Update(renamed.Budget)) switch
             {
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
                 BudgetSaveResult.StaleState => BudgetWasModified(),
@@ -259,8 +283,10 @@ public static class BudgetEndpoints
         Guid budgetId,
         Guid budgetItemId,
         ChangeBudgetItemPlannedAmountRequest request,
+        ClaimsPrincipal user,
         InMemoryBudgetRepository budgets)
     {
+        var currentUser = CurrentUser.FromPrincipal(user);
         var validation = Validate(request);
 
         if (validation is BudgetItemPlannedAmountValidationResult.Invalid invalid)
@@ -269,7 +295,7 @@ public static class BudgetEndpoints
         }
 
         var valid = (BudgetItemPlannedAmountValidationResult.Valid)validation;
-        var budgetState = budgets.Get(budgetId);
+        var budgetState = budgets.Get(currentUser.UserId, budgetId);
 
         if (budgetState is null)
         {
@@ -279,7 +305,7 @@ public static class BudgetEndpoints
         return budgetState.Value.ChangeBudgetItemPlannedAmount(budgetItemId, valid.PlannedAmount) switch
         {
             ChangeBudgetItemPlannedAmountResult.NotFound => Results.NotFound(),
-            ChangeBudgetItemPlannedAmountResult.Changed changed => budgets.Save(budgetState.Update(changed.Budget)) switch
+            ChangeBudgetItemPlannedAmountResult.Changed changed => budgets.Save(currentUser.UserId, budgetState.Update(changed.Budget)) switch
             {
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
                 BudgetSaveResult.StaleState => BudgetWasModified(),
@@ -294,9 +320,11 @@ public static class BudgetEndpoints
     private static IResult DeleteBudgetItem(
         Guid budgetId,
         Guid budgetItemId,
+        ClaimsPrincipal user,
         InMemoryBudgetRepository budgets)
     {
-        var budgetState = budgets.Get(budgetId);
+        var currentUser = CurrentUser.FromPrincipal(user);
+        var budgetState = budgets.Get(currentUser.UserId, budgetId);
 
         if (budgetState is null)
         {
@@ -306,7 +334,7 @@ public static class BudgetEndpoints
         return budgetState.Value.RemoveBudgetItem(budgetItemId) switch
         {
             RemoveBudgetItemResult.NotFound => Results.NotFound(),
-            RemoveBudgetItemResult.Removed removed => budgets.Save(budgetState.Update(removed.Budget)) switch
+            RemoveBudgetItemResult.Removed removed => budgets.Save(currentUser.UserId, budgetState.Update(removed.Budget)) switch
             {
                 BudgetSaveResult.BudgetItemHasAllocations => BudgetItemHasAllocations(),
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),

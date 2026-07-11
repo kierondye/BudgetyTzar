@@ -1,6 +1,7 @@
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
 using BudgetyTzar.Api.Features.Budgeting;
+using BudgetyTzar.Api.Features.Identity;
 using BudgetyTzar.Api.Features.Transactions;
 
 namespace BudgetyTzar.Api.Features.Reporting;
@@ -12,7 +13,12 @@ public sealed class BudgetSummaryService(
 {
     public GetBudgetSummaryResult Get(Guid budgetId)
     {
-        var budgetState = budgetStore.Get(budgetId);
+        return Get(ApplicationUserId.DefaultTestUser, budgetId);
+    }
+
+    public GetBudgetSummaryResult Get(ApplicationUserId ownerId, Guid budgetId)
+    {
+        var budgetState = budgetStore.Get(ownerId, budgetId);
 
         if (budgetState is null)
         {
@@ -20,9 +26,9 @@ public sealed class BudgetSummaryService(
         }
 
         var budget = budgetState.Value;
-        var transactionsById = transactionStore.GetAll()
+        var transactionsById = transactionStore.GetAll(ownerId)
             .ToDictionary(transaction => transaction.TransactionId);
-        var allocationsByBudgetItemId = allocationStore.GetAll()
+        var allocationsByBudgetItemId = allocationStore.GetAll(ownerId)
             .GroupBy(allocation => allocation.BudgetItemId)
             .ToDictionary(group => group.Key, group => group.ToList());
 

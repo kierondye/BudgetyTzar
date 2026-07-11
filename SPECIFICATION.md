@@ -179,6 +179,45 @@ The Budget Summary provides the primary view of progress against a budget by com
 
 ## 5. Functional Requirements
 
+### 5.0 API Authentication and Resource Ownership
+
+The budgeting, transaction, transaction allocation, and reporting API endpoints must
+require an authenticated application user identity.
+
+An unauthenticated request to a business API endpoint must return `401 Unauthorized`.
+Business API endpoints include:
+
+- `/api/budgets` and child budget item endpoints.
+- `/api/transactions` and child allocation endpoints.
+- `/api/budgets/{budgetId}/summary`.
+
+Operational and documentation endpoints remain explicit exceptions. Health,
+runtime version, Swagger JSON, and Swagger UI may be requested without authentication.
+
+The application user identity is derived from authenticated claims supplied by the
+configured authentication scheme. User identity must not be accepted from request
+bodies, route values, query parameters, or resource identifiers.
+
+Budgets, budget items, transactions, transaction allocations, and reports are scoped
+to the authenticated application user. A user may create, list, retrieve, mutate,
+delete, allocate, remove allocations from, and report only on resources scoped to
+their own identity.
+
+Cross-user access must not disclose whether another user's resource exists. When a
+request names a resource that exists for another user, the API must respond as if the
+resource does not exist, using `404 Not Found`.
+
+List endpoints return only resources owned by the authenticated user. Per-user
+uniqueness rules, such as budget names, apply within the authenticated user's scope.
+
+A transaction allocation may be created only when the transaction, target budget item,
+and resulting allocation all belong to the same authenticated user. If either the
+transaction or budget item exists only for another user, the API must return the same
+non-disclosing `404 Not Found` response used for missing resources.
+
+Existing resource response contracts do not expose owner identity. Errors and logs
+must not reveal another user's resource details or sensitive transaction descriptions.
+
 ### 5.1 Budget Management
 
 The system must allow a user to create a budget.

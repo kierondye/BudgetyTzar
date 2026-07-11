@@ -1,5 +1,6 @@
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Features;
+using BudgetyTzar.Api.Features.Identity;
 
 namespace BudgetyTzar.Api.Features.Transactions;
 
@@ -14,14 +15,20 @@ public sealed class InMemoryTransactionAllocationRepository
 
     public AllocateTransactionResult Allocate(TransactionAllocation allocation)
     {
+        return Allocate(ApplicationUserId.DefaultTestUser, allocation);
+    }
+
+    public AllocateTransactionResult Allocate(ApplicationUserId ownerId, TransactionAllocation allocation)
+    {
         lock (store.SyncRoot)
         {
-            if (!store.TransactionsById.ContainsKey(allocation.TransactionId))
+            if (!store.TransactionsById.ContainsKey(allocation.TransactionId)
+                || store.TransactionOwnersById[allocation.TransactionId] != ownerId)
             {
                 return new AllocateTransactionResult.TransactionNotFound();
             }
 
-            if (!BudgetItemExists(allocation.BudgetItemId))
+            if (!BudgetItemExists(ownerId, allocation.BudgetItemId))
             {
                 return new AllocateTransactionResult.BudgetItemNotFound();
             }
@@ -34,6 +41,7 @@ public sealed class InMemoryTransactionAllocationRepository
             }
 
             store.AllocationsByTransactionId[allocation.TransactionId] = allocation;
+            store.AllocationOwnersByTransactionId[allocation.TransactionId] = ownerId;
 
             return new AllocateTransactionResult.Allocated(allocation);
         }
@@ -41,32 +49,60 @@ public sealed class InMemoryTransactionAllocationRepository
 
     public TransactionAllocation? Get(Guid transactionId)
     {
+        return Get(ApplicationUserId.DefaultTestUser, transactionId);
+    }
+
+    public TransactionAllocation? Get(ApplicationUserId ownerId, Guid transactionId)
+    {
         lock (store.SyncRoot)
         {
-            return store.AllocationsByTransactionId.GetValueOrDefault(transactionId);
+            return store.AllocationsByTransactionId.TryGetValue(transactionId, out var allocation)
+                && store.AllocationOwnersByTransactionId[transactionId] == ownerId
+                ? allocation
+                : null;
         }
     }
 
     public IReadOnlyList<TransactionAllocation> GetAll()
     {
+        return GetAll(ApplicationUserId.DefaultTestUser);
+    }
+
+    public IReadOnlyList<TransactionAllocation> GetAll(ApplicationUserId ownerId)
+    {
         lock (store.SyncRoot)
         {
-            return store.AllocationsByTransactionId.Values.ToList();
+            return store.AllocationsByTransactionId
+                .Where(allocation => store.AllocationOwnersByTransactionId[allocation.Key] == ownerId)
+                .Select(allocation => allocation.Value)
+                .ToList();
         }
     }
 
     public void Remove(Guid transactionId)
     {
+        Remove(ApplicationUserId.DefaultTestUser, transactionId);
+    }
+
+    public void Remove(ApplicationUserId ownerId, Guid transactionId)
+    {
         lock (store.SyncRoot)
         {
+            if (store.AllocationOwnersByTransactionId.GetValueOrDefault(transactionId) != ownerId)
+            {
+                return;
+            }
+
             store.AllocationsByTransactionId.Remove(transactionId);
+            store.AllocationOwnersByTransactionId.Remove(transactionId);
         }
     }
 
-    private bool BudgetItemExists(Guid budgetItemId)
+    private bool BudgetItemExists(ApplicationUserId ownerId, Guid budgetItemId)
     {
-        return store.BudgetsById.Values
-            .SelectMany(budget => budget.BudgetItems)
+        return store.BudgetIds
+            .Where(budgetId => store.BudgetOwnersById[budgetId] == ownerId)
+            .SelectMany(budgetId => store.BudgetsById[budgetId].BudgetItems)
             .Any(budgetItem => budgetItem.BudgetItemId == budgetItemId);
     }
 }
