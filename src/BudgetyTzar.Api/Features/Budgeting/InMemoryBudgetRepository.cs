@@ -5,7 +5,7 @@ using BudgetyTzar.Api.Features.Identity;
 
 namespace BudgetyTzar.Api.Features.Budgeting;
 
-public sealed class InMemoryBudgetRepository
+public sealed class InMemoryBudgetRepository : IBudgetRepository
 {
     private readonly InMemoryDataStore store;
     private readonly ApplicationUserId userId;

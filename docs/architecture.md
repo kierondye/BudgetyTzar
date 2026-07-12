@@ -84,6 +84,12 @@ coordination, and persistence adapters for their use cases. Keeping those files
 together makes a vertical slice easy to review and prevents a small API from becoming
 layered by folder ceremony rather than responsibility.
 
+Feature folders also own their persistence contracts. Endpoint handlers and reporting
+services depend on the feature-owned contracts, while the current in-memory classes are
+adapters that implement those contracts. Contracts should expose only operations needed
+by current use cases and should preserve operation-specific outcomes such as duplicate
+names, stale state, referential-integrity conflicts, and allocation idempotency.
+
 The Identity feature owns authentication scheme configuration and current-user
 resolution from authenticated claims. User-facing repositories are scoped to that
 current internal application user so handlers can coordinate use cases without
@@ -106,8 +112,8 @@ ownership of their data.
 | `src/BudgetyTzar.Api/Domain/Entities` | Immutable entities, aggregates, operations, and result types. |
 | `src/BudgetyTzar.Api/Domain/ValueTypes` | Validated domain values such as names, currencies, money amounts, and kinds. |
 | `src/BudgetyTzar.Api/Features/Identity` | Authentication configuration, authenticated claim resolution, and current-user identity. |
-| `src/BudgetyTzar.Api/Features/Budgeting` | Budget endpoints, contracts, handlers, and persistence. |
-| `src/BudgetyTzar.Api/Features/Transactions` | Transaction and allocation endpoints, contracts, handlers, and persistence. |
+| `src/BudgetyTzar.Api/Features/Budgeting` | Budget endpoints, HTTP contracts, persistence contracts, handlers, and persistence adapters. |
+| `src/BudgetyTzar.Api/Features/Transactions` | Transaction and allocation endpoints, HTTP contracts, persistence contracts, handlers, and persistence adapters. |
 | `src/BudgetyTzar.Api/Features/Reporting` | Budget summary query model, calculation service, contracts, and endpoint. |
 | `src/BudgetyTzar.Api/Features/InMemoryDataStore.cs` | Shared in-memory state and synchronization boundary. |
 | `src/BudgetyTzar.Api/Observability` | Correlation ID middleware, low-cardinality API telemetry, and OpenTelemetry composition. |
@@ -194,6 +200,13 @@ happen under the same synchronization boundary.
 Repositories own storage-wide consistency and concurrency state because those rules
 depend on stored data, not only on a single aggregate's in-memory state. Aggregates own
 the invariants they can decide from their own state.
+
+Persistence contracts sit between feature orchestration and adapters. A new adapter
+must implement the relevant feature contracts without leaking database tokens, storage
+versions, identity shortcuts, or provider-specific concepts into handlers, domain
+entities, reporting services, or HTTP contracts. `EntityState<T>` remains the opaque
+carrier for repository-owned concurrency state through `Get -> domain operation ->
+Save`.
 
 User-facing operations are scoped to the current internal application user. In the
 in-memory implementation, repositories store owner mappings separately from domain

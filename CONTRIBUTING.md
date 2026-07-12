@@ -13,6 +13,9 @@ rules and externally observable behaviour. Read
 - Keep domain logic pure and independent of transport, persistence, framework, and infrastructure concerns.
 - Keep handlers focused on coordinating use cases, not owning domain, persistence, identity, or integration rules.
 - Keep persistence concerns behind repositories or equivalent persistence boundaries.
+- Put persistence contracts in the feature boundary that owns the operations, and have
+  handlers and reporting services depend on those contracts rather than concrete
+  adapters.
 - Keep production composition free of test-only behaviour, defaults, identities, schemes, and shortcuts.
 - Test externally observable behaviour through public boundaries before relying on lower-level tests.
 - Exercise the real behaviour under test rather than replacing it with fakes, mocks, shortcuts, or test-only paths.
@@ -27,6 +30,9 @@ rules and externally observable behaviour. Read
 - User-facing repositories are scoped to the current internal application user.
 - Use a separate explicitly user-aware API for admin, migration, support, or background
   cross-user workflows.
+- Persistence contracts should expose only operations justified by current use cases.
+  Preserve operation-specific outcomes rather than replacing them with generic
+  repository, unit-of-work, or exception-based abstractions.
 - Do not expose public constructors for validated concepts if they accept invalid values
   and fail at runtime; expose a validating factory or domain operation that returns an
   explicit outcome instead.
@@ -286,6 +292,9 @@ Assert.Null(budgets.Get(userBBudgetId));
   externally observable behaviour changes.
 - Follow the placement and ownership guidance in [Architecture](docs/architecture.md).
 - Apply the principles and specific guidelines above.
+- When adding or replacing a persistence adapter, implement the feature-owned
+  contracts, keep repository-owned state opaque, and add contract tests for every
+  expected outcome the adapter must reproduce.
 - Review whether the implementation follows the principles above even when the public
   behaviour is covered by passing tests.
 - Add the smallest useful set of tests for the risk: public-boundary behaviour tests

@@ -13,6 +13,7 @@ public static class BudgetEndpoints
     {
         services.TryAddSingleton<InMemoryDataStore>();
         services.AddScoped<InMemoryBudgetRepository>();
+        services.AddScoped<IBudgetRepository>(provider => provider.GetRequiredService<InMemoryBudgetRepository>());
         return services;
     }
 
@@ -57,7 +58,7 @@ public static class BudgetEndpoints
 
     private static IResult CreateBudget(
         CreateBudgetRequest request,
-        InMemoryBudgetRepository budgets,
+        IBudgetRepository budgets,
         ApiTelemetry telemetry)
     {
         var validation = Validate(request);
@@ -101,7 +102,7 @@ public static class BudgetEndpoints
         }
     }
 
-    private static IResult GetBudgets(InMemoryBudgetRepository budgets)
+    private static IResult GetBudgets(IBudgetRepository budgets)
     {
         var response = budgets.GetAll()
             .Select(BudgetListItemResponse.FromBudget)
@@ -110,7 +111,7 @@ public static class BudgetEndpoints
         return Results.Ok(response);
     }
 
-    private static IResult GetBudget(Guid budgetId, InMemoryBudgetRepository budgets)
+    private static IResult GetBudget(Guid budgetId, IBudgetRepository budgets)
     {
         var budgetState = budgets.Get(budgetId);
 
@@ -122,7 +123,7 @@ public static class BudgetEndpoints
     private static IResult RenameBudget(
         Guid budgetId,
         RenameBudgetRequest request,
-        InMemoryBudgetRepository budgets,
+        IBudgetRepository budgets,
         ApiTelemetry telemetry)
     {
         var validation = Validate(request);
@@ -163,7 +164,7 @@ public static class BudgetEndpoints
     private static IResult CreateBudgetItem(
         Guid budgetId,
         CreateBudgetItemRequest request,
-        InMemoryBudgetRepository budgets,
+        IBudgetRepository budgets,
         ApiTelemetry telemetry)
     {
         var validation = Validate(request);
@@ -209,7 +210,7 @@ public static class BudgetEndpoints
         };
     }
 
-    private static IResult GetBudgetItems(Guid budgetId, InMemoryBudgetRepository budgets)
+    private static IResult GetBudgetItems(Guid budgetId, IBudgetRepository budgets)
     {
         var budgetState = budgets.Get(budgetId);
 
@@ -225,7 +226,7 @@ public static class BudgetEndpoints
         return Results.Ok(budgetItems);
     }
 
-    private static IResult GetBudgetItem(Guid budgetId, Guid budgetItemId, InMemoryBudgetRepository budgets)
+    private static IResult GetBudgetItem(Guid budgetId, Guid budgetItemId, IBudgetRepository budgets)
     {
         var budgetItem = budgets.GetBudgetItem(budgetId, budgetItemId);
 
@@ -238,7 +239,7 @@ public static class BudgetEndpoints
         Guid budgetId,
         Guid budgetItemId,
         RenameBudgetItemRequest request,
-        InMemoryBudgetRepository budgets,
+        IBudgetRepository budgets,
         ApiTelemetry telemetry)
     {
         var validation = Validate(request);
@@ -277,7 +278,7 @@ public static class BudgetEndpoints
         Guid budgetId,
         Guid budgetItemId,
         ChangeBudgetItemPlannedAmountRequest request,
-        InMemoryBudgetRepository budgets,
+        IBudgetRepository budgets,
         ApiTelemetry telemetry)
     {
         var validation = Validate(request);
@@ -314,7 +315,7 @@ public static class BudgetEndpoints
     private static IResult DeleteBudgetItem(
         Guid budgetId,
         Guid budgetItemId,
-        InMemoryBudgetRepository budgets)
+        IBudgetRepository budgets)
     {
         var budgetState = budgets.Get(budgetId);
 
