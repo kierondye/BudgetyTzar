@@ -8,7 +8,7 @@ rules and externally observable behaviour. Read
 ## Principles
 
 - Represent domain and application concepts as first-class internal models, distinct from transport, storage, framework, external-system, or integration-specific representations.
-- Prefer immutable, valid-by-construction types that enforce their own invariants and make invalid, insecure, or ambiguous states difficult to represent.
+- Prefer immutable, valid-by-construction types that enforce their own invariants at construction time and make invalid, insecure, or ambiguous states difficult to represent.
 - Model expected failures as explicit outcomes rather than hidden control flow.
 - Keep domain logic pure and independent of transport, persistence, framework, and infrastructure concerns.
 - Keep handlers focused on coordinating use cases, not owning domain, persistence, identity, or integration rules.
@@ -27,6 +27,9 @@ rules and externally observable behaviour. Read
 - User-facing repositories are scoped to the current internal application user.
 - Use a separate explicitly user-aware API for admin, migration, support, or background
   cross-user workflows.
+- Do not expose public constructors for validated concepts if they accept invalid values
+  and fail at runtime; expose a validating factory or domain operation that returns an
+  explicit outcome instead.
 - Exercise the real authentication and authorisation path when authentication or
   ownership is the behaviour under test.
 
@@ -91,6 +94,63 @@ public BudgetItem Create(string name, decimal plannedAmount)
     return new BudgetItem(name, plannedAmount);
 }
 ```
+
+### Valid construction paths
+
+Principles: Prefer immutable, valid-by-construction types that enforce their own
+invariants at construction time. Model expected failures as explicit outcomes rather
+than hidden control flow.
+
+Prefer:
+
+```csharp
+public sealed record ApplicationUserId
+{
+    private ApplicationUserId(string value)
+    {
+        Value = value;
+    }
+
+    public string Value { get; }
+
+    public static bool TryCreate(string? value, out ApplicationUserId? userId)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            userId = null;
+            return false;
+        }
+
+        userId = new ApplicationUserId(value.Trim());
+        return true;
+    }
+}
+```
+
+Avoid:
+
+```csharp
+public sealed record ApplicationUserId(string Value)
+{
+    public ApplicationUserId
+    {
+        if (string.IsNullOrWhiteSpace(Value))
+        {
+            throw new ArgumentException("User identity is required.", nameof(Value));
+        }
+
+        Value = Value.Trim();
+    }
+}
+```
+
+The avoided version looks immutable, but callers can still pass invalid data to the
+public constructor and discover the failure through an exception. For expected
+validation failures, prefer a construction path that cannot produce an invalid value
+and reports failure explicitly.
+
+Be careful with structs for validated concepts: `default(T)` is always available. Use a
+struct only when the default value is valid or harmless across the relevant boundary.
 
 ### Immutable types
 
