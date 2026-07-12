@@ -43,4 +43,3 @@ public sealed class AuthenticationApiTests
 
     private sealed record CreateBudgetRequest(string Name, string Currency);
 }
-

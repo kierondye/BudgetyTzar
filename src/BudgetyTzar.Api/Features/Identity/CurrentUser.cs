@@ -6,4 +6,3 @@ public interface ICurrentUser
 }
 
 public sealed record CurrentUser(ApplicationUserId UserId) : ICurrentUser;
-

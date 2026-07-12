@@ -24,4 +24,3 @@ public sealed record ExternalIdentity
         return true;
     }
 }
-

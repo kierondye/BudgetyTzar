@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 
 namespace BudgetyTzar.Api.Features.Identity;
@@ -20,7 +21,7 @@ public sealed class CurrentUserResolver
             return new CurrentUserResolution.Unauthenticated();
         }
 
-        var applicationUserValue = $"{externalIdentity!.Provider}:{externalIdentity.Subject}";
+        var applicationUserValue = CreateApplicationUserValue(externalIdentity!);
 
         return ApplicationUserId.TryCreate(applicationUserValue, out var userId)
             ? new CurrentUserResolution.Authenticated(new CurrentUser(userId!))
@@ -40,6 +41,20 @@ public sealed class CurrentUserResolver
 
         return principal.Identity?.AuthenticationType;
     }
+
+    private static string CreateApplicationUserValue(ExternalIdentity externalIdentity)
+    {
+        var provider = externalIdentity.Provider;
+        var subject = externalIdentity.Subject;
+
+        return string.Concat(
+            provider.Length.ToString(CultureInfo.InvariantCulture),
+            ":",
+            provider,
+            subject.Length.ToString(CultureInfo.InvariantCulture),
+            ":",
+            subject);
+    }
 }
 
 public abstract record CurrentUserResolution
@@ -48,4 +63,3 @@ public abstract record CurrentUserResolution
 
     public sealed record Unauthenticated : CurrentUserResolution;
 }
-
