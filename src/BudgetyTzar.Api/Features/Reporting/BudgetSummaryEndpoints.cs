@@ -1,3 +1,5 @@
+using BudgetyTzar.Api.Observability;
+
 namespace BudgetyTzar.Api.Features.Reporting;
 
 public static class BudgetSummaryEndpoints
@@ -20,9 +22,14 @@ public static class BudgetSummaryEndpoints
         return endpoints;
     }
 
-    private static IResult GetBudgetSummary(Guid budgetId, BudgetSummaryService service)
+    private static IResult GetBudgetSummary(
+        Guid budgetId,
+        BudgetSummaryService service,
+        ApiTelemetry telemetry)
     {
+        var start = TimeProvider.System.GetTimestamp();
         var result = service.Get(budgetId);
+        telemetry.RecordBudgetSummaryLatency(TimeProvider.System.GetElapsedTime(start));
 
         return result switch
         {

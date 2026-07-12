@@ -3,6 +3,7 @@ using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
 using BudgetyTzar.Api.Features;
 using BudgetyTzar.Api.Features.Budgeting;
+using BudgetyTzar.Api.Observability;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace BudgetyTzar.Api.Features.Transactions;
@@ -50,7 +51,10 @@ public static class TransactionEndpoints
         return endpoints;
     }
 
-    private static IResult CreateTransaction(CreateTransactionRequest request, ITransactionRepository transactions)
+    private static IResult CreateTransaction(
+        CreateTransactionRequest request,
+        ITransactionRepository transactions,
+        ApiTelemetry telemetry)
     {
         var validation = Validate(
             request.Description,
@@ -61,6 +65,7 @@ public static class TransactionEndpoints
 
         if (validation is CreateTransactionValidationResult.Invalid invalid)
         {
+            telemetry.RecordValidationFailure("CreateTransaction", "request_validation");
             return Results.ValidationProblem(invalid.Errors);
         }
 
@@ -102,12 +107,14 @@ public static class TransactionEndpoints
         ITransactionAllocationRepository allocations,
         string? from,
         string? to,
-        string? allocationStatus)
+        string? allocationStatus,
+        ApiTelemetry telemetry)
     {
         var validation = ValidateFilters(from, to, allocationStatus);
 
         if (validation is TransactionFilterValidationResult.Invalid invalid)
         {
+            telemetry.RecordValidationFailure("GetTransactions", "request_validation");
             return Results.ValidationProblem(invalid.Errors);
         }
 
@@ -149,12 +156,14 @@ public static class TransactionEndpoints
         AllocateTransactionRequest request,
         ITransactionRepository transactions,
         IBudgetRepository budgets,
-        ITransactionAllocationRepository allocations)
+        ITransactionAllocationRepository allocations,
+        ApiTelemetry telemetry)
     {
         var transaction = transactions.Get(transactionId);
 
         if (transaction is null)
         {
+            telemetry.RecordAllocationFailure("transaction_not_found");
             return Results.NotFound();
         }
 
@@ -162,11 +171,13 @@ public static class TransactionEndpoints
 
         if (budgetItemReference is null)
         {
+            telemetry.RecordAllocationFailure("budget_item_not_found");
             return Results.NotFound();
         }
 
         if (transaction.Currency != budgetItemReference.BudgetCurrency)
         {
+            telemetry.RecordAllocationFailure("currency_mismatch");
             return TransactionCurrencyDoesNotMatchBudget();
         }
 
@@ -174,6 +185,7 @@ public static class TransactionEndpoints
 
         if (allocationResult is AllocateTransactionEntityResult.InvalidBudgetItemIdentity)
         {
+            telemetry.RecordAllocationFailure("budget_item_not_found");
             return Results.NotFound();
         }
 
@@ -184,11 +196,26 @@ public static class TransactionEndpoints
         {
             AllocateTransactionResult.Allocated allocated => Results.Ok(
                 TransactionAllocationResponse.FromAllocation(allocated.Allocation)),
-            AllocateTransactionResult.TransactionNotFound => Results.NotFound(),
-            AllocateTransactionResult.BudgetItemNotFound => Results.NotFound(),
-            AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem => TransactionAlreadyAllocated(),
+            AllocateTransactionResult.TransactionNotFound => AllocationFailed(
+                telemetry,
+                "transaction_not_found",
+                Results.NotFound()),
+            AllocateTransactionResult.BudgetItemNotFound => AllocationFailed(
+                telemetry,
+                "budget_item_not_found",
+                Results.NotFound()),
+            AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem => AllocationFailed(
+                telemetry,
+                "already_allocated_to_different_budget_item",
+                TransactionAlreadyAllocated()),
             _ => throw new InvalidOperationException("Unexpected allocate transaction result.")
         };
+    }
+
+    private static IResult AllocationFailed(ApiTelemetry telemetry, string failureKind, IResult result)
+    {
+        telemetry.RecordAllocationFailure(failureKind);
+        return result;
     }
 
     private static IResult GetTransactionAllocation(
