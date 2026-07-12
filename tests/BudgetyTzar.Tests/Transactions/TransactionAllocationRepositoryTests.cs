@@ -14,9 +14,9 @@ public sealed class TransactionAllocationRepositoryTests
     {
         var store = new InMemoryDataStore();
         var currentUser = CurrentUser("repository-test-user");
-        var budgetRepository = new InMemoryBudgetRepository(store, currentUser);
-        var transactionRepository = new InMemoryTransactionRepository(store, currentUser);
-        var repository = new InMemoryTransactionAllocationRepository(store, currentUser);
+        IBudgetRepository budgetRepository = new InMemoryBudgetRepository(store, currentUser);
+        ITransactionRepository transactionRepository = new InMemoryTransactionRepository(store, currentUser);
+        ITransactionAllocationRepository repository = new InMemoryTransactionAllocationRepository(store, currentUser);
         var transaction = CreateTransaction();
         var budgetItemId = Guid.NewGuid();
         transactionRepository.Add(transaction);
@@ -38,9 +38,9 @@ public sealed class TransactionAllocationRepositoryTests
     {
         var store = new InMemoryDataStore();
         var currentUser = CurrentUser("repository-test-user");
-        var budgetRepository = new InMemoryBudgetRepository(store, currentUser);
-        var transactionRepository = new InMemoryTransactionRepository(store, currentUser);
-        var repository = new InMemoryTransactionAllocationRepository(store, currentUser);
+        IBudgetRepository budgetRepository = new InMemoryBudgetRepository(store, currentUser);
+        ITransactionRepository transactionRepository = new InMemoryTransactionRepository(store, currentUser);
+        ITransactionAllocationRepository repository = new InMemoryTransactionAllocationRepository(store, currentUser);
         var transaction = CreateTransaction();
         var firstBudgetItemId = Guid.NewGuid();
         var secondBudgetItemId = Guid.NewGuid();
@@ -62,9 +62,9 @@ public sealed class TransactionAllocationRepositoryTests
     {
         var store = new InMemoryDataStore();
         var currentUser = CurrentUser("repository-test-user");
-        var budgetRepository = new InMemoryBudgetRepository(store, currentUser);
-        var transactionRepository = new InMemoryTransactionRepository(store, currentUser);
-        var allocationRepository = new InMemoryTransactionAllocationRepository(store, currentUser);
+        IBudgetRepository budgetRepository = new InMemoryBudgetRepository(store, currentUser);
+        ITransactionRepository transactionRepository = new InMemoryTransactionRepository(store, currentUser);
+        ITransactionAllocationRepository allocationRepository = new InMemoryTransactionAllocationRepository(store, currentUser);
         var transaction = CreateTransaction();
         var budgetItemId = Guid.NewGuid();
         var budget = CreateBudget((budgetItemId, "Groceries"));
@@ -90,9 +90,9 @@ public sealed class TransactionAllocationRepositoryTests
     {
         var store = new InMemoryDataStore();
         var currentUser = CurrentUser("repository-test-user");
-        var budgetRepository = new InMemoryBudgetRepository(store, currentUser);
-        var transactionRepository = new InMemoryTransactionRepository(store, currentUser);
-        var allocationRepository = new InMemoryTransactionAllocationRepository(store, currentUser);
+        IBudgetRepository budgetRepository = new InMemoryBudgetRepository(store, currentUser);
+        ITransactionRepository transactionRepository = new InMemoryTransactionRepository(store, currentUser);
+        ITransactionAllocationRepository allocationRepository = new InMemoryTransactionAllocationRepository(store, currentUser);
         var transaction = CreateTransaction();
         var budgetItemId = Guid.NewGuid();
         var budget = CreateBudget((budgetItemId, "Groceries"));
@@ -119,9 +119,9 @@ public sealed class TransactionAllocationRepositoryTests
     {
         var store = new InMemoryDataStore();
         var currentUser = CurrentUser("repository-test-user");
-        var budgetRepository = new InMemoryBudgetRepository(store, currentUser);
-        var transactionRepository = new InMemoryTransactionRepository(store, currentUser);
-        var allocationRepository = new InMemoryTransactionAllocationRepository(store, currentUser);
+        IBudgetRepository budgetRepository = new InMemoryBudgetRepository(store, currentUser);
+        ITransactionRepository transactionRepository = new InMemoryTransactionRepository(store, currentUser);
+        ITransactionAllocationRepository allocationRepository = new InMemoryTransactionAllocationRepository(store, currentUser);
         var transaction = CreateTransaction();
         var budgetItemId = Guid.NewGuid();
 
@@ -134,6 +134,54 @@ public sealed class TransactionAllocationRepositoryTests
         Assert.IsType<TransactionDeleteResult.TransactionHasAllocation>(deleteResult);
         Assert.NotNull(transactionRepository.Get(transaction.TransactionId));
         Assert.Equal(budgetItemId, allocationRepository.Get(transaction.TransactionId)?.BudgetItemId);
+    }
+
+    [Fact]
+    public void Allocate_rejects_missing_transactions_without_saving_an_allocation()
+    {
+        var store = new InMemoryDataStore();
+        var currentUser = CurrentUser("repository-test-user");
+        IBudgetRepository budgetRepository = new InMemoryBudgetRepository(store, currentUser);
+        ITransactionAllocationRepository allocationRepository = new InMemoryTransactionAllocationRepository(store, currentUser);
+        var transaction = CreateTransaction();
+        var budgetItemId = Guid.NewGuid();
+        budgetRepository.Save(CreateBudget((budgetItemId, "Groceries")));
+
+        var allocateResult = allocationRepository.Allocate(CreateAllocation(transaction, budgetItemId));
+
+        Assert.IsType<AllocateTransactionResult.TransactionNotFound>(allocateResult);
+        Assert.Null(allocationRepository.Get(transaction.TransactionId));
+        Assert.Empty(allocationRepository.GetAll());
+    }
+
+    [Fact]
+    public void Remove_deletes_only_the_current_users_allocation()
+    {
+        var store = new InMemoryDataStore();
+        var currentUser = CurrentUser("repository-test-user");
+        var otherUser = CurrentUser("other-repository-test-user");
+        IBudgetRepository budgetRepository = new InMemoryBudgetRepository(store, currentUser);
+        ITransactionRepository transactionRepository = new InMemoryTransactionRepository(store, currentUser);
+        ITransactionAllocationRepository allocationRepository = new InMemoryTransactionAllocationRepository(store, currentUser);
+        IBudgetRepository otherBudgetRepository = new InMemoryBudgetRepository(store, otherUser);
+        ITransactionRepository otherTransactionRepository = new InMemoryTransactionRepository(store, otherUser);
+        ITransactionAllocationRepository otherAllocationRepository = new InMemoryTransactionAllocationRepository(store, otherUser);
+        var transaction = CreateTransaction();
+        var otherTransaction = CreateTransaction();
+        var budgetItemId = Guid.NewGuid();
+        var otherBudgetItemId = Guid.NewGuid();
+        transactionRepository.Add(transaction);
+        otherTransactionRepository.Add(otherTransaction);
+        budgetRepository.Save(CreateBudget((budgetItemId, "Groceries")));
+        otherBudgetRepository.Save(CreateBudget((otherBudgetItemId, "Groceries")));
+        allocationRepository.Allocate(CreateAllocation(transaction, budgetItemId));
+        otherAllocationRepository.Allocate(CreateAllocation(otherTransaction, otherBudgetItemId));
+
+        allocationRepository.Remove(transaction.TransactionId);
+        allocationRepository.Remove(otherTransaction.TransactionId);
+
+        Assert.Null(allocationRepository.Get(transaction.TransactionId));
+        Assert.Equal(otherBudgetItemId, otherAllocationRepository.Get(otherTransaction.TransactionId)?.BudgetItemId);
     }
 
     private static Transaction CreateTransaction()

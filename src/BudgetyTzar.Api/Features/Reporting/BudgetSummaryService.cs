@@ -6,9 +6,9 @@ using BudgetyTzar.Api.Features.Transactions;
 namespace BudgetyTzar.Api.Features.Reporting;
 
 public sealed class BudgetSummaryService(
-    InMemoryBudgetRepository budgetStore,
-    InMemoryTransactionRepository transactionStore,
-    InMemoryTransactionAllocationRepository allocationStore)
+    IBudgetRepository budgetStore,
+    ITransactionRepository transactionStore,
+    ITransactionAllocationRepository allocationStore)
 {
     public GetBudgetSummaryResult Get(Guid budgetId)
     {

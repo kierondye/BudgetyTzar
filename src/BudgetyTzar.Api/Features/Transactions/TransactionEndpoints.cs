@@ -13,7 +13,10 @@ public static class TransactionEndpoints
     {
         services.TryAddSingleton<InMemoryDataStore>();
         services.AddScoped<InMemoryTransactionRepository>();
+        services.AddScoped<ITransactionRepository>(provider => provider.GetRequiredService<InMemoryTransactionRepository>());
         services.AddScoped<InMemoryTransactionAllocationRepository>();
+        services.AddScoped<ITransactionAllocationRepository>(provider =>
+            provider.GetRequiredService<InMemoryTransactionAllocationRepository>());
         return services;
     }
 
@@ -47,7 +50,7 @@ public static class TransactionEndpoints
         return endpoints;
     }
 
-    private static IResult CreateTransaction(CreateTransactionRequest request, InMemoryTransactionRepository transactions)
+    private static IResult CreateTransaction(CreateTransactionRequest request, ITransactionRepository transactions)
     {
         var validation = Validate(
             request.Description,
@@ -95,8 +98,8 @@ public static class TransactionEndpoints
     }
 
     private static IResult GetTransactions(
-        InMemoryTransactionRepository transactions,
-        InMemoryTransactionAllocationRepository allocations,
+        ITransactionRepository transactions,
+        ITransactionAllocationRepository allocations,
         string? from,
         string? to,
         string? allocationStatus)
@@ -119,7 +122,7 @@ public static class TransactionEndpoints
         return Results.Ok(response);
     }
 
-    private static IResult GetTransaction(Guid transactionId, InMemoryTransactionRepository transactions)
+    private static IResult GetTransaction(Guid transactionId, ITransactionRepository transactions)
     {
         var transaction = transactions.Get(transactionId);
 
@@ -130,7 +133,7 @@ public static class TransactionEndpoints
 
     private static IResult DeleteTransaction(
         Guid transactionId,
-        InMemoryTransactionRepository transactions)
+        ITransactionRepository transactions)
     {
         return transactions.Delete(transactionId) switch
         {
@@ -144,9 +147,9 @@ public static class TransactionEndpoints
     private static IResult AllocateTransaction(
         Guid transactionId,
         AllocateTransactionRequest request,
-        InMemoryTransactionRepository transactions,
-        InMemoryBudgetRepository budgets,
-        InMemoryTransactionAllocationRepository allocations)
+        ITransactionRepository transactions,
+        IBudgetRepository budgets,
+        ITransactionAllocationRepository allocations)
     {
         var transaction = transactions.Get(transactionId);
 
@@ -190,8 +193,8 @@ public static class TransactionEndpoints
 
     private static IResult GetTransactionAllocation(
         Guid transactionId,
-        InMemoryTransactionRepository transactions,
-        InMemoryTransactionAllocationRepository allocations)
+        ITransactionRepository transactions,
+        ITransactionAllocationRepository allocations)
     {
         if (transactions.Get(transactionId) is null)
         {
@@ -207,8 +210,8 @@ public static class TransactionEndpoints
 
     private static IResult DeleteTransactionAllocation(
         Guid transactionId,
-        InMemoryTransactionRepository transactions,
-        InMemoryTransactionAllocationRepository allocations)
+        ITransactionRepository transactions,
+        ITransactionAllocationRepository allocations)
     {
         if (transactions.Get(transactionId) is null)
         {

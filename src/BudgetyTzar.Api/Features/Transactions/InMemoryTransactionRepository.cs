@@ -4,7 +4,7 @@ using BudgetyTzar.Api.Features.Identity;
 
 namespace BudgetyTzar.Api.Features.Transactions;
 
-public sealed class InMemoryTransactionRepository
+public sealed class InMemoryTransactionRepository : ITransactionRepository
 {
     private readonly InMemoryDataStore store;
     private readonly ApplicationUserId userId;
