@@ -51,6 +51,37 @@ public sealed class BudgetRepositoryTests
     }
 
     [Fact]
+    public void Save_rejects_duplicate_budget_identities_without_overwriting_existing_budget()
+    {
+        var repository = CreateRepository();
+        var budget = CreateBudget("UK", "GBP");
+
+        var firstResult = repository.Save(budget);
+        var duplicateResult = repository.Save(budget);
+
+        Assert.IsType<BudgetSaveResult.Saved>(firstResult);
+        Assert.IsType<BudgetSaveResult.DuplicateIdentity>(duplicateResult);
+
+        var storedBudget = Assert.Single(repository.GetAll());
+        Assert.Equal(budget.BudgetId, storedBudget.BudgetId);
+    }
+
+    [Fact]
+    public void Get_all_returns_budgets_in_creation_order()
+    {
+        var repository = CreateRepository();
+        var firstBudget = CreateBudget("UK", "GBP");
+        var secondBudget = CreateBudget("EU", "EUR");
+
+        repository.Save(firstBudget);
+        repository.Save(secondBudget);
+
+        Assert.Equal(
+            [firstBudget.BudgetId, secondBudget.BudgetId],
+            repository.GetAll().Select(budget => budget.BudgetId));
+    }
+
+    [Fact]
     public async Task Save_allows_only_one_budget_to_claim_a_name_when_saves_overlap()
     {
         var repository = CreateRepository();
@@ -138,6 +169,26 @@ public sealed class BudgetRepositoryTests
     }
 
     [Fact]
+    public void Save_rejects_updated_state_when_the_budget_is_missing()
+    {
+        var repository = CreateRepository();
+        var otherRepository = CreateRepository();
+        var budget = CreateBudget("UK", "GBP");
+        otherRepository.Save(budget);
+
+        var otherRepositoryState = otherRepository.Get(budget.BudgetId);
+        Assert.NotNull(otherRepositoryState);
+
+        var renamed = Assert.IsType<RenameBudgetResult.Renamed>(
+            otherRepositoryState.Value.Rename(Name("UK 2026")));
+
+        var result = repository.Save(otherRepositoryState.Update(renamed.Budget));
+
+        Assert.IsType<BudgetSaveResult.NotFound>(result);
+        Assert.Empty(repository.GetAll());
+    }
+
+    [Fact]
     public void Save_can_report_conflict_without_changing_stored_budget()
     {
         var repository = CreateRepository();
@@ -162,7 +213,7 @@ public sealed class BudgetRepositoryTests
             Budget.Create(Guid.NewGuid(), Name(name), Currency(currency))).Budget;
     }
 
-    private static InMemoryBudgetRepository CreateRepository()
+    private static IBudgetRepository CreateRepository()
     {
         return new InMemoryBudgetRepository(new InMemoryDataStore(), CurrentUser("repository-test-user"));
     }
