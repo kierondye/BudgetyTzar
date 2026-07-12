@@ -703,6 +703,23 @@ API request and response patterns may evolve as the application is developed. On
 
 API monetary values must be represented as strings with exactly two decimal places. API currency values must use uppercase ISO 4217 alphabetic codes. API dates representing calendar transaction activity use `yyyy-MM-dd`.
 
+Business API endpoints require authentication. An unauthenticated request to a
+budgeting, transaction, transaction allocation, or reporting endpoint returns
+`401 Unauthorized`.
+
+Budgets, transactions, transaction allocations, and budget summaries are scoped to the
+authenticated application user. User identity is resolved from authenticated claims and
+is never accepted from request bodies or query parameters. Existing resource response
+contracts do not expose owner identity.
+
+Cross-user access must not disclose whether another user's resource exists. Requests to
+retrieve, mutate, delete, allocate, remove an allocation from, or report on a resource
+owned by another user return `404 Not Found`. List endpoints return only resources owned
+by the authenticated user.
+
+Health, runtime version, and API documentation endpoints are public unless deployment
+configuration deliberately restricts them.
+
 ### 10.1 Budgeting API
 
 ```http
@@ -732,6 +749,9 @@ Example create budget request:
 ```
 
 Creating a budget returns `201 Created`, a `Location` header for the created budget resource, and the created budget representation. A newly created budget may have no budget items. Creating a budget with a name already used by another budget returns `409 Conflict`.
+
+Budget names are unique per authenticated user. Different authenticated users may use
+the same budget name without conflict.
 
 Example budget response:
 
@@ -866,6 +886,7 @@ The system must validate that:
 
 - The transaction exists.
 - The budget item exists.
+- The transaction and budget item are owned by the authenticated user.
 - The transaction is not already allocated to another budget item.
 - The transaction currency matches the currency of the budget that owns the budget item.
 
@@ -1047,6 +1068,11 @@ This section summarises the rules defined throughout the functional requirements
 - All planned amounts within a budget use the budget currency.
 - Budget item planned amounts must be positive.
 - Transaction amounts must be positive.
+- Business API endpoints require authentication.
+- User identity is resolved from authenticated claims, not request bodies or query parameters.
+- Owner identity is not exposed in existing budget, budget item, transaction, allocation, or summary response contracts.
+- User-facing lists return only resources owned by the authenticated user.
+- Cross-user resource access, mutation, deletion, allocation, allocation removal, and reporting return `404 Not Found`.
 - A transaction's date must not restrict whether the transaction can be allocated to a budget item.
 - Derived actual amounts may be negative.
 - Derived remaining amounts may be negative.
@@ -1065,6 +1091,7 @@ This section summarises the rules defined throughout the functional requirements
 - Unallocated transactions must not affect budget actuals, remaining amounts, or Budget Summary totals.
 - A transaction may be allocated to at most one budget item.
 - An allocation applies the full transaction amount to the selected budget item.
+- A transaction must not be allocated to another user's budget item.
 - Allocating a transaction to the same budget item it is already allocated to must succeed without changing state.
 - Allocating a transaction to a different budget item while it already has an allocation must be rejected.
 - A transaction must not be allocated to a budget item that does not exist.

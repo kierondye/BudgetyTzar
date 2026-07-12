@@ -30,6 +30,11 @@ dotnet run --project src/BudgetyTzar.Api
 
 The API is available at `http://localhost:7070`. Swagger is available at `http://localhost:7070/swagger`, and the health check is available at `http://localhost:7070/health`.
 
+Business API endpoints require authentication. The built-in default authentication
+scheme rejects unauthenticated requests safely until a deployment supplies its chosen
+identity provider scheme. Health, runtime version, and Swagger endpoints remain public
+for local and operational inspection.
+
 Run the test suite:
 
 ```bash

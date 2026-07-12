@@ -82,6 +82,11 @@ coordination, and persistence adapters for their use cases. Keeping those files
 together makes a vertical slice easy to review and prevents a small API from becoming
 layered by folder ceremony rather than responsibility.
 
+The Identity feature owns authentication scheme configuration and current-user
+resolution from authenticated claims. User-facing repositories are scoped to that
+current internal application user so handlers can coordinate use cases without
+manually filtering cross-user data.
+
 Shared domain types live under `Domain` because Budgeting, Transactions, Allocations,
 and Reporting use the same ubiquitous language and invariant-protecting values.
 Domain code does not depend on endpoints, repositories, ASP.NET Core, or storage.
@@ -98,6 +103,7 @@ ownership of their data.
 | `src/BudgetyTzar.Api/ApiApplication.cs` | Composition root. Registers services and endpoint groups. |
 | `src/BudgetyTzar.Api/Domain/Entities` | Immutable entities, aggregates, operations, and result types. |
 | `src/BudgetyTzar.Api/Domain/ValueTypes` | Validated domain values such as names, currencies, money amounts, and kinds. |
+| `src/BudgetyTzar.Api/Features/Identity` | Authentication configuration, authenticated claim resolution, and current-user identity. |
 | `src/BudgetyTzar.Api/Features/Budgeting` | Budget endpoints, contracts, handlers, and persistence. |
 | `src/BudgetyTzar.Api/Features/Transactions` | Transaction and allocation endpoints, contracts, handlers, and persistence. |
 | `src/BudgetyTzar.Api/Features/Reporting` | Budget summary query model, calculation service, contracts, and endpoint. |
@@ -186,7 +192,9 @@ Repositories own storage-wide consistency and concurrency state because those ru
 depend on stored data, not only on a single aggregate's in-memory state. Aggregates own
 the invariants they can decide from their own state.
 
-User-facing operations should be scoped to the current internal application user. If
+User-facing operations are scoped to the current internal application user. In the
+in-memory implementation, repositories store owner mappings separately from domain
+entities and return non-disclosing misses for resources owned by another user. If
 future admin, migration, support, or background workflows need cross-user access, give
 them a separate explicitly user-aware API that requires the target application user at
 the call site.

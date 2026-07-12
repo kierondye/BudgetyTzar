@@ -2,6 +2,7 @@ using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
 using BudgetyTzar.Api.Features;
 using BudgetyTzar.Api.Features.Budgeting;
+using BudgetyTzar.Api.Features.Identity;
 using BudgetyTzar.Api.Features.Transactions;
 
 namespace BudgetyTzar.Tests.Transactions;
@@ -12,9 +13,10 @@ public sealed class TransactionAllocationRepositoryTests
     public void Allocate_same_transaction_to_same_budget_item_is_idempotent()
     {
         var store = new InMemoryDataStore();
-        var budgetRepository = new InMemoryBudgetRepository(store);
-        var transactionRepository = new InMemoryTransactionRepository(store);
-        var repository = new InMemoryTransactionAllocationRepository(store);
+        var currentUser = CurrentUser("repository-test-user");
+        var budgetRepository = new InMemoryBudgetRepository(store, currentUser);
+        var transactionRepository = new InMemoryTransactionRepository(store, currentUser);
+        var repository = new InMemoryTransactionAllocationRepository(store, currentUser);
         var transaction = CreateTransaction();
         var budgetItemId = Guid.NewGuid();
         transactionRepository.Add(transaction);
@@ -35,9 +37,10 @@ public sealed class TransactionAllocationRepositoryTests
     public void Allocate_same_transaction_to_different_budget_item_conflicts_and_preserves_first_allocation()
     {
         var store = new InMemoryDataStore();
-        var budgetRepository = new InMemoryBudgetRepository(store);
-        var transactionRepository = new InMemoryTransactionRepository(store);
-        var repository = new InMemoryTransactionAllocationRepository(store);
+        var currentUser = CurrentUser("repository-test-user");
+        var budgetRepository = new InMemoryBudgetRepository(store, currentUser);
+        var transactionRepository = new InMemoryTransactionRepository(store, currentUser);
+        var repository = new InMemoryTransactionAllocationRepository(store, currentUser);
         var transaction = CreateTransaction();
         var firstBudgetItemId = Guid.NewGuid();
         var secondBudgetItemId = Guid.NewGuid();
@@ -58,9 +61,10 @@ public sealed class TransactionAllocationRepositoryTests
     public void Allocate_revalidates_budget_item_exists_under_the_shared_persistence_boundary()
     {
         var store = new InMemoryDataStore();
-        var budgetRepository = new InMemoryBudgetRepository(store);
-        var transactionRepository = new InMemoryTransactionRepository(store);
-        var allocationRepository = new InMemoryTransactionAllocationRepository(store);
+        var currentUser = CurrentUser("repository-test-user");
+        var budgetRepository = new InMemoryBudgetRepository(store, currentUser);
+        var transactionRepository = new InMemoryTransactionRepository(store, currentUser);
+        var allocationRepository = new InMemoryTransactionAllocationRepository(store, currentUser);
         var transaction = CreateTransaction();
         var budgetItemId = Guid.NewGuid();
         var budget = CreateBudget((budgetItemId, "Groceries"));
@@ -85,9 +89,10 @@ public sealed class TransactionAllocationRepositoryTests
     public void Save_rejects_deleted_budget_items_with_allocations_under_the_shared_persistence_boundary()
     {
         var store = new InMemoryDataStore();
-        var budgetRepository = new InMemoryBudgetRepository(store);
-        var transactionRepository = new InMemoryTransactionRepository(store);
-        var allocationRepository = new InMemoryTransactionAllocationRepository(store);
+        var currentUser = CurrentUser("repository-test-user");
+        var budgetRepository = new InMemoryBudgetRepository(store, currentUser);
+        var transactionRepository = new InMemoryTransactionRepository(store, currentUser);
+        var allocationRepository = new InMemoryTransactionAllocationRepository(store, currentUser);
         var transaction = CreateTransaction();
         var budgetItemId = Guid.NewGuid();
         var budget = CreateBudget((budgetItemId, "Groceries"));
@@ -113,9 +118,10 @@ public sealed class TransactionAllocationRepositoryTests
     public void Delete_transaction_revalidates_transaction_has_no_allocation_under_the_shared_persistence_boundary()
     {
         var store = new InMemoryDataStore();
-        var budgetRepository = new InMemoryBudgetRepository(store);
-        var transactionRepository = new InMemoryTransactionRepository(store);
-        var allocationRepository = new InMemoryTransactionAllocationRepository(store);
+        var currentUser = CurrentUser("repository-test-user");
+        var budgetRepository = new InMemoryBudgetRepository(store, currentUser);
+        var transactionRepository = new InMemoryTransactionRepository(store, currentUser);
+        var allocationRepository = new InMemoryTransactionAllocationRepository(store, currentUser);
         var transaction = CreateTransaction();
         var budgetItemId = Guid.NewGuid();
 
@@ -140,6 +146,13 @@ public sealed class TransactionAllocationRepositoryTests
                 new DateOnly(2026, 7, 2),
                 Money("42.50"),
                 Currency("GBP"))).Transaction;
+    }
+
+    private static CurrentUser CurrentUser(string value)
+    {
+        return ApplicationUserId.TryCreate(value, out var userId)
+            ? new CurrentUser(userId!)
+            : throw new InvalidOperationException("Invalid test user.");
     }
 
     private static TransactionAllocation CreateAllocation(Transaction transaction, Guid budgetItemId)
