@@ -1,15 +1,18 @@
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Features;
+using BudgetyTzar.Api.Features.Identity;
 
 namespace BudgetyTzar.Api.Features.Transactions;
 
 public sealed class InMemoryTransactionRepository
 {
     private readonly InMemoryDataStore store;
+    private readonly ApplicationUserId userId;
 
-    public InMemoryTransactionRepository(InMemoryDataStore? store = null)
+    public InMemoryTransactionRepository(InMemoryDataStore store, ICurrentUser currentUser)
     {
-        this.store = store ?? new InMemoryDataStore();
+        this.store = store;
+        userId = currentUser.UserId;
     }
 
     public void Add(Transaction transaction)
@@ -17,6 +20,7 @@ public sealed class InMemoryTransactionRepository
         lock (store.SyncRoot)
         {
             store.TransactionsById[transaction.TransactionId] = transaction;
+            store.TransactionOwnersById[transaction.TransactionId] = userId;
             store.TransactionIds.Add(transaction.TransactionId);
         }
     }
@@ -26,6 +30,7 @@ public sealed class InMemoryTransactionRepository
         lock (store.SyncRoot)
         {
             return store.TransactionIds
+                .Where(TransactionBelongsToCurrentUser)
                 .Select(transactionId => store.TransactionsById[transactionId])
                 .ToList();
         }
@@ -35,7 +40,9 @@ public sealed class InMemoryTransactionRepository
     {
         lock (store.SyncRoot)
         {
-            return store.TransactionsById.GetValueOrDefault(transactionId);
+            return TransactionBelongsToCurrentUser(transactionId)
+                ? store.TransactionsById.GetValueOrDefault(transactionId)
+                : null;
         }
     }
 
@@ -43,20 +50,29 @@ public sealed class InMemoryTransactionRepository
     {
         lock (store.SyncRoot)
         {
-            if (!store.TransactionsById.ContainsKey(transactionId))
+            if (!TransactionBelongsToCurrentUser(transactionId)
+                || !store.TransactionsById.ContainsKey(transactionId))
             {
                 return new TransactionDeleteResult.NotFound();
             }
 
-            if (store.AllocationsByTransactionId.ContainsKey(transactionId))
+            if (store.AllocationsByTransactionId.ContainsKey(transactionId)
+                && store.AllocationOwnersByTransactionId.GetValueOrDefault(transactionId) == userId)
             {
                 return new TransactionDeleteResult.TransactionHasAllocation();
             }
 
             store.TransactionsById.Remove(transactionId);
+            store.TransactionOwnersById.Remove(transactionId);
             store.TransactionIds.Remove(transactionId);
             return new TransactionDeleteResult.Deleted();
         }
+    }
+
+    private bool TransactionBelongsToCurrentUser(Guid transactionId)
+    {
+        return store.TransactionOwnersById.TryGetValue(transactionId, out var ownerId)
+            && ownerId == userId;
     }
 }
 

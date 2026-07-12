@@ -1,6 +1,8 @@
 using BudgetyTzar.Api.Domain.Entities;
-using BudgetyTzar.Api.Features.Budgeting;
 using BudgetyTzar.Api.Domain.ValueTypes;
+using BudgetyTzar.Api.Features;
+using BudgetyTzar.Api.Features.Budgeting;
+using BudgetyTzar.Api.Features.Identity;
 
 namespace BudgetyTzar.Tests.Budgeting;
 
@@ -21,7 +23,7 @@ public sealed class BudgetRepositoryTests
     [Fact]
     public void Save_rejects_state_created_by_another_repository_implementation()
     {
-        var repository = new InMemoryBudgetRepository();
+        var repository = CreateRepository();
         var budget = CreateBudget("UK", "GBP");
 
         var result = repository.Save(new ForeignEntityState<Budget>(budget));
@@ -33,7 +35,7 @@ public sealed class BudgetRepositoryTests
     [Fact]
     public void Save_rejects_duplicate_budget_names_without_overwriting_existing_budget()
     {
-        var repository = new InMemoryBudgetRepository();
+        var repository = CreateRepository();
         var firstBudget = CreateBudget("UK", "GBP");
         var duplicateBudget = CreateBudget("UK", "EUR");
 
@@ -51,7 +53,7 @@ public sealed class BudgetRepositoryTests
     [Fact]
     public async Task Save_allows_only_one_budget_to_claim_a_name_when_saves_overlap()
     {
-        var repository = new InMemoryBudgetRepository();
+        var repository = CreateRepository();
         var firstBudget = CreateBudget("Shared", "GBP");
         var duplicateBudget = CreateBudget("Shared", "EUR");
         using var start = new ManualResetEventSlim();
@@ -78,7 +80,7 @@ public sealed class BudgetRepositoryTests
     [Fact]
     public void Save_updates_the_name_index_when_an_existing_budget_is_renamed()
     {
-        var repository = new InMemoryBudgetRepository();
+        var repository = CreateRepository();
         var budget = CreateBudget("UK", "GBP");
         repository.Save(budget);
 
@@ -98,7 +100,7 @@ public sealed class BudgetRepositoryTests
     [Fact]
     public void Save_rejects_stale_updates_without_overwriting_existing_budget()
     {
-        var repository = new InMemoryBudgetRepository();
+        var repository = CreateRepository();
         var budget = CreateBudget("UK", "GBP");
         repository.Save(budget);
 
@@ -138,7 +140,7 @@ public sealed class BudgetRepositoryTests
     [Fact]
     public void Save_can_report_conflict_without_changing_stored_budget()
     {
-        var repository = new InMemoryBudgetRepository();
+        var repository = CreateRepository();
         var ukBudget = CreateBudget("UK", "GBP");
         var euBudget = CreateBudget("EU", "EUR");
         repository.Save(ukBudget);
@@ -158,6 +160,18 @@ public sealed class BudgetRepositoryTests
     {
         return Assert.IsType<CreateBudgetResult.Created>(
             Budget.Create(Guid.NewGuid(), Name(name), Currency(currency))).Budget;
+    }
+
+    private static InMemoryBudgetRepository CreateRepository()
+    {
+        return new InMemoryBudgetRepository(new InMemoryDataStore(), CurrentUser("repository-test-user"));
+    }
+
+    private static CurrentUser CurrentUser(string value)
+    {
+        return ApplicationUserId.TryCreate(value, out var userId)
+            ? new CurrentUser(userId!)
+            : throw new InvalidOperationException("Invalid test user.");
     }
 
     private static NormalizedName Name(string value)

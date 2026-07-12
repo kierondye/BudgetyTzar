@@ -55,6 +55,43 @@ public sealed class BudgetApiTests
     }
 
     [Fact]
+    public async Task Budgeting_operations_are_scoped_to_the_authenticated_user()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        using var userB = server.CreateClientForUser("user-b");
+        var userABudget = await CreateBudgetAsync(server.Client, "Shared", "GBP");
+        var userAItem = await CreateBudgetItemAsync(server.Client, userABudget.BudgetId, "Groceries", "Consumption", "400.00");
+        var userBBudget = await CreateBudgetAsync(userB, "Shared", "GBP");
+
+        var userBBudgets = await userB.GetFromJsonAsync<IReadOnlyList<BudgetListItemResponse>>("/api/budgets");
+        using var userBGetUserABudget = await userB.GetAsync($"/api/budgets/{userABudget.BudgetId}");
+        using var userBRenameUserABudget = await userB.PutAsJsonAsync(
+            $"/api/budgets/{userABudget.BudgetId}/name",
+            new RenameBudgetRequest("Renamed by B"));
+        using var userBCreateItemForUserABudget = await userB.PostAsJsonAsync(
+            $"/api/budgets/{userABudget.BudgetId}/budget-items",
+            new CreateBudgetItemRequest("Restaurants", "Consumption", "100.00"));
+        using var userBGetUserAItem = await userB.GetAsync(
+            $"/api/budgets/{userABudget.BudgetId}/budget-items/{userAItem.BudgetItemId}");
+        using var userBDeleteUserAItem = await userB.DeleteAsync(
+            $"/api/budgets/{userABudget.BudgetId}/budget-items/{userAItem.BudgetItemId}");
+
+        Assert.NotNull(userBBudgets);
+        var userBListedBudget = Assert.Single(userBBudgets);
+        Assert.Equal(userBBudget.BudgetId, userBListedBudget.BudgetId);
+        Assert.Equal(HttpStatusCode.NotFound, userBGetUserABudget.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, userBRenameUserABudget.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, userBCreateItemForUserABudget.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, userBGetUserAItem.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, userBDeleteUserAItem.StatusCode);
+
+        var userABudgetAfterUserBRequests = await server.Client.GetFromJsonAsync<BudgetResponse>(
+            $"/api/budgets/{userABudget.BudgetId}");
+        Assert.Equal("Shared", userABudgetAfterUserBRequests?.Name);
+        Assert.Equal(userAItem.BudgetItemId, Assert.Single(userABudgetAfterUserBRequests?.BudgetItems ?? []).BudgetItemId);
+    }
+
+    [Fact]
     public async Task Get_budget_returns_budget_details()
     {
         await using var server = await TestApiServer.StartAsync();
@@ -593,7 +630,12 @@ public sealed class BudgetApiTests
 
     private static async Task<BudgetResponse> CreateBudgetAsync(TestApiServer server, string name, string currency)
     {
-        using var response = await server.Client.PostAsJsonAsync(
+        return await CreateBudgetAsync(server.Client, name, currency);
+    }
+
+    private static async Task<BudgetResponse> CreateBudgetAsync(HttpClient client, string name, string currency)
+    {
+        using var response = await client.PostAsJsonAsync(
             "/api/budgets",
             new CreateBudgetRequest(name, currency));
 
@@ -610,7 +652,17 @@ public sealed class BudgetApiTests
         string kind,
         string plannedAmount)
     {
-        using var response = await server.Client.PostAsJsonAsync(
+        return await CreateBudgetItemAsync(server.Client, budgetId, name, kind, plannedAmount);
+    }
+
+    private static async Task<BudgetItemResponse> CreateBudgetItemAsync(
+        HttpClient client,
+        Guid budgetId,
+        string name,
+        string kind,
+        string plannedAmount)
+    {
+        using var response = await client.PostAsJsonAsync(
             $"/api/budgets/{budgetId}/budget-items",
             new CreateBudgetItemRequest(name, kind, plannedAmount));
 

@@ -4,14 +4,15 @@ public static class BudgetSummaryEndpoints
 {
     public static IServiceCollection AddReporting(this IServiceCollection services)
     {
-        services.AddSingleton<BudgetSummaryService>();
+        services.AddScoped<BudgetSummaryService>();
         return services;
     }
 
     public static IEndpointRouteBuilder MapReportingEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var budgets = endpoints.MapGroup("/api/budgets")
-            .WithTags("Reporting");
+            .WithTags("Reporting")
+            .RequireAuthorization();
 
         budgets.MapGet("/{budgetId:guid}/summary", GetBudgetSummary)
             .WithName("GetBudgetSummary");
