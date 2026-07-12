@@ -2,6 +2,7 @@ using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
 using BudgetyTzar.Api.Features;
 using BudgetyTzar.Api.Features.Transactions;
+using BudgetyTzar.Api.Observability;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace BudgetyTzar.Api.Features.Budgeting;
@@ -54,12 +55,16 @@ public static class BudgetEndpoints
         return endpoints;
     }
 
-    private static IResult CreateBudget(CreateBudgetRequest request, InMemoryBudgetRepository budgets)
+    private static IResult CreateBudget(
+        CreateBudgetRequest request,
+        InMemoryBudgetRepository budgets,
+        BudgetyTzarTelemetry telemetry)
     {
         var validation = Validate(request);
 
         if (validation is CreateBudgetValidationResult.Invalid invalid)
         {
+            telemetry.RecordValidationFailure("CreateBudget", "request_validation");
             return Results.ValidationProblem(invalid.Errors);
         }
 
@@ -114,12 +119,17 @@ public static class BudgetEndpoints
             : Results.Ok(BudgetResponse.FromBudget(budgetState.Value));
     }
 
-    private static IResult RenameBudget(Guid budgetId, RenameBudgetRequest request, InMemoryBudgetRepository budgets)
+    private static IResult RenameBudget(
+        Guid budgetId,
+        RenameBudgetRequest request,
+        InMemoryBudgetRepository budgets,
+        BudgetyTzarTelemetry telemetry)
     {
         var validation = Validate(request);
 
         if (validation is RenameBudgetValidationResult.Invalid invalid)
         {
+            telemetry.RecordValidationFailure("RenameBudget", "request_validation");
             return Results.ValidationProblem(invalid.Errors);
         }
 
@@ -150,12 +160,17 @@ public static class BudgetEndpoints
         };
     }
 
-    private static IResult CreateBudgetItem(Guid budgetId, CreateBudgetItemRequest request, InMemoryBudgetRepository budgets)
+    private static IResult CreateBudgetItem(
+        Guid budgetId,
+        CreateBudgetItemRequest request,
+        InMemoryBudgetRepository budgets,
+        BudgetyTzarTelemetry telemetry)
     {
         var validation = Validate(request);
 
         if (validation is BudgetItemValidationResult.Invalid invalid)
         {
+            telemetry.RecordValidationFailure("CreateBudgetItem", "request_validation");
             return Results.ValidationProblem(invalid.Errors);
         }
 
@@ -223,12 +238,14 @@ public static class BudgetEndpoints
         Guid budgetId,
         Guid budgetItemId,
         RenameBudgetItemRequest request,
-        InMemoryBudgetRepository budgets)
+        InMemoryBudgetRepository budgets,
+        BudgetyTzarTelemetry telemetry)
     {
         var validation = Validate(request);
 
         if (validation is RenameBudgetItemValidationResult.Invalid invalid)
         {
+            telemetry.RecordValidationFailure("RenameBudgetItem", "request_validation");
             return Results.ValidationProblem(invalid.Errors);
         }
 
@@ -260,12 +277,14 @@ public static class BudgetEndpoints
         Guid budgetId,
         Guid budgetItemId,
         ChangeBudgetItemPlannedAmountRequest request,
-        InMemoryBudgetRepository budgets)
+        InMemoryBudgetRepository budgets,
+        BudgetyTzarTelemetry telemetry)
     {
         var validation = Validate(request);
 
         if (validation is BudgetItemPlannedAmountValidationResult.Invalid invalid)
         {
+            telemetry.RecordValidationFailure("ChangeBudgetItemPlannedAmount", "request_validation");
             return Results.ValidationProblem(invalid.Errors);
         }
 

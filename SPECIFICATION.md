@@ -720,6 +720,12 @@ by the authenticated user.
 Health, runtime version, and API documentation endpoints are public unless deployment
 configuration deliberately restricts them.
 
+Every HTTP response includes an `X-Correlation-ID` header. If the request supplies a
+single valid `X-Correlation-ID` header, the API returns that value. A valid correlation
+ID is 1 to 128 characters and contains only ASCII letters, digits, hyphen, underscore,
+or period. Missing, blank, repeated, or otherwise invalid correlation IDs are not
+trusted; the API generates a replacement value for the request and response.
+
 ### 10.1 Budgeting API
 
 ```http
@@ -1326,6 +1332,40 @@ Important signals:
 - Transaction allocation failure rate.
 - Budget Summary query latency.
 - Database connection and query health.
+
+Baseline API telemetry uses the service and meter name `BudgetyTzar.Api`.
+
+Request telemetry:
+
+- `budgetytzar.api.requests`: request count.
+- `budgetytzar.api.request_errors`: request error count for HTTP `4xx` and `5xx`
+  responses.
+- `budgetytzar.api.request.duration`: request latency in milliseconds.
+
+Request telemetry dimensions are `endpoint`, `method`, and `status_code`. The
+`endpoint` dimension uses the stable endpoint name configured in the API, not the raw
+resource URL.
+
+Custom workflow telemetry:
+
+- `budgetytzar.api.validation_failures`: validation failure count, with `endpoint`
+  and low-cardinality `failure_kind` dimensions.
+- `budgetytzar.api.transaction_allocation_failures`: transaction allocation failure
+  count, with a low-cardinality `failure_kind` dimension.
+- `budgetytzar.api.budget_summary.duration`: Budget Summary query latency in
+  milliseconds, without budget, owner, or resource identifiers as dimensions.
+
+Structured request logs include the correlation ID. Traces include the correlation ID
+as request context so logs and traces can be joined.
+
+Telemetry must not include transaction descriptions, monetary amounts, resource IDs,
+raw authenticated subject identifiers, request bodies, response bodies, or raw resource
+URLs as log fields, span attributes, or metric dimensions unless a future requirement
+explicitly revisits the privacy and cardinality impact.
+
+OpenTelemetry exporters are configured through the `Observability` configuration
+section. Exporters are disabled by default so ordinary local development and automated
+tests do not require a collector.
 
 ## 18. Security and Privacy
 

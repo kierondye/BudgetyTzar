@@ -62,6 +62,7 @@ flowchart TB
     budget["Budgeting feature<br/>endpoints, contracts, repository"]
     transaction["Transactions feature<br/>endpoints, contracts, repositories"]
     reporting["Reporting feature<br/>summary query service and contracts"]
+    observability["Observability<br/>correlation, telemetry, OpenTelemetry"]
     domain["Domain<br/>entities, aggregates, value types, result types"]
     store["InMemoryDataStore<br/>shared synchronization boundary"]
 
@@ -69,6 +70,7 @@ flowchart TB
     composition --> budget
     composition --> transaction
     composition --> reporting
+    composition --> observability
     budget --> domain
     transaction --> domain
     reporting --> domain
@@ -108,6 +110,7 @@ ownership of their data.
 | `src/BudgetyTzar.Api/Features/Transactions` | Transaction and allocation endpoints, contracts, handlers, and persistence. |
 | `src/BudgetyTzar.Api/Features/Reporting` | Budget summary query model, calculation service, contracts, and endpoint. |
 | `src/BudgetyTzar.Api/Features/InMemoryDataStore.cs` | Shared in-memory state and synchronization boundary. |
+| `src/BudgetyTzar.Api/Observability` | Correlation ID middleware, low-cardinality API telemetry, and OpenTelemetry composition. |
 | `tests/BudgetyTzar.Tests/Support` | Test-only API host and shared test support. |
 | `tests/BudgetyTzar.Tests/<Feature>` | Domain, repository, and API behaviour tests grouped by feature. |
 | `SPECIFICATION.md` | Product and system requirements. |

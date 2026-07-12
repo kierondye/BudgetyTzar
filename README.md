@@ -86,6 +86,30 @@ docker stop budgetytzar-api
 Persistence is currently in memory. All budgets, transactions, and allocations
 created through the container are lost when it stops or restarts.
 
+## Observability
+
+Every API response includes an `X-Correlation-ID` header. Clients may send a single
+correlation ID containing only ASCII letters, digits, hyphen, underscore, or period;
+otherwise the API generates one and returns it in the response.
+
+The API emits structured request logs, OpenTelemetry traces, and metrics under the
+service and meter name `BudgetyTzar.Api`. Exporters are disabled by default so local
+development and tests do not require a collector. For local inspection, set:
+
+```bash
+dotnet run --project src/BudgetyTzar.Api --Observability:ConsoleExporterEnabled=true
+```
+
+For production OpenTelemetry Protocol export, configure an endpoint:
+
+```bash
+dotnet run --project src/BudgetyTzar.Api --Observability:OtlpEndpoint=http://localhost:4317
+```
+
+The custom metric names are documented in [the specification](SPECIFICATION.md).
+Telemetry must avoid transaction descriptions, monetary amounts, resource IDs, raw
+owner identities, request bodies, response bodies, and raw resource URLs.
+
 ## Versioning and Releases
 
 BudgetyTzar uses product-wide SemVer derived from Git tags and Conventional Commits.
