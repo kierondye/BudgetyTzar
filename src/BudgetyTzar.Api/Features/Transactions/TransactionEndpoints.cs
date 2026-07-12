@@ -51,7 +51,7 @@ public static class TransactionEndpoints
     private static IResult CreateTransaction(
         CreateTransactionRequest request,
         InMemoryTransactionRepository transactions,
-        BudgetyTzarTelemetry telemetry)
+        ApiTelemetry telemetry)
     {
         var validation = Validate(
             request.Description,
@@ -105,7 +105,7 @@ public static class TransactionEndpoints
         string? from,
         string? to,
         string? allocationStatus,
-        BudgetyTzarTelemetry telemetry)
+        ApiTelemetry telemetry)
     {
         var validation = ValidateFilters(from, to, allocationStatus);
 
@@ -154,7 +154,7 @@ public static class TransactionEndpoints
         InMemoryTransactionRepository transactions,
         InMemoryBudgetRepository budgets,
         InMemoryTransactionAllocationRepository allocations,
-        BudgetyTzarTelemetry telemetry)
+        ApiTelemetry telemetry)
     {
         var transaction = transactions.Get(transactionId);
 
@@ -209,7 +209,7 @@ public static class TransactionEndpoints
         };
     }
 
-    private static IResult AllocationFailed(BudgetyTzarTelemetry telemetry, string failureKind, IResult result)
+    private static IResult AllocationFailed(ApiTelemetry telemetry, string failureKind, IResult result)
     {
         telemetry.RecordAllocationFailure(failureKind);
         return result;

@@ -21,6 +21,18 @@ public sealed class ObservabilityApiTests
     }
 
     [Fact]
+    public async Task Swagger_responses_include_a_generated_correlation_id()
+    {
+        await using var server = await TestApiServer.StartAsync();
+
+        using var response = await server.Client.GetAsync("/swagger/v1/swagger.json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var correlationId = Assert.Single(response.Headers.GetValues(CorrelationIdMiddleware.HeaderName));
+        Assert.True(IsValidCorrelationId(correlationId));
+    }
+
+    [Fact]
     public async Task Responses_propagate_a_valid_incoming_correlation_id()
     {
         await using var server = await TestApiServer.StartAsync();
@@ -54,29 +66,29 @@ public sealed class ObservabilityApiTests
     public async Task Request_metrics_use_stable_endpoint_names()
     {
         using var metrics = new MetricRecorder(
-            BudgetyTzarTelemetry.RequestCounterName,
-            BudgetyTzarTelemetry.RequestLatencyHistogramName);
+            ApiTelemetry.RequestCounterName,
+            ApiTelemetry.RequestLatencyHistogramName);
         await using var server = await TestApiServer.StartAsync();
 
         using var response = await server.Client.GetAsync("/api/version");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.True(metrics.HasSample(
-            BudgetyTzarTelemetry.RequestCounterName,
-            (BudgetyTzarTelemetry.EndpointTag, "GetVersion"),
-            (BudgetyTzarTelemetry.MethodTag, "GET"),
-            (BudgetyTzarTelemetry.StatusCodeTag, "200")));
+            ApiTelemetry.RequestCounterName,
+            (ApiTelemetry.EndpointTag, "GetVersion"),
+            (ApiTelemetry.MethodTag, "GET"),
+            (ApiTelemetry.StatusCodeTag, "200")));
         Assert.True(metrics.HasSample(
-            BudgetyTzarTelemetry.RequestLatencyHistogramName,
-            (BudgetyTzarTelemetry.EndpointTag, "GetVersion"),
-            (BudgetyTzarTelemetry.MethodTag, "GET"),
-            (BudgetyTzarTelemetry.StatusCodeTag, "200")));
+            ApiTelemetry.RequestLatencyHistogramName,
+            (ApiTelemetry.EndpointTag, "GetVersion"),
+            (ApiTelemetry.MethodTag, "GET"),
+            (ApiTelemetry.StatusCodeTag, "200")));
     }
 
     [Fact]
     public async Task Validation_failures_emit_low_cardinality_telemetry()
     {
-        using var metrics = new MetricRecorder(BudgetyTzarTelemetry.ValidationFailureCounterName);
+        using var metrics = new MetricRecorder(ApiTelemetry.ValidationFailureCounterName);
         await using var server = await TestApiServer.StartAsync();
 
         using var response = await server.Client.PostAsJsonAsync(
@@ -85,15 +97,15 @@ public sealed class ObservabilityApiTests
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.True(metrics.HasSample(
-            BudgetyTzarTelemetry.ValidationFailureCounterName,
-            (BudgetyTzarTelemetry.EndpointTag, "CreateBudget"),
-            (BudgetyTzarTelemetry.FailureKindTag, "request_validation")));
+            ApiTelemetry.ValidationFailureCounterName,
+            (ApiTelemetry.EndpointTag, "CreateBudget"),
+            (ApiTelemetry.FailureKindTag, "request_validation")));
     }
 
     [Fact]
     public async Task Transaction_allocation_failures_emit_low_cardinality_telemetry()
     {
-        using var metrics = new MetricRecorder(BudgetyTzarTelemetry.AllocationFailureCounterName);
+        using var metrics = new MetricRecorder(ApiTelemetry.AllocationFailureCounterName);
         await using var server = await TestApiServer.StartAsync();
 
         using var response = await server.Client.PutAsJsonAsync(
@@ -102,21 +114,21 @@ public sealed class ObservabilityApiTests
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.True(metrics.HasSample(
-            BudgetyTzarTelemetry.AllocationFailureCounterName,
-            (BudgetyTzarTelemetry.FailureKindTag, "transaction_not_found")));
+            ApiTelemetry.AllocationFailureCounterName,
+            (ApiTelemetry.FailureKindTag, "transaction_not_found")));
     }
 
     [Fact]
     public async Task Budget_summary_queries_emit_latency_telemetry()
     {
-        using var metrics = new MetricRecorder(BudgetyTzarTelemetry.BudgetSummaryLatencyHistogramName);
+        using var metrics = new MetricRecorder(ApiTelemetry.BudgetSummaryLatencyHistogramName);
         await using var server = await TestApiServer.StartAsync();
         var budget = await CreateBudgetAsync(server.Client, "UK", "GBP");
 
         using var response = await server.Client.GetAsync($"/api/budgets/{budget.BudgetId}/summary");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.True(metrics.HasSample(BudgetyTzarTelemetry.BudgetSummaryLatencyHistogramName));
+        Assert.True(metrics.HasSample(ApiTelemetry.BudgetSummaryLatencyHistogramName));
     }
 
     private static bool IsValidCorrelationId(string value)
@@ -162,7 +174,7 @@ public sealed class ObservabilityApiTests
             _instrumentNames = instrumentNames.ToHashSet(StringComparer.Ordinal);
             _listener.InstrumentPublished = (instrument, listener) =>
             {
-                if (instrument.Meter.Name == BudgetyTzarTelemetry.MeterName &&
+                if (instrument.Meter.Name == ApiTelemetry.MeterName &&
                     _instrumentNames.Contains(instrument.Name))
                 {
                     listener.EnableMeasurementEvents(instrument);

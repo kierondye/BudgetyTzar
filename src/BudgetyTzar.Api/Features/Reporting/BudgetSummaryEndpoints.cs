@@ -25,7 +25,7 @@ public static class BudgetSummaryEndpoints
     private static IResult GetBudgetSummary(
         Guid budgetId,
         BudgetSummaryService service,
-        BudgetyTzarTelemetry telemetry)
+        ApiTelemetry telemetry)
     {
         var start = TimeProvider.System.GetTimestamp();
         var result = service.Get(budgetId);

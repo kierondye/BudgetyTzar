@@ -58,7 +58,7 @@ public static class BudgetEndpoints
     private static IResult CreateBudget(
         CreateBudgetRequest request,
         InMemoryBudgetRepository budgets,
-        BudgetyTzarTelemetry telemetry)
+        ApiTelemetry telemetry)
     {
         var validation = Validate(request);
 
@@ -123,7 +123,7 @@ public static class BudgetEndpoints
         Guid budgetId,
         RenameBudgetRequest request,
         InMemoryBudgetRepository budgets,
-        BudgetyTzarTelemetry telemetry)
+        ApiTelemetry telemetry)
     {
         var validation = Validate(request);
 
@@ -164,7 +164,7 @@ public static class BudgetEndpoints
         Guid budgetId,
         CreateBudgetItemRequest request,
         InMemoryBudgetRepository budgets,
-        BudgetyTzarTelemetry telemetry)
+        ApiTelemetry telemetry)
     {
         var validation = Validate(request);
 
@@ -239,7 +239,7 @@ public static class BudgetEndpoints
         Guid budgetItemId,
         RenameBudgetItemRequest request,
         InMemoryBudgetRepository budgets,
-        BudgetyTzarTelemetry telemetry)
+        ApiTelemetry telemetry)
     {
         var validation = Validate(request);
 
@@ -278,7 +278,7 @@ public static class BudgetEndpoints
         Guid budgetItemId,
         ChangeBudgetItemPlannedAmountRequest request,
         InMemoryBudgetRepository budgets,
-        BudgetyTzarTelemetry telemetry)
+        ApiTelemetry telemetry)
     {
         var validation = Validate(request);
 

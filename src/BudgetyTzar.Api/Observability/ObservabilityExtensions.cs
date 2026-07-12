@@ -14,13 +14,13 @@ public static class ObservabilityExtensions
             .GetSection(ObservabilityOptions.SectionName)
             .Get<ObservabilityOptions>() ?? new ObservabilityOptions();
 
-        services.AddSingleton<BudgetyTzarTelemetry>();
+        services.AddSingleton<ApiTelemetry>();
         services.AddOpenTelemetry()
-            .ConfigureResource(resource => resource.AddService(BudgetyTzarTelemetry.ServiceName))
+            .ConfigureResource(resource => resource.AddService(ApiTelemetry.ServiceName))
             .WithTracing(tracing =>
             {
                 tracing
-                    .AddSource(BudgetyTzarTelemetry.ActivitySourceName)
+                    .AddSource(ApiTelemetry.ActivitySourceName)
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation();
 
@@ -40,7 +40,7 @@ public static class ObservabilityExtensions
             .WithMetrics(metrics =>
             {
                 metrics
-                    .AddMeter(BudgetyTzarTelemetry.MeterName)
+                    .AddMeter(ApiTelemetry.MeterName)
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation();
 

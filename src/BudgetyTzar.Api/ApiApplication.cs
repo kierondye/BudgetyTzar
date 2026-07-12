@@ -34,9 +34,9 @@ public static class ApiApplication
 
         var app = builder.Build();
 
+        app.UseBudgetyTzarObservability();
         app.UseSwagger();
         app.UseSwaggerUI();
-        app.UseBudgetyTzarObservability();
         app.UseAuthentication();
         app.UseAuthorization();
 

@@ -3,7 +3,7 @@ using System.Diagnostics.Metrics;
 
 namespace BudgetyTzar.Api.Observability;
 
-public sealed class BudgetyTzarTelemetry
+public sealed class ApiTelemetry
 {
     public const string ServiceName = "BudgetyTzar.Api";
     public const string MeterName = "BudgetyTzar.Api";
@@ -29,12 +29,12 @@ public sealed class BudgetyTzarTelemetry
     private readonly Counter<long> _allocationFailureCounter;
     private readonly Histogram<double> _budgetSummaryLatency;
 
-    public BudgetyTzarTelemetry()
+    public ApiTelemetry()
         : this(new Meter(MeterName))
     {
     }
 
-    private BudgetyTzarTelemetry(Meter meter)
+    private ApiTelemetry(Meter meter)
     {
         _meter = meter;
         ActivitySource = new ActivitySource(ActivitySourceName);

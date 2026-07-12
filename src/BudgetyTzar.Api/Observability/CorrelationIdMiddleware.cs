@@ -4,7 +4,7 @@ namespace BudgetyTzar.Api.Observability;
 
 public sealed class CorrelationIdMiddleware(
     RequestDelegate next,
-    BudgetyTzarTelemetry telemetry,
+    ApiTelemetry telemetry,
     ILogger<CorrelationIdMiddleware> logger)
 {
     public const string HeaderName = "X-Correlation-ID";
