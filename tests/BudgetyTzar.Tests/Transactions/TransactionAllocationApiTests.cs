@@ -116,6 +116,54 @@ public sealed class TransactionAllocationApiTests
     }
 
     [Fact]
+    public async Task Allocation_operations_are_scoped_to_the_authenticated_user()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        using var userB = server.CreateClientForUser("user-b");
+        var userABudget = await CreateBudgetAsync(server.Client, "User A", "GBP");
+        var userAItem = await CreateBudgetItemAsync(server.Client, userABudget.BudgetId, "Groceries", "Consumption", "400.00");
+        var userATransaction = await CreateTransactionAsync(
+            server.Client,
+            "User A supermarket",
+            "Debit",
+            "2026-07-02",
+            "42.50",
+            "GBP");
+        var userBBudget = await CreateBudgetAsync(userB, "User B", "GBP");
+        var userBItem = await CreateBudgetItemAsync(userB, userBBudget.BudgetId, "Groceries", "Consumption", "100.00");
+        var userBTransaction = await CreateTransactionAsync(
+            userB,
+            "User B supermarket",
+            "Debit",
+            "2026-07-02",
+            "12.00",
+            "GBP");
+
+        await AllocateTransactionAsync(server.Client, userATransaction.TransactionId, userAItem.BudgetItemId);
+
+        using var userBAllocatesToUserAItem = await userB.PutAsJsonAsync(
+            $"/api/transactions/{userBTransaction.TransactionId}/allocation",
+            new AllocateTransactionRequest(userAItem.BudgetItemId));
+        using var userBAllocatesUserATransaction = await userB.PutAsJsonAsync(
+            $"/api/transactions/{userATransaction.TransactionId}/allocation",
+            new AllocateTransactionRequest(userBItem.BudgetItemId));
+        using var userBGetsUserAAllocation = await userB.GetAsync(
+            $"/api/transactions/{userATransaction.TransactionId}/allocation");
+        using var userBDeletesUserAAllocation = await userB.DeleteAsync(
+            $"/api/transactions/{userATransaction.TransactionId}/allocation");
+
+        Assert.Equal(HttpStatusCode.NotFound, userBAllocatesToUserAItem.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, userBAllocatesUserATransaction.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, userBGetsUserAAllocation.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, userBDeletesUserAAllocation.StatusCode);
+
+        var userAAllocation = await server.Client.GetFromJsonAsync<TransactionAllocationResponse>(
+            $"/api/transactions/{userATransaction.TransactionId}/allocation");
+        Assert.NotNull(userAAllocation);
+        Assert.Equal(userAItem.BudgetItemId, userAAllocation.BudgetItemId);
+    }
+
+    [Fact]
     public async Task Get_transaction_allocation_returns_existing_allocation()
     {
         await using var server = await TestApiServer.StartAsync();
@@ -178,7 +226,15 @@ public sealed class TransactionAllocationApiTests
         Guid transactionId,
         Guid budgetItemId)
     {
-        using var response = await server.Client.PutAsJsonAsync(
+        return await AllocateTransactionAsync(server.Client, transactionId, budgetItemId);
+    }
+
+    private static async Task<TransactionAllocationResponse> AllocateTransactionAsync(
+        HttpClient client,
+        Guid transactionId,
+        Guid budgetItemId)
+    {
+        using var response = await client.PutAsJsonAsync(
             $"/api/transactions/{transactionId}/allocation",
             new AllocateTransactionRequest(budgetItemId));
 
@@ -196,7 +252,18 @@ public sealed class TransactionAllocationApiTests
         string amount,
         string currency)
     {
-        using var response = await server.Client.PostAsJsonAsync(
+        return await CreateTransactionAsync(server.Client, description, type, transactionDate, amount, currency);
+    }
+
+    private static async Task<TransactionResponse> CreateTransactionAsync(
+        HttpClient client,
+        string description,
+        string type,
+        string transactionDate,
+        string amount,
+        string currency)
+    {
+        using var response = await client.PostAsJsonAsync(
             "/api/transactions",
             new CreateTransactionRequest(description, type, transactionDate, amount, currency));
 
@@ -208,7 +275,12 @@ public sealed class TransactionAllocationApiTests
 
     private static async Task<BudgetResponse> CreateBudgetAsync(TestApiServer server, string name, string currency)
     {
-        using var response = await server.Client.PostAsJsonAsync(
+        return await CreateBudgetAsync(server.Client, name, currency);
+    }
+
+    private static async Task<BudgetResponse> CreateBudgetAsync(HttpClient client, string name, string currency)
+    {
+        using var response = await client.PostAsJsonAsync(
             "/api/budgets",
             new CreateBudgetRequest(name, currency));
 
@@ -225,7 +297,17 @@ public sealed class TransactionAllocationApiTests
         string kind,
         string plannedAmount)
     {
-        using var response = await server.Client.PostAsJsonAsync(
+        return await CreateBudgetItemAsync(server.Client, budgetId, name, kind, plannedAmount);
+    }
+
+    private static async Task<BudgetItemResponse> CreateBudgetItemAsync(
+        HttpClient client,
+        Guid budgetId,
+        string name,
+        string kind,
+        string plannedAmount)
+    {
+        using var response = await client.PostAsJsonAsync(
             $"/api/budgets/{budgetId}/budget-items",
             new CreateBudgetItemRequest(name, kind, plannedAmount));
 

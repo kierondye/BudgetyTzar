@@ -1,4 +1,5 @@
 using BudgetyTzar.Api.Features.Budgeting;
+using BudgetyTzar.Api.Features.Identity;
 using BudgetyTzar.Api.Features.Reporting;
 using BudgetyTzar.Api.Features.Transactions;
 using Microsoft.OpenApi.Models;
@@ -7,13 +8,15 @@ namespace BudgetyTzar.Api;
 
 public static class ApiApplication
 {
-    public static WebApplication Create(string[] args)
+    public static WebApplication Create(string[] args, Action<WebApplicationBuilder>? configureBuilder = null)
     {
         var builder = WebApplication.CreateBuilder(args);
+        configureBuilder?.Invoke(builder);
 
         var version = RuntimeVersion.Current;
 
         builder.Services.AddHealthChecks();
+        builder.Services.AddIdentityBoundary(builder.Configuration);
         builder.Services.AddBudgeting();
         builder.Services.AddTransactions();
         builder.Services.AddReporting();
@@ -31,6 +34,8 @@ public static class ApiApplication
 
         app.UseSwagger();
         app.UseSwaggerUI();
+        app.UseAuthentication();
+        app.UseAuthorization();
 
         app.MapHealthChecks("/health");
         app.MapGet("/api/version", () => version)

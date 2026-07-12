@@ -63,6 +63,40 @@ public sealed class TransactionApiTests
     }
 
     [Fact]
+    public async Task Transaction_operations_are_scoped_to_the_authenticated_user()
+    {
+        await using var server = await TestApiServer.StartAsync();
+        using var userB = server.CreateClientForUser("user-b");
+        var userATransaction = await CreateTransactionAsync(
+            server.Client,
+            "User A groceries",
+            "Debit",
+            "2026-07-02",
+            "42.50",
+            "GBP");
+        var userBTransaction = await CreateTransactionAsync(
+            userB,
+            "User B groceries",
+            "Debit",
+            "2026-07-03",
+            "15.00",
+            "GBP");
+
+        var userBTransactions = await userB.GetFromJsonAsync<IReadOnlyList<TransactionListItemResponse>>("/api/transactions");
+        using var userBGetUserATransaction = await userB.GetAsync($"/api/transactions/{userATransaction.TransactionId}");
+        using var userBDeleteUserATransaction = await userB.DeleteAsync($"/api/transactions/{userATransaction.TransactionId}");
+
+        AssertTransactionIds(userBTransactions, userBTransaction.TransactionId);
+        Assert.Equal(HttpStatusCode.NotFound, userBGetUserATransaction.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, userBDeleteUserATransaction.StatusCode);
+
+        var userATransactionAfterUserBRequests = await server.Client.GetFromJsonAsync<TransactionResponse>(
+            $"/api/transactions/{userATransaction.TransactionId}");
+        Assert.NotNull(userATransactionAfterUserBRequests);
+        Assert.Equal(userATransaction.TransactionId, userATransactionAfterUserBRequests.TransactionId);
+    }
+
+    [Fact]
     public async Task List_transactions_filters_by_from_transaction_date()
     {
         await using var server = await TestApiServer.StartAsync();
@@ -321,7 +355,18 @@ public sealed class TransactionApiTests
         string amount,
         string currency)
     {
-        using var response = await server.Client.PostAsJsonAsync(
+        return await CreateTransactionAsync(server.Client, description, type, transactionDate, amount, currency);
+    }
+
+    private static async Task<TransactionResponse> CreateTransactionAsync(
+        HttpClient client,
+        string description,
+        string type,
+        string transactionDate,
+        string amount,
+        string currency)
+    {
+        using var response = await client.PostAsJsonAsync(
             "/api/transactions",
             new CreateTransactionRequest(description, type, transactionDate, amount, currency));
 

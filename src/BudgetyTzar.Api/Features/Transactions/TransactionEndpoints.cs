@@ -12,15 +12,16 @@ public static class TransactionEndpoints
     public static IServiceCollection AddTransactions(this IServiceCollection services)
     {
         services.TryAddSingleton<InMemoryDataStore>();
-        services.AddSingleton<InMemoryTransactionRepository>();
-        services.AddSingleton<InMemoryTransactionAllocationRepository>();
+        services.AddScoped<InMemoryTransactionRepository>();
+        services.AddScoped<InMemoryTransactionAllocationRepository>();
         return services;
     }
 
     public static IEndpointRouteBuilder MapTransactionEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var transactions = endpoints.MapGroup("/api/transactions")
-            .WithTags("Transactions");
+            .WithTags("Transactions")
+            .RequireAuthorization();
 
         transactions.MapPost("/", CreateTransaction)
             .WithName("CreateTransaction");
