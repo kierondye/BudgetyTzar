@@ -1,10 +1,20 @@
 using System.Globalization;
 using System.Security.Claims;
+using Microsoft.Extensions.Options;
 
 namespace BudgetyTzar.Api.Features.Identity;
 
-public sealed class CurrentUserResolver
+public sealed class CurrentUserResolver(IOptions<CurrentUserResolverOptions> options)
 {
+    private readonly IReadOnlyList<string> userIdClaimTypes = options.Value.UserIdClaimTypes.Count == 0
+        ? CurrentUserResolverOptions.DefaultUserIdClaimTypes
+        : options.Value.UserIdClaimTypes;
+
+    public CurrentUserResolver()
+        : this(Options.Create(new CurrentUserResolverOptions()))
+    {
+    }
+
     public CurrentUserResolution Resolve(ClaimsPrincipal? principal)
     {
         if (principal?.Identity?.IsAuthenticated != true)
@@ -12,9 +22,9 @@ public sealed class CurrentUserResolver
             return new CurrentUserResolution.Unauthenticated();
         }
 
-        var subject = principal.FindFirstValue(ClaimTypes.NameIdentifier)
-            ?? principal.FindFirstValue("sub");
-        var provider = ResolveProvider(principal);
+        var subjectClaim = ResolveSubjectClaim(principal);
+        var subject = subjectClaim?.Value;
+        var provider = ResolveProvider(principal, subjectClaim);
 
         if (!ExternalIdentity.TryCreate(provider, subject, out var externalIdentity))
         {
@@ -28,11 +38,23 @@ public sealed class CurrentUserResolver
             : new CurrentUserResolution.Unauthenticated();
     }
 
-    private static string? ResolveProvider(ClaimsPrincipal principal)
+    private Claim? ResolveSubjectClaim(ClaimsPrincipal principal)
     {
-        var subjectClaim = principal.FindFirst(ClaimTypes.NameIdentifier)
-            ?? principal.FindFirst("sub");
+        foreach (var claimType in userIdClaimTypes)
+        {
+            var claim = principal.FindFirst(claimType);
 
+            if (!string.IsNullOrWhiteSpace(claim?.Value))
+            {
+                return claim;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ResolveProvider(ClaimsPrincipal principal, Claim? subjectClaim)
+    {
         if (!string.IsNullOrWhiteSpace(subjectClaim?.Issuer)
             && subjectClaim.Issuer != ClaimsIdentity.DefaultIssuer)
         {
@@ -55,6 +77,14 @@ public sealed class CurrentUserResolver
             ":",
             subject);
     }
+}
+
+public sealed class CurrentUserResolverOptions
+{
+    public static readonly IReadOnlyList<string> DefaultUserIdClaimTypes =
+        [ClaimTypes.NameIdentifier, "sub"];
+
+    public IReadOnlyList<string> UserIdClaimTypes { get; set; } = DefaultUserIdClaimTypes;
 }
 
 public abstract record CurrentUserResolution

@@ -15,7 +15,7 @@ for them.
 flowchart LR
     user["BudgetyTzar user"]
     operator["Operator / maintainer"]
-    identity["External identity provider<br/>(future OIDC integration)"]
+    identity["External identity provider<br/>(OIDC/JWT bearer)"]
     app["BudgetyTzar API"]
 
     user -->|"HTTP / JSON"| app
@@ -23,9 +23,9 @@ flowchart LR
     operator -->|"health, version, logs"| app
 ```
 
-The API owns the budgeting workflows. An external identity provider is the preferred
-future authentication boundary; the application should not implement password storage
-or identity management unless the product deliberately changes direction.
+The API owns the budgeting workflows. A configured external identity provider is the
+production authentication boundary; the application should not implement password
+storage or identity management unless the product deliberately changes direction.
 
 Authentication resolves identity. It does not own the domain-specific access rules for
 budgets, transactions, allocations, reports, or audit records. Those rules live with
@@ -96,7 +96,10 @@ by current use cases and should preserve operation-specific outcomes such as dup
 names, stale state, referential-integrity conflicts, and allocation idempotency.
 
 The Identity feature owns authentication scheme configuration and current-user
-resolution from authenticated claims. User-facing repositories are scoped to that
+resolution from authenticated claims. It provides a rejecting default scheme when no
+deployment authentication is configured and a JWT bearer/OIDC-compatible scheme when
+deployment configuration supplies the trusted authority or issuer, audience, HTTPS
+metadata setting, and stable user-id claim. User-facing repositories are scoped to that
 current internal application user so handlers can coordinate use cases without
 manually filtering cross-user data.
 
