@@ -1,18 +1,24 @@
 using System.Security.Claims;
+using System.Text;
 using System.Text.Encodings.Web;
 using BudgetyTzar.Api;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 
 namespace BudgetyTzar.Tests.Support;
 
 public sealed class TestApiServer : IAsyncDisposable
 {
     private const string DefaultUserId = "test-user";
+    public const string TestJwtAudience = "budgetytzar-tests";
+    public const string TestJwtIssuer = "https://identity.tests.budgetytzar";
+    public const string TestJwtSigningKey = "BudgetyTzar.Tests.Jwt.Signing.Key.2026";
     private const string TestScheme = "TestAuthentication";
     private const string TestUserHeaderName = "X-Test-User";
 
@@ -54,9 +60,56 @@ public sealed class TestApiServer : IAsyncDisposable
         return new TestApiServer(app, baseAddress, client);
     }
 
+    public static async Task<TestApiServer> StartWithBearerAuthenticationAsync(string userIdClaim = "sub")
+    {
+        var app = ApiApplication.Create(
+            ["--urls", "http://127.0.0.1:0"],
+            builder =>
+            {
+                builder.Configuration.AddInMemoryCollection(
+                [
+                    new KeyValuePair<string, string?>("Authentication:Bearer:Enabled", "true"),
+                    new KeyValuePair<string, string?>("Authentication:Bearer:Audience", TestJwtAudience),
+                    new KeyValuePair<string, string?>("Authentication:Bearer:Issuer", TestJwtIssuer),
+                    new KeyValuePair<string, string?>("Authentication:Bearer:RequireHttpsMetadata", "false"),
+                    new KeyValuePair<string, string?>("Authentication:Bearer:UserIdClaim", userIdClaim)
+                ]);
+                builder.Services.PostConfigure<JwtBearerOptions>(
+                    JwtBearerDefaults.AuthenticationScheme,
+                    options =>
+                    {
+                        options.TokenValidationParameters.IssuerSigningKey = new SymmetricSecurityKey(
+                            Encoding.UTF8.GetBytes(TestJwtSigningKey));
+                        options.TokenValidationParameters.ValidateIssuerSigningKey = true;
+                        options.TokenValidationParameters.ClockSkew = TimeSpan.Zero;
+                    });
+            });
+        await app.StartAsync();
+
+        var address = app.Urls.Single();
+        var baseAddress = new Uri(address);
+        var client = new HttpClient
+        {
+            BaseAddress = baseAddress
+        };
+
+        return new TestApiServer(app, baseAddress, client);
+    }
+
     public HttpClient CreateClientForUser(string userId)
     {
         return CreateAuthenticatedClient(BaseAddress, userId);
+    }
+
+    public HttpClient CreateBearerClient(string token)
+    {
+        var client = new HttpClient
+        {
+            BaseAddress = BaseAddress
+        };
+        client.DefaultRequestHeaders.Authorization = new("Bearer", token);
+
+        return client;
     }
 
     public HttpClient CreateUnauthenticatedClient()
