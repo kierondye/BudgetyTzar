@@ -17,6 +17,7 @@ public static class IdentityBoundary
     {
         var bearerOptions = BearerAuthenticationOptions.FromConfiguration(
             configuration.GetSection("Authentication:Bearer"));
+        bearerOptions.Validate();
         var scheme = configuration["Authentication:Scheme"]
             ?? (bearerOptions.Enabled ? JwtBearerDefaults.AuthenticationScheme : DefaultScheme);
 
@@ -155,6 +156,41 @@ public sealed record BearerAuthenticationOptions
             UserIdClaim = NullIfWhiteSpace(configuration["UserIdClaim"]),
             RequireHttpsMetadata = configuration.GetValue("RequireHttpsMetadata", true)
         };
+    }
+
+    public void Validate()
+    {
+        if (!Enabled)
+        {
+            return;
+        }
+
+        var errors = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(Authority)
+            && string.IsNullOrWhiteSpace(MetadataAddress)
+            && string.IsNullOrWhiteSpace(Issuer))
+        {
+            errors.Add(
+                "Authentication:Bearer requires Authority, MetadataAddress, or Issuer when Enabled is true.");
+        }
+
+        if (string.IsNullOrWhiteSpace(Audience) && ValidAudiences.Count == 0)
+        {
+            errors.Add(
+                "Authentication:Bearer requires Audience or ValidAudiences when Enabled is true.");
+        }
+
+        if (string.IsNullOrWhiteSpace(UserIdClaim))
+        {
+            errors.Add(
+                "Authentication:Bearer requires UserIdClaim when Enabled is true.");
+        }
+
+        if (errors.Count > 0)
+        {
+            throw new InvalidOperationException(string.Join(" ", errors));
+        }
     }
 
     private static string? NullIfWhiteSpace(string? value)

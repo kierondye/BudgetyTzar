@@ -3,7 +3,9 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using BudgetyTzar.Api;
 using BudgetyTzar.Tests.Support;
+using Microsoft.Extensions.Configuration;
 
 namespace BudgetyTzar.Tests;
 
@@ -81,6 +83,42 @@ public sealed class AuthenticationApiTests
     }
 
     [Fact]
+    public void Configured_bearer_authentication_requires_an_explicit_user_claim()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() => CreateAppWithBearerConfiguration(
+            ("Authentication:Bearer:Enabled", "true"),
+            ("Authentication:Bearer:Issuer", TestApiServer.TestJwtIssuer),
+            ("Authentication:Bearer:Audience", TestApiServer.TestJwtAudience)));
+
+        Assert.Contains("Authentication:Bearer requires UserIdClaim", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Configured_bearer_authentication_requires_a_trusted_issuer_or_metadata_source()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() => CreateAppWithBearerConfiguration(
+            ("Authentication:Bearer:Enabled", "true"),
+            ("Authentication:Bearer:Audience", TestApiServer.TestJwtAudience),
+            ("Authentication:Bearer:UserIdClaim", "sub")));
+
+        Assert.Contains(
+            "Authentication:Bearer requires Authority, MetadataAddress, or Issuer",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Configured_bearer_authentication_requires_an_audience()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() => CreateAppWithBearerConfiguration(
+            ("Authentication:Bearer:Enabled", "true"),
+            ("Authentication:Bearer:Issuer", TestApiServer.TestJwtIssuer),
+            ("Authentication:Bearer:UserIdClaim", "sub")));
+
+        Assert.Contains("Authentication:Bearer requires Audience or ValidAudiences", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Openapi_documents_bearer_security_for_business_operations()
     {
         await using var server = await TestApiServer.StartAsync();
@@ -139,6 +177,14 @@ public sealed class AuthenticationApiTests
             .TrimEnd('=')
             .Replace('+', '-')
             .Replace('/', '_');
+    }
+
+    private static void CreateAppWithBearerConfiguration(params (string Key, string Value)[] configuration)
+    {
+        ApiApplication.Create(
+            ["--urls", "http://127.0.0.1:0"],
+            builder => builder.Configuration.AddInMemoryCollection(
+                configuration.Select(item => new KeyValuePair<string, string?>(item.Key, item.Value))));
     }
 
     private sealed record CreateBudgetRequest(string Name, string Currency);
