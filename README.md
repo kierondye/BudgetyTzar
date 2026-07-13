@@ -2,7 +2,7 @@
 
 BudgetyTzar is a personal budgeting application for planning how money should be used, recording what actually happened, and comparing the two.
 
-The project is a .NET 9 HTTP API with in-memory default runtime persistence and a PostgreSQL persistence foundation that is gaining durable adapters incrementally. It is currently focused on a small budgeting domain made up of budgets, budget items, transactions, and transaction allocations. The aim is to keep the model simple and expressive while evolving the architecture through small, well-tested changes.
+The project is a .NET 9 HTTP API with in-memory default runtime persistence and a PostgreSQL persistence foundation. PostgreSQL currently has durable schema support plus budget, transaction, and allocation repository adapters, while the default application composition remains in memory. The application is focused on a small budgeting domain made up of budgets, budget items, transactions, and transaction allocations. The aim is to keep the model simple and expressive while evolving the architecture through small, well-tested changes.
 
 ## Documentation
 
@@ -16,7 +16,7 @@ Read the relevant sections of the specification before changing domain behaviour
 ## Project Structure
 
 - `src/BudgetyTzar.Api` contains the HTTP API, domain model, feature handlers, HTTP contracts, reporting, and in-memory persistence.
-- `src/BudgetyTzar.Api/Persistence/PostgreSql` contains the EF Core DbContext and migrations for the PostgreSQL persistence foundation.
+- `src/BudgetyTzar.Api/Persistence/PostgreSql` contains the EF Core DbContext, migrations, storage records, and PostgreSQL persistence adapters.
 - `tests/BudgetyTzar.Tests` contains the automated test suite.
 - `docs` contains detailed design and extension guides.
 - `scripts` contains local development and release scripts.
@@ -117,10 +117,11 @@ commit. Stop the container after verification:
 docker stop budgetytzar-api
 ```
 
-Persistence defaults to in memory. All budgets, transactions, and allocations created
-through the container are lost when it stops or restarts. PostgreSQL migrations and a
-budgeting repository adapter exist for durable storage groundwork, but the default
-application composition still uses the in-memory repositories.
+Persistence is currently in memory by default. All budgets, transactions, and
+allocations created through the container are lost when it stops or restarts.
+PostgreSQL migrations and budget, transaction, and allocation adapters exist for
+durable storage groundwork, but the default application composition still uses the
+in-memory repositories.
 
 Run the PostgreSQL schema migration tests with Docker available:
 

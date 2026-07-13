@@ -214,7 +214,7 @@ internal sealed class PostgreSqlTestTransactionRepository(
 
     private static Transaction ToTransaction(TransactionRecord record)
     {
-        var result = Transaction.Record(
+        var result = Transaction.Create(
             record.TransactionId,
             record.Description,
             TransactionType(record.Type),
@@ -222,8 +222,8 @@ internal sealed class PostgreSqlTestTransactionRepository(
             Money(record.Amount),
             Currency(record.Currency));
 
-        return result is RecordTransactionResult.Recorded recorded
-            ? recorded.Transaction
+        return result is CreateTransactionResult.Created created
+            ? created.Transaction
             : throw new InvalidOperationException("Stored transaction record is invalid.");
     }
 
@@ -340,8 +340,8 @@ internal sealed class PostgreSqlTestTransactionAllocationRepository(
 
     private static TransactionAllocation ToAllocation(TransactionAllocationRecord record)
     {
-        var transaction = Assert.IsType<RecordTransactionResult.Recorded>(
-            Transaction.Record(
+        var transaction = Assert.IsType<CreateTransactionResult.Created>(
+            Transaction.Create(
                 record.TransactionId,
                 "Allocation reference",
                 BudgetyTzar.Api.Domain.ValueTypes.TransactionType.Debit,

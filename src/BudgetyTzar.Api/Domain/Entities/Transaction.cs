@@ -32,7 +32,7 @@ public sealed class Transaction
 
     public CurrencyCode Currency { get; }
 
-    public static RecordTransactionResult Record(
+    public static CreateTransactionResult Create(
         Guid transactionId,
         string description,
         TransactionType type,
@@ -42,24 +42,24 @@ public sealed class Transaction
     {
         if (transactionId == Guid.Empty)
         {
-            return new RecordTransactionResult.InvalidIdentity();
+            return new CreateTransactionResult.InvalidIdentity();
         }
 
         if (string.IsNullOrWhiteSpace(description))
         {
-            return new RecordTransactionResult.InvalidDescription();
+            return new CreateTransactionResult.InvalidDescription();
         }
 
-        return new RecordTransactionResult.Recorded(
+        return new CreateTransactionResult.Created(
             new Transaction(transactionId, description.Trim(), type, transactionDate, amount, currency));
     }
 }
 
-public abstract record RecordTransactionResult
+public abstract record CreateTransactionResult
 {
-    public sealed record Recorded(Transaction Transaction) : RecordTransactionResult;
+    public sealed record Created(Transaction Transaction) : CreateTransactionResult;
 
-    public sealed record InvalidIdentity : RecordTransactionResult;
+    public sealed record InvalidIdentity : CreateTransactionResult;
 
-    public sealed record InvalidDescription : RecordTransactionResult;
+    public sealed record InvalidDescription : CreateTransactionResult;
 }

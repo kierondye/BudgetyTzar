@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BudgetyTzar.Api.Persistence.PostgreSql;
 
-public sealed class PostgreSqlApplicationUserStore(BudgetyTzarDbContext context)
+public sealed class PostgreSqlApplicationUserStore(BudgetyTzarDbContext context) : IApplicationUserStore
 {
     private const string UserKeyConstraint = "ux_application_users_user_key";
 

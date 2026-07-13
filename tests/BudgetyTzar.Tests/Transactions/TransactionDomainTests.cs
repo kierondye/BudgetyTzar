@@ -6,9 +6,9 @@ namespace BudgetyTzar.Tests.Transactions;
 public sealed class TransactionDomainTests
 {
     [Fact]
-    public void Record_normalizes_description()
+    public void Create_normalizes_description()
     {
-        var recorded = Assert.IsType<RecordTransactionResult.Recorded>(Transaction.Record(
+        var created = Assert.IsType<CreateTransactionResult.Created>(Transaction.Create(
             Guid.NewGuid(),
             " Salary ",
             TransactionType.Credit,
@@ -16,13 +16,13 @@ public sealed class TransactionDomainTests
             Money("3000.00"),
             Currency("GBP")));
 
-        Assert.Equal("Salary", recorded.Transaction.Description);
+        Assert.Equal("Salary", created.Transaction.Description);
     }
 
     [Fact]
-    public void Record_rejects_empty_identity_and_blank_description()
+    public void Create_rejects_empty_identity_and_blank_description()
     {
-        var invalidIdentity = Transaction.Record(
+        var invalidIdentity = Transaction.Create(
             Guid.Empty,
             "Salary",
             TransactionType.Credit,
@@ -30,7 +30,7 @@ public sealed class TransactionDomainTests
             Money("3000.00"),
             Currency("GBP"));
 
-        var invalidDescription = Transaction.Record(
+        var invalidDescription = Transaction.Create(
             Guid.NewGuid(),
             " ",
             TransactionType.Credit,
@@ -38,8 +38,8 @@ public sealed class TransactionDomainTests
             Money("3000.00"),
             Currency("GBP"));
 
-        Assert.IsType<RecordTransactionResult.InvalidIdentity>(invalidIdentity);
-        Assert.IsType<RecordTransactionResult.InvalidDescription>(invalidDescription);
+        Assert.IsType<CreateTransactionResult.InvalidIdentity>(invalidIdentity);
+        Assert.IsType<CreateTransactionResult.InvalidDescription>(invalidDescription);
     }
 
     [Fact]
@@ -88,8 +88,8 @@ public sealed class TransactionDomainTests
         PositiveMoneyAmount amount,
         CurrencyCode currency)
     {
-        return Assert.IsType<RecordTransactionResult.Recorded>(
-            Transaction.Record(
+        return Assert.IsType<CreateTransactionResult.Created>(
+            Transaction.Create(
                 transactionId,
                 description,
                 type,

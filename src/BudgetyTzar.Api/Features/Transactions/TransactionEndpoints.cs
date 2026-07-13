@@ -70,7 +70,7 @@ public static class TransactionEndpoints
         }
 
         var valid = (CreateTransactionValidationResult.Valid)validation;
-        return Transaction.Record(
+        return Transaction.Create(
             Guid.NewGuid(),
             valid.Description,
             valid.Type,
@@ -78,18 +78,18 @@ public static class TransactionEndpoints
             valid.Amount,
             valid.Currency) switch
         {
-            RecordTransactionResult.InvalidIdentity => Results.ValidationProblem(
+            CreateTransactionResult.InvalidIdentity => Results.ValidationProblem(
                 new Dictionary<string, string[]>(StringComparer.Ordinal)
                 {
                     ["transactionId"] = ["Transaction identity is required."]
                 }),
-            RecordTransactionResult.InvalidDescription => Results.ValidationProblem(
+            CreateTransactionResult.InvalidDescription => Results.ValidationProblem(
                 new Dictionary<string, string[]>(StringComparer.Ordinal)
                 {
                     ["description"] = ["Transaction description is required."]
                 }),
-            RecordTransactionResult.Recorded recorded => RecordTransaction(recorded.Transaction),
-            _ => throw new InvalidOperationException("Unexpected record transaction result.")
+            CreateTransactionResult.Created created => RecordTransaction(created.Transaction),
+            _ => throw new InvalidOperationException("Unexpected create transaction result.")
         };
 
         IResult RecordTransaction(Transaction transaction)

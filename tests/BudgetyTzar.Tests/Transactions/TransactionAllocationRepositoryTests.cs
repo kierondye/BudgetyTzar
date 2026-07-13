@@ -186,8 +186,8 @@ public sealed class TransactionAllocationRepositoryTests
 
     private static Transaction CreateTransaction()
     {
-        return Assert.IsType<RecordTransactionResult.Recorded>(
-            Transaction.Record(
+        return Assert.IsType<CreateTransactionResult.Created>(
+            Transaction.Create(
                 Guid.NewGuid(),
                 "Groceries",
                 TransactionType.Debit,

@@ -5,10 +5,9 @@ structure rather than defining product behaviour or coding style.
 
 BudgetyTzar is currently a modular monolith: one .NET 9 Minimal API process, one
 in-memory default runtime persistence boundary, a PostgreSQL persistence foundation
-with a budgeting repository adapter, and one xUnit test project. The design keeps
-feature boundaries explicit without
-introducing extra deployable services before there is a product or operational reason
-for them.
+with budget, transaction, and allocation repository adapters, and one xUnit test
+project. The design keeps feature boundaries explicit without introducing extra
+deployable services before there is a product or operational reason for them.
 
 ## System Context
 
@@ -39,7 +38,7 @@ flowchart TB
     client["HTTP client"]
     api["BudgetyTzar.Api<br/>.NET 9 Minimal API"]
     memory["In-memory store<br/>default process-local runtime persistence"]
-    postgres["PostgreSQL persistence foundation<br/>EF Core migrations and budget adapter"]
+    postgres["PostgreSQL persistence foundation<br/>EF Core migrations and selected adapters"]
     tests["BudgetyTzar.Tests<br/>xUnit + TestApiServer"]
     scripts["scripts and .githooks<br/>versioning and release tooling"]
 
@@ -57,8 +56,8 @@ Runtime persistence defaults to in memory today. The observable behaviour should
 survive database-backed implementations, with transactions, constraints, and
 concurrency tokens replacing the current lock and dictionaries. The PostgreSQL
 foundation captures the durable schema, EF Core/Npgsql plumbing, and feature-owned
-adapters as they are introduced without switching the default application composition
-away from the in-memory adapters.
+budget, transaction, and allocation repository adapters without switching the default
+application composition away from the in-memory adapters.
 
 ## API Component Model
 
