@@ -155,7 +155,7 @@ BUDGETYTZAR_MIGRATIONS_CONNECTION_STRING="Host=localhost;Database=budgetytzar;Us
   dotnet ef migrations add <MigrationName> \
   --project src/BudgetyTzar.Api \
   --startup-project src/BudgetyTzar.Api \
-  --context BudgetyTzarDbContext \
+  --context ApplicationDbContext \
   --output-dir Persistence/PostgreSql/Migrations
 ```
 

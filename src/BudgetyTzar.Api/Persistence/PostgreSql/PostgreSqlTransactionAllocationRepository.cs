@@ -8,10 +8,10 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql;
 
 public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllocationRepository
 {
-    private readonly BudgetyTzarDbContext context;
+    private readonly ApplicationDbContext context;
     private readonly ApplicationUserId userId;
 
-    public PostgreSqlTransactionAllocationRepository(BudgetyTzarDbContext context, ICurrentUser currentUser)
+    public PostgreSqlTransactionAllocationRepository(ApplicationDbContext context, ICurrentUser currentUser)
     {
         this.context = context;
         userId = currentUser.UserId;

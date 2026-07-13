@@ -13,7 +13,7 @@ public static class PostgreSqlPersistenceExtensions
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
-        services.AddDbContext<BudgetyTzarDbContext>(options =>
+        services.AddDbContext<ApplicationDbContext>(options =>
         {
             options.UseNpgsql(connectionString);
         });

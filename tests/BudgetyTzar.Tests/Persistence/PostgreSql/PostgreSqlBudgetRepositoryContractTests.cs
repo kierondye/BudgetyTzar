@@ -83,29 +83,29 @@ public sealed class PostgreSqlBudgetRepositoryContractTests(
                 """);
         }
 
-        public DbContextOptions<BudgetyTzarDbContext> CreateOptions()
+        public DbContextOptions<ApplicationDbContext> CreateOptions()
         {
-            return new DbContextOptionsBuilder<BudgetyTzarDbContext>()
+            return new DbContextOptionsBuilder<ApplicationDbContext>()
                 .UseNpgsql(container.GetConnectionString())
                 .Options;
         }
 
-        public BudgetyTzarDbContext CreateContext()
+        public ApplicationDbContext CreateContext()
         {
-            return new BudgetyTzarDbContext(CreateOptions());
+            return new ApplicationDbContext(CreateOptions());
         }
     }
 }
 
 internal sealed class PostgreSqlBudgetRepositoryContractContext(
-    DbContextOptions<BudgetyTzarDbContext> options)
+    DbContextOptions<ApplicationDbContext> options)
     : RepositoryContractContext
 {
-    private readonly List<BudgetyTzarDbContext> contexts = [];
+    private readonly List<ApplicationDbContext> contexts = [];
 
     public override RepositorySet ForUser(string userId)
     {
-        var context = new BudgetyTzarDbContext(options);
+        var context = new ApplicationDbContext(options);
         contexts.Add(context);
         var userStore = new PostgreSqlApplicationUserStore(context);
         var currentUser = CurrentUser(userId, userStore);
@@ -134,7 +134,7 @@ internal sealed class PostgreSqlBudgetRepositoryContractContext(
 }
 
 internal sealed class PostgreSqlTestTransactionRepository(
-    BudgetyTzarDbContext context,
+    ApplicationDbContext context,
     ICurrentUser currentUser)
     : ITransactionRepository
 {
@@ -250,7 +250,7 @@ internal sealed class PostgreSqlTestTransactionRepository(
 }
 
 internal sealed class PostgreSqlTestTransactionAllocationRepository(
-    BudgetyTzarDbContext context,
+    ApplicationDbContext context,
     ICurrentUser currentUser)
     : ITransactionAllocationRepository
 {

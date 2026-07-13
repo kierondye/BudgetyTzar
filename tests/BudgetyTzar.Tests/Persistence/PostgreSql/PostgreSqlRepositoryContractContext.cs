@@ -13,7 +13,7 @@ namespace BudgetyTzar.Tests.Persistence.PostgreSql;
 internal sealed class PostgreSqlRepositoryContractContext : RepositoryContractContext
 {
     private readonly PostgreSqlTestDatabase database;
-    private readonly List<BudgetyTzarDbContext> contexts = [];
+    private readonly List<ApplicationDbContext> contexts = [];
 
     private PostgreSqlRepositoryContractContext(PostgreSqlTestDatabase database)
     {
@@ -55,20 +55,20 @@ internal sealed class PostgreSqlRepositoryContractContext : RepositoryContractCo
         await database.DisposeAsync();
     }
 
-    private BudgetyTzarDbContext CreateTrackedContext()
+    private ApplicationDbContext CreateTrackedContext()
     {
         var context = CreateDbContext(database.ConnectionString);
         contexts.Add(context);
         return context;
     }
 
-    private static BudgetyTzarDbContext CreateDbContext(string connectionString)
+    private static ApplicationDbContext CreateDbContext(string connectionString)
     {
-        var options = new DbContextOptionsBuilder<BudgetyTzarDbContext>()
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql(connectionString)
             .Options;
 
-        return new BudgetyTzarDbContext(options);
+        return new ApplicationDbContext(options);
     }
 
     private static CurrentUser CurrentUser(string value, IApplicationUserStore userStore)
@@ -81,10 +81,10 @@ internal sealed class PostgreSqlRepositoryContractContext : RepositoryContractCo
 
     private sealed class ContractTestBudgetRepository : IBudgetRepository
     {
-        private readonly BudgetyTzarDbContext context;
+        private readonly ApplicationDbContext context;
         private readonly ApplicationUserId userId;
 
-        public ContractTestBudgetRepository(BudgetyTzarDbContext context, ICurrentUser currentUser)
+        public ContractTestBudgetRepository(ApplicationDbContext context, ICurrentUser currentUser)
         {
             this.context = context;
             userId = currentUser.UserId;

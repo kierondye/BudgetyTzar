@@ -278,12 +278,12 @@ public sealed class PostgreSqlApiTestDatabase : IAsyncLifetime
         return database.DisposeAsync();
     }
 
-    private BudgetyTzarDbContext CreateDbContext()
+    private ApplicationDbContext CreateDbContext()
     {
-        var options = new DbContextOptionsBuilder<BudgetyTzarDbContext>()
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql(ConnectionString)
             .Options;
 
-        return new BudgetyTzarDbContext(options);
+        return new ApplicationDbContext(options);
     }
 }

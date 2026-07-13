@@ -6,7 +6,7 @@ namespace BudgetyTzar.Api.Observability;
 
 public static class ObservabilityExtensions
 {
-    public static IServiceCollection AddBudgetyTzarObservability(
+    public static IServiceCollection AddObservability(
         this IServiceCollection services,
         IConfiguration configuration)
     {
@@ -61,7 +61,7 @@ public static class ObservabilityExtensions
         return services;
     }
 
-    public static IApplicationBuilder UseBudgetyTzarObservability(this IApplicationBuilder app)
+    public static IApplicationBuilder UseObservability(this IApplicationBuilder app)
     {
         return app.UseMiddleware<CorrelationIdMiddleware>();
     }

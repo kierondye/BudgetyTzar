@@ -18,7 +18,7 @@ public static class ApiApplication
         var version = RuntimeVersion.Current;
 
         builder.Services.AddHealthChecks();
-        builder.Services.AddBudgetyTzarObservability(builder.Configuration);
+        builder.Services.AddObservability(builder.Configuration);
         builder.Services.AddIdentityBoundary(builder.Configuration);
         builder.Services.AddPersistence(builder.Configuration);
         builder.Services.AddReporting();
@@ -44,7 +44,7 @@ public static class ApiApplication
 
         var app = builder.Build();
 
-        app.UseBudgetyTzarObservability();
+        app.UseObservability();
         app.UseSwagger();
         app.UseSwaggerUI();
         app.UseAuthentication();

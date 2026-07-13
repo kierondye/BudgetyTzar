@@ -10,8 +10,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
 {
-    [DbContext(typeof(BudgetyTzarDbContext))]
-    partial class BudgetyTzarDbContextModelSnapshot : ModelSnapshot
+    [DbContext(typeof(ApplicationDbContext))]
+    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
     {
         protected override void BuildModel(ModelBuilder modelBuilder)
         {

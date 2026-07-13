@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BudgetyTzar.Api.Persistence.PostgreSql;
 
-public sealed class BudgetyTzarDbContext(DbContextOptions<BudgetyTzarDbContext> options) : DbContext(options)
+public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : DbContext(options)
 {
     public DbSet<ApplicationUserRecord> ApplicationUsers => Set<ApplicationUserRecord>();
 

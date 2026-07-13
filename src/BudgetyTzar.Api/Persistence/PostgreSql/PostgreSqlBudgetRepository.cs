@@ -14,10 +14,10 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
     private const string BudgetNameConstraint = "ux_budgets_application_user_id_name";
     private const string AllocationBudgetItemConstraint = "fk_allocations_budget_item_owner_currency";
 
-    private readonly BudgetyTzarDbContext context;
+    private readonly ApplicationDbContext context;
     private readonly ApplicationUserId userId;
 
-    public PostgreSqlBudgetRepository(BudgetyTzarDbContext context, ICurrentUser currentUser)
+    public PostgreSqlBudgetRepository(ApplicationDbContext context, ICurrentUser currentUser)
     {
         this.context = context;
         userId = currentUser.UserId;
