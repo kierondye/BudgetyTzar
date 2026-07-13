@@ -99,6 +99,7 @@ public sealed class PostgreSqlSchemaTests(PostgreSqlSchemaTests.DatabaseFixture 
         Assert.Contains("fk_allocations_budget_item_owner_currency", constraints);
         Assert.Contains("fk_allocations_transaction_owner_currency", constraints);
         Assert.Contains("fk_transactions_application_users_application_user_id", constraints);
+        Assert.Contains("ck_budgets_created_order_non_negative", constraints);
         Assert.Contains("ck_budget_items_planned_amount_range", constraints);
         Assert.Contains("ck_transactions_amount_range", constraints);
         Assert.Contains("ck_transaction_allocations_currency_format", constraints);
@@ -119,6 +120,7 @@ public sealed class PostgreSqlSchemaTests(PostgreSqlSchemaTests.DatabaseFixture 
             """);
 
         Assert.Contains("ix_budgets_application_user_id", indexes);
+        Assert.Contains("ix_budgets_created_order", indexes);
         Assert.Contains("ix_budget_items_budget_id", indexes);
         Assert.Contains("ix_budget_items_budget_owner_currency", indexes);
         Assert.Contains("ix_allocations_budget_item_owner_currency", indexes);

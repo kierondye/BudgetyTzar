@@ -11,4 +11,6 @@ public sealed class BudgetRecord
     public required string Currency { get; set; }
 
     public long Version { get; set; }
+
+    public long CreatedOrder { get; set; }
 }
