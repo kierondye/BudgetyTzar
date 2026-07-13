@@ -11,7 +11,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
 {
-    [DbContext(typeof(BudgetyTzarDbContext))]
+    [DbContext(typeof(ApplicationDbContext))]
     [Migration("20260713073635_InitialPostgreSqlSchema")]
     partial class InitialPostgreSqlSchema
     {

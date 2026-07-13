@@ -2,7 +2,7 @@
 
 BudgetyTzar is a personal budgeting application for planning how money should be used, recording what actually happened, and comparing the two.
 
-The project is a .NET 9 HTTP API with in-memory default runtime persistence and a PostgreSQL persistence foundation. PostgreSQL currently has durable schema support plus budget, transaction, and allocation repository adapters, while the default application composition remains in memory. The application is focused on a small budgeting domain made up of budgets, budget items, transactions, and transaction allocations. The aim is to keep the model simple and expressive while evolving the architecture through small, well-tested changes.
+The project is a .NET 9 HTTP API with in-memory default runtime persistence and selectable PostgreSQL durable persistence. The application is focused on a small budgeting domain made up of budgets, budget items, transactions, and transaction allocations. The aim is to keep the model simple and expressive while evolving the architecture through small, well-tested changes.
 
 ## Documentation
 
@@ -81,6 +81,27 @@ Build the solution:
 dotnet build BudgetyTzar.sln
 ```
 
+### Persistence Configuration
+
+Without persistence configuration, the API uses process-local in-memory storage. This
+keeps ordinary local development and most tests simple, but data is lost when the
+process stops.
+
+Select PostgreSQL persistence with:
+
+```bash
+Persistence__Provider=PostgreSql
+ConnectionStrings__BudgetyTzar="Host=localhost;Database=budgetytzar;Username=postgres;Password=postgres"
+```
+
+`Persistence__Provider=InMemory` explicitly selects the default in-memory provider.
+When `PostgreSql` is selected, a connection string is required through
+`ConnectionStrings__BudgetyTzar`, `Persistence__ConnectionString`, or
+`Persistence__PostgreSql__ConnectionString`; missing configuration fails during
+startup. PostgreSQL persistence uses the durable application-user store and durable
+budget, transaction, and allocation repositories. Business API behaviour and response
+contracts remain the same across supported persistence providers.
+
 ## Container
 
 Build the production API image from the repository root:
@@ -117,11 +138,9 @@ commit. Stop the container after verification:
 docker stop budgetytzar-api
 ```
 
-Persistence is currently in memory by default. All budgets, transactions, and
-allocations created through the container are lost when it stops or restarts.
-PostgreSQL migrations and budget, transaction, and allocation adapters exist for
-durable storage groundwork, but the default application composition still uses the
-in-memory repositories.
+Persistence is in memory by default. All budgets, transactions, and allocations
+created through the container are lost when it stops or restarts unless PostgreSQL
+persistence is selected and a database connection string is supplied.
 
 Run the PostgreSQL schema migration tests with Docker available:
 
@@ -136,7 +155,7 @@ BUDGETYTZAR_MIGRATIONS_CONNECTION_STRING="Host=localhost;Database=budgetytzar;Us
   dotnet ef migrations add <MigrationName> \
   --project src/BudgetyTzar.Api \
   --startup-project src/BudgetyTzar.Api \
-  --context BudgetyTzarDbContext \
+  --context ApplicationDbContext \
   --output-dir Persistence/PostgreSql/Migrations
 ```
 

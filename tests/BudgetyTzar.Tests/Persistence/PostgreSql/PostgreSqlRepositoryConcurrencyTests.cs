@@ -248,32 +248,32 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
         await context.SaveChangesAsync();
     }
 
-    private static BudgetyTzarDbContext CreateContext(
+    private static ApplicationDbContext CreateContext(
         string connectionString,
         params IInterceptor[] interceptors)
     {
-        var options = new DbContextOptionsBuilder<BudgetyTzarDbContext>()
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql(connectionString)
             .AddInterceptors(interceptors)
             .Options;
 
-        return new BudgetyTzarDbContext(options);
+        return new ApplicationDbContext(options);
     }
 
-    private static bool HasAdded<TRecord>(BudgetyTzarDbContext context, Func<TRecord, bool> predicate)
+    private static bool HasAdded<TRecord>(ApplicationDbContext context, Func<TRecord, bool> predicate)
         where TRecord : class
     {
         return HasEntry(context, EntityState.Added, predicate);
     }
 
-    private static bool HasDeleted<TRecord>(BudgetyTzarDbContext context, Func<TRecord, bool> predicate)
+    private static bool HasDeleted<TRecord>(ApplicationDbContext context, Func<TRecord, bool> predicate)
         where TRecord : class
     {
         return HasEntry(context, EntityState.Deleted, predicate);
     }
 
     private static bool HasEntry<TRecord>(
-        BudgetyTzarDbContext context,
+        ApplicationDbContext context,
         EntityState state,
         Func<TRecord, bool> predicate)
         where TRecord : class
@@ -355,7 +355,7 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
     }
 
     private sealed class BeforeSaveInterceptor(
-        Func<BudgetyTzarDbContext, bool> shouldRun,
+        Func<ApplicationDbContext, bool> shouldRun,
         Action<string> action) : SaveChangesInterceptor
     {
         private bool hasRun;
@@ -365,7 +365,7 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
             InterceptionResult<int> result)
         {
             if (!hasRun
-                && eventData.Context is BudgetyTzarDbContext context
+                && eventData.Context is ApplicationDbContext context
                 && shouldRun(context))
             {
                 hasRun = true;

@@ -249,7 +249,7 @@ public sealed class PostgreSqlSchemaTests(PostgreSqlSchemaTests.DatabaseFixture 
         });
     }
 
-    private async Task AssertConstraintFailureAsync(Action<BudgetyTzarDbContext> arrange)
+    private async Task AssertConstraintFailureAsync(Action<ApplicationDbContext> arrange)
     {
         await using var context = database.CreateContext();
         arrange(context);
@@ -320,7 +320,7 @@ public sealed class PostgreSqlSchemaTests(PostgreSqlSchemaTests.DatabaseFixture 
         };
     }
 
-    private static async Task<IReadOnlyList<string>> ReadStringsAsync(BudgetyTzarDbContext context, string sql)
+    private static async Task<IReadOnlyList<string>> ReadStringsAsync(ApplicationDbContext context, string sql)
     {
         await using var command = context.Database.GetDbConnection().CreateCommand();
         command.CommandText = sql;
@@ -363,13 +363,13 @@ public sealed class PostgreSqlSchemaTests(PostgreSqlSchemaTests.DatabaseFixture 
 
         private string ConnectionString => container.GetConnectionString();
 
-        public BudgetyTzarDbContext CreateContext()
+        public ApplicationDbContext CreateContext()
         {
-            var options = new DbContextOptionsBuilder<BudgetyTzarDbContext>()
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
                 .UseNpgsql(ConnectionString)
                 .Options;
 
-            return new BudgetyTzarDbContext(options);
+            return new ApplicationDbContext(options);
         }
     }
 }

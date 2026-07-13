@@ -3,9 +3,9 @@ using Microsoft.EntityFrameworkCore.Design;
 
 namespace BudgetyTzar.Api.Persistence.PostgreSql;
 
-public sealed class BudgetyTzarDbContextFactory : IDesignTimeDbContextFactory<BudgetyTzarDbContext>
+public sealed class ApplicationDbContextFactory : IDesignTimeDbContextFactory<ApplicationDbContext>
 {
-    public BudgetyTzarDbContext CreateDbContext(string[] args)
+    public ApplicationDbContext CreateDbContext(string[] args)
     {
         var connectionString = Environment.GetEnvironmentVariable("BUDGETYTZAR_MIGRATIONS_CONNECTION_STRING");
 
@@ -15,10 +15,10 @@ public sealed class BudgetyTzarDbContextFactory : IDesignTimeDbContextFactory<Bu
                 "Set BUDGETYTZAR_MIGRATIONS_CONNECTION_STRING before running EF Core migration commands.");
         }
 
-        var options = new DbContextOptionsBuilder<BudgetyTzarDbContext>()
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql(connectionString)
             .Options;
 
-        return new BudgetyTzarDbContext(options);
+        return new ApplicationDbContext(options);
     }
 }

@@ -2,6 +2,7 @@ using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi.Models;
 using Swashbuckle.AspNetCore.SwaggerGen;
@@ -22,15 +23,15 @@ public static class IdentityBoundary
             ?? (bearerOptions.Enabled ? JwtBearerDefaults.AuthenticationScheme : DefaultScheme);
 
         services.AddHttpContextAccessor();
-        services.AddSingleton<IApplicationUserStore, InMemoryApplicationUserStore>();
+        services.TryAddSingleton<IApplicationUserStore, InMemoryApplicationUserStore>();
         services.Configure<CurrentUserResolverOptions>(options =>
         {
             options.UserIdClaimTypes = bearerOptions.UserIdClaim is null
                 ? CurrentUserResolverOptions.DefaultUserIdClaimTypes
                 : [bearerOptions.UserIdClaim];
         });
-        services.AddSingleton<CurrentUserResolver>();
-        services.AddSingleton<IAuthorizationHandler, ResolvedCurrentUserAuthorizationHandler>();
+        services.AddScoped<CurrentUserResolver>();
+        services.AddScoped<IAuthorizationHandler, ResolvedCurrentUserAuthorizationHandler>();
         services.AddScoped<ICurrentUser>(services =>
         {
             var context = services.GetRequiredService<IHttpContextAccessor>().HttpContext;

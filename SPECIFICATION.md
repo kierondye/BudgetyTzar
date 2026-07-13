@@ -682,6 +682,21 @@ Recommended storage:
 
 - PostgreSQL for operational data.
 
+Runtime persistence selection:
+
+- When no persistence provider is configured, the application uses in-memory
+  persistence for ordinary local development and tests.
+- `Persistence:Provider=InMemory` explicitly selects in-memory persistence.
+- `Persistence:Provider=PostgreSql` selects PostgreSQL persistence for application
+  users, budgets, transactions, and transaction allocations.
+- PostgreSQL persistence requires a connection string supplied by
+  `ConnectionStrings:BudgetyTzar`, `Persistence:ConnectionString`, or
+  `Persistence:PostgreSql:ConnectionString`.
+- Selecting PostgreSQL without a connection string must fail clearly during
+  application startup.
+- Public HTTP behaviour, authentication, ownership, validation, reporting, and
+  response contracts must remain the same across supported persistence providers.
+
 Storage rules:
 
 - Monetary values must use decimal-compatible database types.
