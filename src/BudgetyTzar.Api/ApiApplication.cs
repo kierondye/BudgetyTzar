@@ -30,6 +30,16 @@ public static class ApiApplication
                 Title = "BudgetyTzar API",
                 Version = version.ProductVersion
             });
+            options.AddSecurityDefinition(IdentityBoundary.BearerSecuritySchemeName, new OpenApiSecurityScheme
+            {
+                Description = "JWT bearer token used by authenticated business API operations.",
+                In = ParameterLocation.Header,
+                Name = "Authorization",
+                Scheme = "bearer",
+                BearerFormat = "JWT",
+                Type = SecuritySchemeType.Http
+            });
+            options.OperationFilter<RequireAuthorizationOperationFilter>();
         });
 
         var app = builder.Build();
