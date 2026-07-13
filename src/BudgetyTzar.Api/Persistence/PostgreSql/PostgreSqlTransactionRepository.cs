@@ -103,7 +103,17 @@ public sealed class PostgreSqlTransactionRepository : ITransactionRepository
         }
 
         context.Transactions.Remove(transaction);
-        context.SaveChanges();
+        try
+        {
+            context.SaveChanges();
+        }
+        catch (DbUpdateException exception) when (PostgreSqlPersistenceErrors.IsForeignKeyViolation(
+            exception,
+            "fk_allocations_transaction_owner_currency"))
+        {
+            context.ChangeTracker.Clear();
+            return new TransactionDeleteResult.TransactionHasAllocation();
+        }
 
         return new TransactionDeleteResult.Deleted();
     }
@@ -127,12 +137,26 @@ public sealed class PostgreSqlTransactionRepository : ITransactionRepository
         }
 
         var applicationUserId = Guid.NewGuid();
-        context.ApplicationUsers.Add(new ApplicationUserRecord
+        var applicationUser = new ApplicationUserRecord
         {
             ApplicationUserId = applicationUserId,
             UserKey = userId.Value
-        });
-        context.SaveChanges();
+        };
+
+        context.ApplicationUsers.Add(applicationUser);
+
+        try
+        {
+            context.SaveChanges();
+        }
+        catch (DbUpdateException exception) when (PostgreSqlPersistenceErrors.IsUniqueViolation(
+            exception,
+            "ux_application_users_user_key"))
+        {
+            context.ChangeTracker.Clear();
+            return GetApplicationUserId()
+                ?? throw new InvalidOperationException("Application user was not available after a concurrent create.");
+        }
 
         return applicationUserId;
     }
