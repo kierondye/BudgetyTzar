@@ -716,11 +716,12 @@ budgeting, transaction, transaction allocation, or reporting endpoint returns
 JWT bearer/OIDC-compatible authentication is enabled by deployment configuration, not
 by code changes. The deployment configuration identifies the trusted authority or
 metadata address, accepted API audience, whether metadata must be loaded over HTTPS,
-and the stable authenticated claim used to derive the internal application user.
-Issuer may be configured as an additional validation constraint, but it does not
-replace authority or metadata for signing-key discovery. Tokens that are missing,
-invalid, or do not contain the configured user identity claim are treated as
-unauthenticated for business API requests and return `401 Unauthorized`.
+and the stable authenticated claim used as an external lookup key for the internal
+application user. The internal application user identifier is distinct from the
+external identity representation. Issuer may be configured as an additional validation
+constraint, but it does not replace authority or metadata for signing-key discovery.
+Tokens that are missing, invalid, or do not contain the configured user identity claim
+are treated as unauthenticated for business API requests and return `401 Unauthorized`.
 
 Budgets, transactions, transaction allocations, and budget summaries are scoped to the
 authenticated application user. User identity is resolved from authenticated claims and

@@ -15,19 +15,17 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
     private const string AllocationBudgetItemConstraint = "fk_allocations_budget_item_owner_currency";
 
     private readonly BudgetyTzarDbContext context;
-    private readonly PostgreSqlApplicationUserStore userStore;
     private readonly ApplicationUserId userId;
 
     public PostgreSqlBudgetRepository(BudgetyTzarDbContext context, ICurrentUser currentUser)
     {
         this.context = context;
-        userStore = new PostgreSqlApplicationUserStore(context);
         userId = currentUser.UserId;
     }
 
     public BudgetSaveResult Save(Budget budget)
     {
-        var applicationUserId = userStore.GetOrCreateApplicationUserId(userId);
+        var applicationUserId = userId.Value;
 
         if (context.Budgets.AsNoTracking().Any(existingBudget => existingBudget.BudgetId == budget.BudgetId))
         {
@@ -68,7 +66,7 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
         }
 
         var budget = postgreSqlState.Value;
-        var applicationUserId = userStore.GetOrCreateApplicationUserId(userId);
+        var applicationUserId = userId.Value;
         using var transaction = context.Database.BeginTransaction();
 
         var existingBudget = context.Budgets
@@ -160,7 +158,7 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
 
     public bool HasBudgetNamed(NormalizedName name, Guid? exceptBudgetId = null)
     {
-        var applicationUserId = userStore.GetOrCreateApplicationUserId(userId);
+        var applicationUserId = userId.Value;
 
         return context.Budgets.AsNoTracking().Any(budget =>
             budget.ApplicationUserId == applicationUserId
@@ -170,7 +168,7 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
 
     public IReadOnlyList<Budget> GetAll()
     {
-        var applicationUserId = userStore.GetOrCreateApplicationUserId(userId);
+        var applicationUserId = userId.Value;
         var budgetIds = context.Budgets
             .AsNoTracking()
             .Where(budget => budget.ApplicationUserId == applicationUserId)
@@ -186,7 +184,7 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
 
     public EntityState<Budget>? Get(Guid budgetId)
     {
-        var applicationUserId = userStore.GetOrCreateApplicationUserId(userId);
+        var applicationUserId = userId.Value;
         var record = context.Budgets
             .AsNoTracking()
             .SingleOrDefault(budget => budget.BudgetId == budgetId && budget.ApplicationUserId == applicationUserId);
@@ -211,7 +209,7 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
 
     public BudgetItemReference? GetBudgetItemReference(Guid budgetItemId)
     {
-        var applicationUserId = userStore.GetOrCreateApplicationUserId(userId);
+        var applicationUserId = userId.Value;
         var itemRecord = context.BudgetItems
             .AsNoTracking()
             .SingleOrDefault(item => item.BudgetItemId == budgetItemId && item.ApplicationUserId == applicationUserId);

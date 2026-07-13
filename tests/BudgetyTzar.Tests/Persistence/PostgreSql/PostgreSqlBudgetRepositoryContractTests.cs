@@ -17,10 +17,35 @@ public sealed class PostgreSqlBudgetRepositoryContractTests(
     : BudgetRepositoryContractTests,
         IClassFixture<PostgreSqlBudgetRepositoryContractTests.DatabaseFixture>
 {
+    [Fact]
+    public async Task Application_user_store_uses_external_identity_as_lookup_key_for_internal_user_id()
+    {
+        await database.ResetAsync();
+        await using var context = database.CreateContext();
+        var users = new PostgreSqlApplicationUserStore(context);
+        var userKey = UserKey("repository-test-user");
+
+        var firstUserId = users.GetOrCreateApplicationUserId(userKey);
+        var secondUserId = users.GetOrCreateApplicationUserId(userKey);
+        var storedUser = Assert.Single(context.ApplicationUsers.AsNoTracking());
+
+        Assert.Equal(firstUserId, secondUserId);
+        Assert.Equal(firstUserId.Value, storedUser.ApplicationUserId);
+        Assert.Equal(userKey.Value, storedUser.UserKey);
+        Assert.NotEqual(userKey.Value, firstUserId.Value.ToString());
+    }
+
     protected override async ValueTask<RepositoryContractContext> CreateContextAsync()
     {
         await database.ResetAsync();
         return new PostgreSqlBudgetRepositoryContractContext(database.CreateOptions());
+    }
+
+    private static ApplicationUserKey UserKey(string value)
+    {
+        return ExternalIdentity.TryCreate("BudgetyTzar.Tests", value, out var externalIdentity)
+            ? ApplicationUserKey.FromExternalIdentity(externalIdentity!)
+            : throw new InvalidOperationException("Invalid test user.");
     }
 
     public sealed class DatabaseFixture : IAsyncLifetime
@@ -65,7 +90,7 @@ public sealed class PostgreSqlBudgetRepositoryContractTests(
                 .Options;
         }
 
-        private BudgetyTzarDbContext CreateContext()
+        public BudgetyTzarDbContext CreateContext()
         {
             return new BudgetyTzarDbContext(CreateOptions());
         }
@@ -82,13 +107,13 @@ internal sealed class PostgreSqlBudgetRepositoryContractContext(
     {
         var context = new BudgetyTzarDbContext(options);
         contexts.Add(context);
-        var currentUser = CurrentUser(userId);
         var userStore = new PostgreSqlApplicationUserStore(context);
+        var currentUser = CurrentUser(userId, userStore);
 
         return new RepositorySet(
             new PostgreSqlBudgetRepository(context, currentUser),
-            new PostgreSqlTestTransactionRepository(context, userStore, currentUser),
-            new PostgreSqlTestTransactionAllocationRepository(context, userStore, currentUser));
+            new PostgreSqlTestTransactionRepository(context, currentUser),
+            new PostgreSqlTestTransactionAllocationRepository(context, currentUser));
     }
 
     public override async ValueTask DisposeAsync()
@@ -99,23 +124,23 @@ internal sealed class PostgreSqlBudgetRepositoryContractContext(
         }
     }
 
-    private static CurrentUser CurrentUser(string value)
+    private static CurrentUser CurrentUser(string value, PostgreSqlApplicationUserStore userStore)
     {
-        return ApplicationUserId.TryCreate(value, out var userId)
-            ? new CurrentUser(userId!)
+        return ExternalIdentity.TryCreate("BudgetyTzar.Tests", value, out var externalIdentity)
+            ? new CurrentUser(userStore.GetOrCreateApplicationUserId(
+                ApplicationUserKey.FromExternalIdentity(externalIdentity!)))
             : throw new InvalidOperationException("Invalid test user.");
     }
 }
 
 internal sealed class PostgreSqlTestTransactionRepository(
     BudgetyTzarDbContext context,
-    PostgreSqlApplicationUserStore userStore,
     ICurrentUser currentUser)
     : ITransactionRepository
 {
     public void Add(Transaction transaction)
     {
-        var applicationUserId = userStore.GetOrCreateApplicationUserId(currentUser.UserId);
+        var applicationUserId = currentUser.UserId.Value;
         var recordedOrder = context.Transactions
             .Where(record => record.ApplicationUserId == applicationUserId)
             .Select(record => (int?)record.RecordedOrder)
@@ -138,7 +163,7 @@ internal sealed class PostgreSqlTestTransactionRepository(
 
     public IReadOnlyList<Transaction> GetAll()
     {
-        var applicationUserId = userStore.GetOrCreateApplicationUserId(currentUser.UserId);
+        var applicationUserId = currentUser.UserId.Value;
 
         return context.Transactions
             .AsNoTracking()
@@ -151,7 +176,7 @@ internal sealed class PostgreSqlTestTransactionRepository(
 
     public Transaction? Get(Guid transactionId)
     {
-        var applicationUserId = userStore.GetOrCreateApplicationUserId(currentUser.UserId);
+        var applicationUserId = currentUser.UserId.Value;
         var record = context.Transactions
             .AsNoTracking()
             .SingleOrDefault(transaction =>
@@ -163,7 +188,7 @@ internal sealed class PostgreSqlTestTransactionRepository(
 
     public TransactionDeleteResult Delete(Guid transactionId)
     {
-        var applicationUserId = userStore.GetOrCreateApplicationUserId(currentUser.UserId);
+        var applicationUserId = currentUser.UserId.Value;
         var record = context.Transactions
             .SingleOrDefault(transaction =>
                 transaction.TransactionId == transactionId
@@ -226,13 +251,12 @@ internal sealed class PostgreSqlTestTransactionRepository(
 
 internal sealed class PostgreSqlTestTransactionAllocationRepository(
     BudgetyTzarDbContext context,
-    PostgreSqlApplicationUserStore userStore,
     ICurrentUser currentUser)
     : ITransactionAllocationRepository
 {
     public AllocateTransactionResult Allocate(TransactionAllocation allocation)
     {
-        var applicationUserId = userStore.GetOrCreateApplicationUserId(currentUser.UserId);
+        var applicationUserId = currentUser.UserId.Value;
         var transaction = context.Transactions
             .AsNoTracking()
             .SingleOrDefault(record =>
@@ -274,7 +298,7 @@ internal sealed class PostgreSqlTestTransactionAllocationRepository(
 
     public TransactionAllocation? Get(Guid transactionId)
     {
-        var applicationUserId = userStore.GetOrCreateApplicationUserId(currentUser.UserId);
+        var applicationUserId = currentUser.UserId.Value;
         var record = context.TransactionAllocations
             .AsNoTracking()
             .SingleOrDefault(allocation =>
@@ -286,7 +310,7 @@ internal sealed class PostgreSqlTestTransactionAllocationRepository(
 
     public IReadOnlyList<TransactionAllocation> GetAll()
     {
-        var applicationUserId = userStore.GetOrCreateApplicationUserId(currentUser.UserId);
+        var applicationUserId = currentUser.UserId.Value;
 
         return context.TransactionAllocations
             .AsNoTracking()
@@ -298,7 +322,7 @@ internal sealed class PostgreSqlTestTransactionAllocationRepository(
 
     public void Remove(Guid transactionId)
     {
-        var applicationUserId = userStore.GetOrCreateApplicationUserId(currentUser.UserId);
+        var applicationUserId = currentUser.UserId.Value;
         var record = context.TransactionAllocations
             .SingleOrDefault(allocation =>
                 allocation.TransactionId == transactionId

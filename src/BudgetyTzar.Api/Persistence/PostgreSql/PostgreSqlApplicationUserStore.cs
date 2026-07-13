@@ -1,54 +1,60 @@
-using System.Security.Cryptography;
-using System.Text;
 using BudgetyTzar.Api.Features.Identity;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 
 namespace BudgetyTzar.Api.Persistence.PostgreSql;
 
 public sealed class PostgreSqlApplicationUserStore(BudgetyTzarDbContext context)
 {
-    public Guid GetOrCreateApplicationUserId(ApplicationUserId userId)
+    private const string UserKeyConstraint = "ux_application_users_user_key";
+
+    public ApplicationUserId GetOrCreateApplicationUserId(ApplicationUserKey userKey)
     {
-        Guid applicationUserId = CreateDeterministicStorageId(userId);
-        string userKey = userId.Value;
+        var existingUserId = FindApplicationUserId(userKey);
+        if (existingUserId is not null)
+        {
+            return existingUserId;
+        }
 
-        // The deterministic ID is still persisted because other tables enforce owner scope through FKs to application_users.
-        context.Database.ExecuteSqlRaw(
-            """
-             insert into budgetytzar.application_users (application_user_id, user_key)
-             values (@applicationUserId, @userKey)
-             on conflict do nothing
-             """,
-            new NpgsqlParameter<Guid>("applicationUserId", applicationUserId),
-            new NpgsqlParameter<string>("userKey", userKey));
+        var applicationUserId = ApplicationUserId.New();
+        context.ApplicationUsers.Add(new ApplicationUserRecord
+        {
+            ApplicationUserId = applicationUserId.Value,
+            UserKey = userKey.Value
+        });
 
-        return applicationUserId;
+        try
+        {
+            context.SaveChanges();
+            context.ChangeTracker.Clear();
+            return applicationUserId;
+        }
+        catch (DbUpdateException exception) when (IsConstraint(exception, UserKeyConstraint))
+        {
+            context.ChangeTracker.Clear();
+            return FindApplicationUserId(userKey)
+                ?? throw new InvalidOperationException("Application user lookup failed after a user key conflict.");
+        }
     }
 
-    private static Guid CreateDeterministicStorageId(ApplicationUserId userId)
+    private ApplicationUserId? FindApplicationUserId(ApplicationUserKey userKey)
     {
-        var userKeyHash = HashUserKey(userId.Value);
-        var guidBytes = TakeGuidBytes(userKeyHash);
+        var record = context.ApplicationUsers
+            .AsNoTracking()
+            .SingleOrDefault(user => user.UserKey == userKey.Value);
 
-        SetGuidVersionAndVariant(guidBytes);
+        if (record is null)
+        {
+            return null;
+        }
 
-        return new Guid(guidBytes);
+        return ApplicationUserId.TryCreate(record.ApplicationUserId, out var userId)
+            ? userId
+            : throw new InvalidOperationException("Stored application user identity is invalid.");
     }
 
-    private static byte[] HashUserKey(string userKey)
+    private static bool IsConstraint(DbUpdateException exception, string constraintName)
     {
-        return SHA256.HashData(Encoding.UTF8.GetBytes(userKey));
-    }
-
-    private static byte[] TakeGuidBytes(byte[] userKeyHash)
-    {
-        return userKeyHash[..16];
-    }
-
-    private static void SetGuidVersionAndVariant(byte[] guidBytes)
-    {
-        guidBytes[7] = (byte)((guidBytes[7] & 0x0F) | 0x50);
-        guidBytes[8] = (byte)((guidBytes[8] & 0x3F) | 0x80);
+        return exception.InnerException is Npgsql.PostgresException postgresException
+            && postgresException.ConstraintName == constraintName;
     }
 }

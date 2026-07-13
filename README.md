@@ -52,20 +52,22 @@ Authentication__Bearer__UserIdClaim=sub
 ```
 
 `Authority` should point at the trusted issuer metadata endpoint root. `Audience`
-identifies this API. `UserIdClaim` selects the stable authenticated claim used to derive
-the internal BudgetyTzar application user; use the identity provider's stable
-non-reassignable user identifier, such as `sub` or `oid`. If the issuer cannot be
-discovered from authority metadata, set `Authentication__Bearer__Issuer` explicitly
-alongside `Authority` or `Authentication__Bearer__MetadataAddress`; `Issuer` alone is
-not a signing-key metadata source.
+identifies this API. `UserIdClaim` selects the stable authenticated claim used as the
+external lookup key for the internal BudgetyTzar application user; use the identity
+provider's stable non-reassignable user identifier, such as `sub` or `oid`. If the
+issuer cannot be discovered from authority metadata, set
+`Authentication__Bearer__Issuer` explicitly alongside `Authority` or
+`Authentication__Bearer__MetadataAddress`; `Issuer` alone is not a signing-key metadata
+source.
 Additional accepted audiences can be configured as
 `Authentication__Bearer__ValidAudiences__0`, `Authentication__Bearer__ValidAudiences__1`,
 and so on. `Authentication__Bearer__RequireHttpsMetadata` defaults to `true`.
 
 BudgetyTzar does not store passwords, issue login or refresh tokens, or expose owner
 identity in existing budget, transaction, allocation, or summary response contracts.
-Domain repositories continue to enforce ownership from the resolved internal current
-user.
+External identity values are lookup keys, while `ApplicationUserId` is an internal
+application identifier. Domain repositories continue to enforce ownership from the
+resolved internal current user.
 
 Run the test suite:
 

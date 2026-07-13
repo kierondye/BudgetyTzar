@@ -101,9 +101,10 @@ The Identity feature owns authentication scheme configuration and current-user
 resolution from authenticated claims. It provides a rejecting default scheme when no
 deployment authentication is configured and a JWT bearer/OIDC-compatible scheme when
 deployment configuration supplies the trusted authority or issuer, audience, HTTPS
-metadata setting, and stable user-id claim. User-facing repositories are scoped to that
-current internal application user so handlers can coordinate use cases without
-manually filtering cross-user data.
+metadata setting, and stable user-id claim. The external identity value is a lookup key
+for an internal `ApplicationUserId`; it is not the application user's primary
+identifier. User-facing repositories are scoped to that current internal application
+user so handlers can coordinate use cases without manually filtering cross-user data.
 
 Shared domain types live under `Domain` because Budgeting, Transactions, Allocations,
 and Reporting use the same ubiquitous language and invariant-protecting values.
