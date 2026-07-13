@@ -20,24 +20,23 @@ public sealed class PostgreSqlTransactionRepository : ITransactionRepository
     public void Add(Transaction transaction)
     {
         var applicationUserId = GetOrCreateApplicationUserId();
-        var recordedOrder = context.Transactions
-            .Where(existing => existing.ApplicationUserId == applicationUserId)
-            .Select(existing => (int?)existing.RecordedOrder)
-            .Max() + 1 ?? 0;
 
-        context.Transactions.Add(new TransactionRecord
+        while (true)
         {
-            TransactionId = transaction.TransactionId,
-            ApplicationUserId = applicationUserId,
-            Description = transaction.Description,
-            Type = transaction.Type.Value,
-            TransactionDate = transaction.TransactionDate,
-            Amount = transaction.Amount.Value,
-            Currency = transaction.Currency.Value,
-            RecordedOrder = recordedOrder
-        });
+            context.Transactions.Add(CreateRecord(transaction, applicationUserId));
 
-        context.SaveChanges();
+            try
+            {
+                context.SaveChanges();
+                return;
+            }
+            catch (DbUpdateException exception) when (PostgreSqlPersistenceErrors.IsUniqueViolation(
+                exception,
+                "ux_transactions_application_user_id_recorded_order"))
+            {
+                context.ChangeTracker.Clear();
+            }
+        }
     }
 
     public IReadOnlyList<Transaction> GetAll()
@@ -178,5 +177,25 @@ public sealed class PostgreSqlTransactionRepository : ITransactionRepository
         }
 
         return recorded.Transaction;
+    }
+
+    private TransactionRecord CreateRecord(Transaction transaction, Guid applicationUserId)
+    {
+        var recordedOrder = context.Transactions
+            .Where(existing => existing.ApplicationUserId == applicationUserId)
+            .Select(existing => (int?)existing.RecordedOrder)
+            .Max() + 1 ?? 0;
+
+        return new TransactionRecord
+        {
+            TransactionId = transaction.TransactionId,
+            ApplicationUserId = applicationUserId,
+            Description = transaction.Description,
+            Type = transaction.Type.Value,
+            TransactionDate = transaction.TransactionDate,
+            Amount = transaction.Amount.Value,
+            Currency = transaction.Currency.Value,
+            RecordedOrder = recordedOrder
+        };
     }
 }

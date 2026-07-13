@@ -44,6 +44,42 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
     }
 
     [Fact]
+    public async Task Transaction_add_retries_when_concurrent_recording_claims_recorded_order()
+    {
+        await using var database = await CreateDatabaseAsync();
+        var userId = Guid.NewGuid();
+        var userKey = "postgres-recorded-order-race-user";
+        var existingTransactionId = Guid.NewGuid();
+        var concurrentTransactionId = Guid.NewGuid();
+        await SeedBudgetItemAndTransactionAsync(database.ConnectionString, userId, userKey, existingTransactionId);
+        var interceptor = new BeforeSaveInterceptor(
+            context => HasAdded<TransactionRecord>(context, transaction => transaction.RecordedOrder == 1),
+            connectionString =>
+            {
+                using var concurrentContext = CreateContext(connectionString);
+                concurrentContext.Transactions.Add(TransactionRecord(concurrentTransactionId, userId, recordedOrder: 1));
+                concurrentContext.SaveChanges();
+            });
+        await using var context = CreateContext(database.ConnectionString, interceptor);
+        var repository = new PostgreSqlTransactionRepository(context, CurrentUser(userKey));
+        var transaction = CreateTransaction();
+
+        repository.Add(transaction);
+
+        await using var assertionContext = CreateContext(database.ConnectionString);
+        Assert.Equal(
+            [
+                existingTransactionId,
+                concurrentTransactionId,
+                transaction.TransactionId
+            ],
+            await assertionContext.Transactions
+                .OrderBy(storedTransaction => storedTransaction.RecordedOrder)
+                .Select(storedTransaction => storedTransaction.TransactionId)
+                .ToListAsync());
+    }
+
+    [Fact]
     public async Task Transaction_delete_returns_allocated_result_when_concurrent_allocation_wins()
     {
         await using var database = await CreateDatabaseAsync();
@@ -276,7 +312,7 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
             TransactionAllocation.Allocate(transaction, budgetItemId)).Allocation;
     }
 
-    private static TransactionRecord TransactionRecord(Guid transactionId, Guid userId)
+    private static TransactionRecord TransactionRecord(Guid transactionId, Guid userId, int recordedOrder = 0)
     {
         return new TransactionRecord
         {
@@ -287,7 +323,7 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
             TransactionDate = new DateOnly(2026, 7, 2),
             Amount = 42.50m,
             Currency = "GBP",
-            RecordedOrder = 0
+            RecordedOrder = recordedOrder
         };
     }
 
