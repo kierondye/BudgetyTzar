@@ -46,12 +46,12 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
             ClearChanges();
             return new BudgetSaveResult.Saved(budget);
         }
-        catch (DbUpdateException exception) when (IsConstraint(exception, BudgetPrimaryKeyConstraint))
+        catch (DbUpdateException exception) when (IsNamedConstraint(exception, BudgetPrimaryKeyConstraint))
         {
             ClearChanges();
             return new BudgetSaveResult.DuplicateIdentity();
         }
-        catch (DbUpdateException exception) when (IsConstraint(exception, BudgetNameConstraint))
+        catch (DbUpdateException exception) when (IsNamedConstraint(exception, BudgetNameConstraint))
         {
             ClearChanges();
             return new BudgetSaveResult.DuplicateName();
@@ -130,25 +130,25 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
             ClearChanges();
             return new BudgetSaveResult.Saved(budget);
         }
-        catch (DbUpdateException exception) when (IsConstraint(exception, BudgetNameConstraint))
+        catch (DbUpdateException exception) when (IsNamedConstraint(exception, BudgetNameConstraint))
         {
             transaction.Rollback();
             ClearChanges();
             return new BudgetSaveResult.DuplicateName();
         }
-        catch (PostgresException exception) when (IsConstraint(exception, BudgetNameConstraint))
+        catch (PostgresException exception) when (IsNamedConstraint(exception, BudgetNameConstraint))
         {
             transaction.Rollback();
             ClearChanges();
             return new BudgetSaveResult.DuplicateName();
         }
-        catch (DbUpdateException exception) when (IsConstraint(exception, AllocationBudgetItemConstraint))
+        catch (DbUpdateException exception) when (IsNamedConstraint(exception, AllocationBudgetItemConstraint))
         {
             transaction.Rollback();
             ClearChanges();
             return new BudgetSaveResult.BudgetItemHasAllocations();
         }
-        catch (PostgresException exception) when (IsConstraint(exception, AllocationBudgetItemConstraint))
+        catch (PostgresException exception) when (IsNamedConstraint(exception, AllocationBudgetItemConstraint))
         {
             transaction.Rollback();
             ClearChanges();
@@ -347,13 +347,13 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
         context.ChangeTracker.Clear();
     }
 
-    private static bool IsConstraint(DbUpdateException exception, string constraintName)
+    private static bool IsNamedConstraint(DbUpdateException exception, string constraintName)
     {
         return exception.InnerException is PostgresException postgresException
-            && IsConstraint(postgresException, constraintName);
+            && IsNamedConstraint(postgresException, constraintName);
     }
 
-    private static bool IsConstraint(PostgresException exception, string constraintName)
+    private static bool IsNamedConstraint(PostgresException exception, string constraintName)
     {
         return exception.ConstraintName == constraintName;
     }

@@ -28,7 +28,7 @@ public sealed class PostgreSqlApplicationUserStore(BudgetyTzarDbContext context)
             context.ChangeTracker.Clear();
             return applicationUserId;
         }
-        catch (DbUpdateException exception) when (IsConstraint(exception, UserKeyConstraint))
+        catch (DbUpdateException exception) when (IsNamedConstraint(exception, UserKeyConstraint))
         {
             context.ChangeTracker.Clear();
             return FindApplicationUserId(userKey)
@@ -52,7 +52,7 @@ public sealed class PostgreSqlApplicationUserStore(BudgetyTzarDbContext context)
             : throw new InvalidOperationException("Stored application user identity is invalid.");
     }
 
-    private static bool IsConstraint(DbUpdateException exception, string constraintName)
+    private static bool IsNamedConstraint(DbUpdateException exception, string constraintName)
     {
         return exception.InnerException is Npgsql.PostgresException postgresException
             && postgresException.ConstraintName == constraintName;

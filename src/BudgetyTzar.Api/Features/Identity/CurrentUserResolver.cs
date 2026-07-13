@@ -11,11 +11,6 @@ public sealed class CurrentUserResolver(
         ? CurrentUserResolverOptions.DefaultUserIdClaimTypes
         : options.Value.UserIdClaimTypes;
 
-    public CurrentUserResolver()
-        : this(Options.Create(new CurrentUserResolverOptions()), new InMemoryApplicationUserStore())
-    {
-    }
-
     public CurrentUserResolution Resolve(ClaimsPrincipal? principal)
     {
         if (principal?.Identity?.IsAuthenticated != true)
@@ -63,7 +58,6 @@ public sealed class CurrentUserResolver(
 
         return principal.Identity?.AuthenticationType;
     }
-
 }
 
 public sealed class CurrentUserResolverOptions
