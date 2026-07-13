@@ -62,8 +62,8 @@ public sealed class TransactionRepositoryTests
 
     private static Transaction CreateTransaction(string description, string amount)
     {
-        return Assert.IsType<RecordTransactionResult.Recorded>(
-            Transaction.Record(
+        return Assert.IsType<CreateTransactionResult.Created>(
+            Transaction.Create(
                 Guid.NewGuid(),
                 description,
                 TransactionType.Debit,
