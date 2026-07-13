@@ -12,6 +12,7 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
 {
     private const string BudgetPrimaryKeyConstraint = "pk_budgets";
     private const string BudgetNameConstraint = "ux_budgets_application_user_id_name";
+    private const string AllocationBudgetItemConstraint = "fk_allocations_budget_item_owner_currency";
 
     private readonly BudgetyTzarDbContext context;
     private readonly PostgreSqlApplicationUserStore userStore;
@@ -136,6 +137,24 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
             transaction.Rollback();
             ClearChanges();
             return new BudgetSaveResult.DuplicateName();
+        }
+        catch (PostgresException exception) when (IsConstraint(exception, BudgetNameConstraint))
+        {
+            transaction.Rollback();
+            ClearChanges();
+            return new BudgetSaveResult.DuplicateName();
+        }
+        catch (DbUpdateException exception) when (IsConstraint(exception, AllocationBudgetItemConstraint))
+        {
+            transaction.Rollback();
+            ClearChanges();
+            return new BudgetSaveResult.BudgetItemHasAllocations();
+        }
+        catch (PostgresException exception) when (IsConstraint(exception, AllocationBudgetItemConstraint))
+        {
+            transaction.Rollback();
+            ClearChanges();
+            return new BudgetSaveResult.BudgetItemHasAllocations();
         }
     }
 
@@ -333,7 +352,12 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
     private static bool IsConstraint(DbUpdateException exception, string constraintName)
     {
         return exception.InnerException is PostgresException postgresException
-            && postgresException.ConstraintName == constraintName;
+            && IsConstraint(postgresException, constraintName);
+    }
+
+    private static bool IsConstraint(PostgresException exception, string constraintName)
+    {
+        return exception.ConstraintName == constraintName;
     }
 
     private static NormalizedName Name(string value)
