@@ -3,6 +3,7 @@ using BudgetyTzar.Api.Features.Identity;
 using BudgetyTzar.Api.Features.Reporting;
 using BudgetyTzar.Api.Features.Transactions;
 using BudgetyTzar.Api.Observability;
+using BudgetyTzar.Api.Persistence;
 using Microsoft.OpenApi.Models;
 
 namespace BudgetyTzar.Api;
@@ -19,8 +20,7 @@ public static class ApiApplication
         builder.Services.AddHealthChecks();
         builder.Services.AddBudgetyTzarObservability(builder.Configuration);
         builder.Services.AddIdentityBoundary(builder.Configuration);
-        builder.Services.AddBudgeting();
-        builder.Services.AddTransactions();
+        builder.Services.AddBudgetyTzarPersistence(builder.Configuration);
         builder.Services.AddReporting();
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen(options =>

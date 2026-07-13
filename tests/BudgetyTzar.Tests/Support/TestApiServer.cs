@@ -61,6 +61,33 @@ public sealed class TestApiServer : IAsyncDisposable
         return new TestApiServer(app, baseAddress, client);
     }
 
+    public static async Task<TestApiServer> StartWithPostgreSqlAsync(string connectionString)
+    {
+        var app = ApiApplication.Create(
+            ["--urls", "http://127.0.0.1:0"],
+            builder =>
+            {
+                builder.Configuration.AddInMemoryCollection(
+                [
+                    new KeyValuePair<string, string?>("Authentication:Scheme", TestScheme),
+                    new KeyValuePair<string, string?>("Persistence:Provider", "PostgreSql"),
+                    new KeyValuePair<string, string?>("ConnectionStrings:BudgetyTzar", connectionString)
+                ]);
+                builder.Services
+                    .AddAuthentication()
+                    .AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>(
+                        TestScheme,
+                        _ => { });
+            });
+        await app.StartAsync();
+
+        var address = app.Urls.Single();
+        var baseAddress = new Uri(address);
+        var client = CreateAuthenticatedClient(baseAddress, DefaultUserId);
+
+        return new TestApiServer(app, baseAddress, client);
+    }
+
     public static async Task<TestApiServer> StartWithBearerAuthenticationAsync(string userIdClaim = "sub")
     {
         var app = ApiApplication.Create(
