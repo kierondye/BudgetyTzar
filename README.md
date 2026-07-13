@@ -2,7 +2,7 @@
 
 BudgetyTzar is a personal budgeting application for planning how money should be used, recording what actually happened, and comparing the two.
 
-The project is a .NET 9 HTTP API with in-memory persistence. It is currently focused on a small budgeting domain made up of budgets, budget items, transactions, and transaction allocations. The aim is to keep the model simple and expressive while evolving the architecture through small, well-tested changes.
+The project is a .NET 9 HTTP API with in-memory runtime persistence and a PostgreSQL persistence foundation. It is currently focused on a small budgeting domain made up of budgets, budget items, transactions, and transaction allocations. The aim is to keep the model simple and expressive while evolving the architecture through small, well-tested changes.
 
 ## Documentation
 
@@ -16,6 +16,7 @@ Read the relevant sections of the specification before changing domain behaviour
 ## Project Structure
 
 - `src/BudgetyTzar.Api` contains the HTTP API, domain model, feature handlers, HTTP contracts, reporting, and in-memory persistence.
+- `src/BudgetyTzar.Api/Persistence/PostgreSql` contains the EF Core DbContext and migrations for the PostgreSQL persistence foundation.
 - `tests/BudgetyTzar.Tests` contains the automated test suite.
 - `docs` contains detailed design and extension guides.
 - `scripts` contains local development and release scripts.
@@ -115,7 +116,26 @@ docker stop budgetytzar-api
 ```
 
 Persistence is currently in memory. All budgets, transactions, and allocations
-created through the container are lost when it stops or restarts.
+created through the container are lost when it stops or restarts. PostgreSQL migrations
+exist for durable storage groundwork, but the default application composition still uses
+the in-memory repositories.
+
+Run the PostgreSQL schema migration tests with Docker available:
+
+```bash
+dotnet test --filter PostgreSqlSchemaTests
+```
+
+Create or update EF Core migrations with a local tooling connection string:
+
+```bash
+BUDGETYTZAR_MIGRATIONS_CONNECTION_STRING="Host=localhost;Database=budgetytzar;Username=postgres;Password=postgres" \
+  dotnet ef migrations add <MigrationName> \
+  --project src/BudgetyTzar.Api \
+  --startup-project src/BudgetyTzar.Api \
+  --context BudgetyTzarDbContext \
+  --output-dir Persistence/PostgreSql/Migrations
+```
 
 ## Observability
 
