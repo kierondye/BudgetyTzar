@@ -2,22 +2,27 @@ namespace BudgetyTzar.Api.Features.Identity;
 
 public sealed record ApplicationUserId
 {
-    private ApplicationUserId(string value)
+    private ApplicationUserId(Guid value)
     {
         Value = value;
     }
 
-    public string Value { get; }
+    public Guid Value { get; }
 
-    public static bool TryCreate(string? value, out ApplicationUserId? userId)
+    public static ApplicationUserId New()
     {
-        if (string.IsNullOrWhiteSpace(value))
+        return new ApplicationUserId(Guid.NewGuid());
+    }
+
+    public static bool TryCreate(Guid value, out ApplicationUserId? userId)
+    {
+        if (value == Guid.Empty)
         {
             userId = null;
             return false;
         }
 
-        userId = new ApplicationUserId(value.Trim());
+        userId = new ApplicationUserId(value);
         return true;
     }
 }

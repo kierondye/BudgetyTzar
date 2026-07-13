@@ -19,7 +19,7 @@ public sealed class PostgreSqlTransactionRepository : ITransactionRepository
 
     public void Add(Transaction transaction)
     {
-        var applicationUserId = GetOrCreateApplicationUserId();
+        var applicationUserId = userId.Value;
 
         while (true)
         {
@@ -41,16 +41,11 @@ public sealed class PostgreSqlTransactionRepository : ITransactionRepository
 
     public IReadOnlyList<Transaction> GetAll()
     {
-        var applicationUserId = GetApplicationUserId();
-
-        if (applicationUserId is null)
-        {
-            return [];
-        }
+        var applicationUserId = userId.Value;
 
         return context.Transactions
             .AsNoTracking()
-            .Where(transaction => transaction.ApplicationUserId == applicationUserId.Value)
+            .Where(transaction => transaction.ApplicationUserId == applicationUserId)
             .OrderBy(transaction => transaction.RecordedOrder)
             .Select(transaction => ToTransaction(transaction))
             .ToList();
@@ -58,34 +53,24 @@ public sealed class PostgreSqlTransactionRepository : ITransactionRepository
 
     public Transaction? Get(Guid transactionId)
     {
-        var applicationUserId = GetApplicationUserId();
-
-        if (applicationUserId is null)
-        {
-            return null;
-        }
+        var applicationUserId = userId.Value;
 
         var transaction = context.Transactions
             .AsNoTracking()
             .SingleOrDefault(transaction =>
                 transaction.TransactionId == transactionId
-                && transaction.ApplicationUserId == applicationUserId.Value);
+                && transaction.ApplicationUserId == applicationUserId);
 
         return transaction is null ? null : ToTransaction(transaction);
     }
 
     public TransactionDeleteResult Delete(Guid transactionId)
     {
-        var applicationUserId = GetApplicationUserId();
-
-        if (applicationUserId is null)
-        {
-            return new TransactionDeleteResult.NotFound();
-        }
+        var applicationUserId = userId.Value;
 
         var transaction = context.Transactions.SingleOrDefault(transaction =>
             transaction.TransactionId == transactionId
-            && transaction.ApplicationUserId == applicationUserId.Value);
+            && transaction.ApplicationUserId == applicationUserId);
 
         if (transaction is null)
         {
@@ -94,7 +79,7 @@ public sealed class PostgreSqlTransactionRepository : ITransactionRepository
 
         var hasAllocation = context.TransactionAllocations.Any(allocation =>
             allocation.TransactionId == transactionId
-            && allocation.ApplicationUserId == applicationUserId.Value);
+            && allocation.ApplicationUserId == applicationUserId);
 
         if (hasAllocation)
         {
@@ -115,49 +100,6 @@ public sealed class PostgreSqlTransactionRepository : ITransactionRepository
         }
 
         return new TransactionDeleteResult.Deleted();
-    }
-
-    private Guid? GetApplicationUserId()
-    {
-        return context.ApplicationUsers
-            .AsNoTracking()
-            .Where(user => user.UserKey == userId.Value)
-            .Select(user => (Guid?)user.ApplicationUserId)
-            .SingleOrDefault();
-    }
-
-    private Guid GetOrCreateApplicationUserId()
-    {
-        var existingUserId = GetApplicationUserId();
-
-        if (existingUserId is not null)
-        {
-            return existingUserId.Value;
-        }
-
-        var applicationUserId = Guid.NewGuid();
-        var applicationUser = new ApplicationUserRecord
-        {
-            ApplicationUserId = applicationUserId,
-            UserKey = userId.Value
-        };
-
-        context.ApplicationUsers.Add(applicationUser);
-
-        try
-        {
-            context.SaveChanges();
-        }
-        catch (DbUpdateException exception) when (PostgreSqlPersistenceErrors.IsUniqueViolation(
-            exception,
-            "ux_application_users_user_key"))
-        {
-            context.ChangeTracker.Clear();
-            return GetApplicationUserId()
-                ?? throw new InvalidOperationException("Application user was not available after a concurrent create.");
-        }
-
-        return applicationUserId;
     }
 
     private static Transaction ToTransaction(TransactionRecord record)

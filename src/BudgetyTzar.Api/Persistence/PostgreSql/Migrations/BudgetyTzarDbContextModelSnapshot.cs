@@ -21,6 +21,8 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                 .HasAnnotation("ProductVersion", "9.0.0")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
+            modelBuilder.HasSequence<long>("budget_created_order", "budgetytzar");
+
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("BudgetyTzar.Api.Persistence.PostgreSql.ApplicationUserRecord", b =>
@@ -136,6 +138,12 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("application_user_id");
 
+                    b.Property<long>("CreatedOrder")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValueSql("nextval('budgetytzar.budget_created_order')")
+                        .HasColumnName("created_order");
+
                     b.Property<string>("Currency")
                         .IsRequired()
                         .HasColumnType("character(3)")
@@ -165,6 +173,9 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                     b.HasIndex("ApplicationUserId")
                         .HasDatabaseName("ix_budgets_application_user_id");
 
+                    b.HasIndex("CreatedOrder")
+                        .HasDatabaseName("ix_budgets_created_order");
+
                     b.HasIndex("ApplicationUserId", "Name")
                         .IsUnique()
                         .HasDatabaseName("ux_budgets_application_user_id_name");
@@ -172,6 +183,8 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                     b.ToTable("budgets", "budgetytzar", t =>
                         {
                             t.HasCheckConstraint("ck_budgets_currency_format", "currency ~ '^[A-Z]{3}$'");
+
+                            t.HasCheckConstraint("ck_budgets_created_order_non_negative", "created_order >= 0");
 
                             t.HasCheckConstraint("ck_budgets_name_not_blank", "length(btrim(name)) > 0");
 

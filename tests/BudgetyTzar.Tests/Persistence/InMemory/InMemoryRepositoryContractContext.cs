@@ -9,6 +9,7 @@ namespace BudgetyTzar.Tests.Persistence.InMemory;
 internal sealed class InMemoryRepositoryContractContext : RepositoryContractContext
 {
     private readonly InMemoryDataStore store = new();
+    private readonly InMemoryApplicationUserStore users = new();
 
     public override RepositorySet ForUser(string userId)
     {
@@ -20,10 +21,15 @@ internal sealed class InMemoryRepositoryContractContext : RepositoryContractCont
             new InMemoryTransactionAllocationRepository(store, currentUser));
     }
 
-    private static CurrentUser CurrentUser(string value)
+    private CurrentUser CurrentUser(string value)
     {
-        return ApplicationUserId.TryCreate(value, out var userId)
-            ? new CurrentUser(userId!)
+        return new CurrentUser(users.GetOrCreateApplicationUserId(UserKey(value)));
+    }
+
+    private static ApplicationUserKey UserKey(string value)
+    {
+        return ExternalIdentity.TryCreate("BudgetyTzar.Tests", value, out var externalIdentity)
+            ? ApplicationUserKey.FromExternalIdentity(externalIdentity!)
             : throw new InvalidOperationException("Invalid test user.");
     }
 }

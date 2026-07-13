@@ -1,19 +1,15 @@
-using System.Globalization;
 using System.Security.Claims;
 using Microsoft.Extensions.Options;
 
 namespace BudgetyTzar.Api.Features.Identity;
 
-public sealed class CurrentUserResolver(IOptions<CurrentUserResolverOptions> options)
+public sealed class CurrentUserResolver(
+    IOptions<CurrentUserResolverOptions> options,
+    IApplicationUserStore users)
 {
     private readonly IReadOnlyList<string> userIdClaimTypes = options.Value.UserIdClaimTypes.Count == 0
         ? CurrentUserResolverOptions.DefaultUserIdClaimTypes
         : options.Value.UserIdClaimTypes;
-
-    public CurrentUserResolver()
-        : this(Options.Create(new CurrentUserResolverOptions()))
-    {
-    }
 
     public CurrentUserResolution Resolve(ClaimsPrincipal? principal)
     {
@@ -31,11 +27,10 @@ public sealed class CurrentUserResolver(IOptions<CurrentUserResolverOptions> opt
             return new CurrentUserResolution.Unauthenticated();
         }
 
-        var applicationUserValue = CreateApplicationUserValue(externalIdentity!);
+        var applicationUserKey = ApplicationUserKey.FromExternalIdentity(externalIdentity!);
+        var applicationUserId = users.GetOrCreateApplicationUserId(applicationUserKey);
 
-        return ApplicationUserId.TryCreate(applicationUserValue, out var userId)
-            ? new CurrentUserResolution.Authenticated(new CurrentUser(userId!))
-            : new CurrentUserResolution.Unauthenticated();
+        return new CurrentUserResolution.Authenticated(new CurrentUser(applicationUserId));
     }
 
     private Claim? ResolveSubjectClaim(ClaimsPrincipal principal)
@@ -62,20 +57,6 @@ public sealed class CurrentUserResolver(IOptions<CurrentUserResolverOptions> opt
         }
 
         return principal.Identity?.AuthenticationType;
-    }
-
-    private static string CreateApplicationUserValue(ExternalIdentity externalIdentity)
-    {
-        var provider = externalIdentity.Provider;
-        var subject = externalIdentity.Subject;
-
-        return string.Concat(
-            provider.Length.ToString(CultureInfo.InvariantCulture),
-            ":",
-            provider,
-            subject.Length.ToString(CultureInfo.InvariantCulture),
-            ":",
-            subject);
     }
 }
 

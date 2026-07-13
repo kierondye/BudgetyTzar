@@ -13,34 +13,29 @@ namespace BudgetyTzar.Tests.Persistence.PostgreSql;
 public sealed class PostgreSqlRepositoryConcurrencyTests
 {
     [Fact]
-    public async Task Transaction_add_uses_concurrently_created_application_user()
+    public async Task Application_user_store_uses_concurrently_created_application_user()
     {
         await using var database = await CreateDatabaseAsync();
-        var userKey = "postgres-race-user";
-        var currentUser = CurrentUser(userKey);
+        var userKey = UserKey("postgres-race-user");
         var concurrentUserId = Guid.NewGuid();
         var interceptor = new BeforeSaveInterceptor(
-            context => HasAdded<ApplicationUserRecord>(context, user => user.UserKey == userKey),
+            context => HasAdded<ApplicationUserRecord>(context, user => user.UserKey == userKey.Value),
             connectionString =>
             {
                 using var concurrentContext = CreateContext(connectionString);
                 concurrentContext.ApplicationUsers.Add(new ApplicationUserRecord
                 {
                     ApplicationUserId = concurrentUserId,
-                    UserKey = userKey
+                    UserKey = userKey.Value
                 });
                 concurrentContext.SaveChanges();
             });
         await using var context = CreateContext(database.ConnectionString, interceptor);
-        var repository = new PostgreSqlTransactionRepository(context, currentUser);
-        var transaction = CreateTransaction();
+        var users = new PostgreSqlApplicationUserStore(context);
 
-        repository.Add(transaction);
+        var userId = users.GetOrCreateApplicationUserId(userKey);
 
-        await using var assertionContext = CreateContext(database.ConnectionString);
-        var storedTransaction = await assertionContext.Transactions.SingleAsync();
-        Assert.Equal(concurrentUserId, storedTransaction.ApplicationUserId);
-        Assert.Equal(transaction.TransactionId, storedTransaction.TransactionId);
+        Assert.Equal(concurrentUserId, userId.Value);
     }
 
     [Fact]
@@ -61,7 +56,7 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
                 concurrentContext.SaveChanges();
             });
         await using var context = CreateContext(database.ConnectionString, interceptor);
-        var repository = new PostgreSqlTransactionRepository(context, CurrentUser(userKey));
+        var repository = new PostgreSqlTransactionRepository(context, CurrentUser(userKey, database.ConnectionString));
         var transaction = CreateTransaction();
 
         repository.Add(transaction);
@@ -97,7 +92,7 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
                 concurrentContext.SaveChanges();
             });
         await using var context = CreateContext(database.ConnectionString, interceptor);
-        var repository = new PostgreSqlTransactionRepository(context, CurrentUser(userKey));
+        var repository = new PostgreSqlTransactionRepository(context, CurrentUser(userKey, database.ConnectionString));
 
         var result = repository.Delete(transactionId);
 
@@ -122,7 +117,7 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
                 concurrentContext.SaveChanges();
             });
         await using var context = CreateContext(database.ConnectionString, interceptor);
-        var repository = new PostgreSqlTransactionAllocationRepository(context, CurrentUser(userKey));
+        var repository = new PostgreSqlTransactionAllocationRepository(context, CurrentUser(userKey, database.ConnectionString));
         var allocation = CreateAllocation(CreateTransaction(transactionId), budgetItemId);
 
         var result = repository.Allocate(allocation);
@@ -156,7 +151,7 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
                 concurrentContext.SaveChanges();
             });
         await using var context = CreateContext(database.ConnectionString, interceptor);
-        var repository = new PostgreSqlTransactionAllocationRepository(context, CurrentUser(userKey));
+        var repository = new PostgreSqlTransactionAllocationRepository(context, CurrentUser(userKey, database.ConnectionString));
         var allocation = CreateAllocation(CreateTransaction(transactionId), secondBudgetItemId);
 
         var result = repository.Allocate(allocation);
@@ -191,7 +186,7 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
                 concurrentContext.SaveChanges();
             });
         await using var context = CreateContext(database.ConnectionString, interceptor);
-        var repository = new PostgreSqlTransactionAllocationRepository(context, CurrentUser(userKey));
+        var repository = new PostgreSqlTransactionAllocationRepository(context, CurrentUser(userKey, database.ConnectionString));
 
         repository.Remove(transactionId);
 
@@ -222,7 +217,7 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
         context.ApplicationUsers.Add(new ApplicationUserRecord
         {
             ApplicationUserId = userId,
-            UserKey = userKey
+            UserKey = UserKey(userKey).Value
         });
         context.Budgets.Add(new BudgetRecord
         {
@@ -287,10 +282,17 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
             .Any(entry => entry.State == state && predicate(entry.Entity));
     }
 
-    private static CurrentUser CurrentUser(string value)
+    private static CurrentUser CurrentUser(string value, string connectionString)
     {
-        return ApplicationUserId.TryCreate(value, out var userId)
-            ? new CurrentUser(userId!)
+        using var context = CreateContext(connectionString);
+        var users = new PostgreSqlApplicationUserStore(context);
+        return new CurrentUser(users.GetOrCreateApplicationUserId(UserKey(value)));
+    }
+
+    private static ApplicationUserKey UserKey(string value)
+    {
+        return ExternalIdentity.TryCreate("BudgetyTzar.Tests", value, out var externalIdentity)
+            ? ApplicationUserKey.FromExternalIdentity(externalIdentity!)
             : throw new InvalidOperationException("Invalid test user.");
     }
 

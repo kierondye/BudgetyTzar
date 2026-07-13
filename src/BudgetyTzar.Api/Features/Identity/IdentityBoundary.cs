@@ -22,6 +22,7 @@ public static class IdentityBoundary
             ?? (bearerOptions.Enabled ? JwtBearerDefaults.AuthenticationScheme : DefaultScheme);
 
         services.AddHttpContextAccessor();
+        services.AddSingleton<IApplicationUserStore, InMemoryApplicationUserStore>();
         services.Configure<CurrentUserResolverOptions>(options =>
         {
             options.UserIdClaimTypes = bearerOptions.UserIdClaim is null

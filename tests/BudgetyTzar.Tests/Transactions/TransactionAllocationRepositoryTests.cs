@@ -198,8 +198,9 @@ public sealed class TransactionAllocationRepositoryTests
 
     private static CurrentUser CurrentUser(string value)
     {
-        return ApplicationUserId.TryCreate(value, out var userId)
-            ? new CurrentUser(userId!)
+        return ExternalIdentity.TryCreate("BudgetyTzar.Tests", value, out var externalIdentity)
+            ? new CurrentUser(new InMemoryApplicationUserStore()
+                .GetOrCreateApplicationUserId(ApplicationUserKey.FromExternalIdentity(externalIdentity!)))
             : throw new InvalidOperationException("Invalid test user.");
     }
 

@@ -17,6 +17,7 @@ public sealed class BudgetyTzarDbContext(DbContextOptions<BudgetyTzarDbContext> 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("budgetytzar");
+        modelBuilder.HasSequence<long>("budget_created_order");
 
         ConfigureApplicationUsers(modelBuilder);
         ConfigureBudgets(modelBuilder);
@@ -84,6 +85,9 @@ public sealed class BudgetyTzarDbContext(DbContextOptions<BudgetyTzarDbContext> 
                 .HasColumnName("version")
                 .HasDefaultValue(1L)
                 .IsConcurrencyToken();
+            entity.Property(budget => budget.CreatedOrder)
+                .HasColumnName("created_order")
+                .HasDefaultValueSql("nextval('budgetytzar.budget_created_order')");
 
             entity.HasOne<ApplicationUserRecord>()
                 .WithMany()
@@ -93,6 +97,8 @@ public sealed class BudgetyTzarDbContext(DbContextOptions<BudgetyTzarDbContext> 
 
             entity.HasIndex(budget => budget.ApplicationUserId)
                 .HasDatabaseName("ix_budgets_application_user_id");
+            entity.HasIndex(budget => budget.CreatedOrder)
+                .HasDatabaseName("ix_budgets_created_order");
             entity.HasIndex(budget => new { budget.ApplicationUserId, budget.Name })
                 .IsUnique()
                 .HasDatabaseName("ux_budgets_application_user_id_name");
@@ -102,6 +108,7 @@ public sealed class BudgetyTzarDbContext(DbContextOptions<BudgetyTzarDbContext> 
                 table.HasCheckConstraint("ck_budgets_name_not_blank", "length(btrim(name)) > 0");
                 table.HasCheckConstraint("ck_budgets_currency_format", "currency ~ '^[A-Z]{3}$'");
                 table.HasCheckConstraint("ck_budgets_version_positive", "version > 0");
+                table.HasCheckConstraint("ck_budgets_created_order_non_negative", "created_order >= 0");
             });
         });
     }

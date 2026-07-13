@@ -37,7 +37,7 @@ internal sealed class PostgreSqlRepositoryContractContext : RepositoryContractCo
     public override RepositorySet ForUser(string userId)
     {
         var context = CreateTrackedContext();
-        var currentUser = CurrentUser(userId);
+        var currentUser = CurrentUser(userId, new PostgreSqlApplicationUserStore(context));
 
         return new RepositorySet(
             new ContractTestBudgetRepository(context, currentUser),
@@ -71,10 +71,11 @@ internal sealed class PostgreSqlRepositoryContractContext : RepositoryContractCo
         return new BudgetyTzarDbContext(options);
     }
 
-    private static CurrentUser CurrentUser(string value)
+    private static CurrentUser CurrentUser(string value, IApplicationUserStore userStore)
     {
-        return ApplicationUserId.TryCreate(value, out var userId)
-            ? new CurrentUser(userId!)
+        return ExternalIdentity.TryCreate("BudgetyTzar.Tests", value, out var externalIdentity)
+            ? new CurrentUser(userStore.GetOrCreateApplicationUserId(
+                ApplicationUserKey.FromExternalIdentity(externalIdentity!)))
             : throw new InvalidOperationException("Invalid test user.");
     }
 
@@ -103,27 +104,21 @@ internal sealed class PostgreSqlRepositoryContractContext : RepositoryContractCo
 
         public bool HasBudgetNamed(NormalizedName name, Guid? exceptBudgetId = null)
         {
-            var applicationUserId = GetApplicationUserId();
+            var applicationUserId = userId.Value;
 
-            return applicationUserId is not null
-                && context.Budgets.Any(budget =>
-                    budget.ApplicationUserId == applicationUserId.Value
-                    && budget.Name == name.Value
-                    && budget.BudgetId != exceptBudgetId);
+            return context.Budgets.Any(budget =>
+                budget.ApplicationUserId == applicationUserId
+                && budget.Name == name.Value
+                && budget.BudgetId != exceptBudgetId);
         }
 
         public IReadOnlyList<Budget> GetAll()
         {
-            var applicationUserId = GetApplicationUserId();
-
-            if (applicationUserId is null)
-            {
-                return [];
-            }
+            var applicationUserId = userId.Value;
 
             return context.Budgets
                 .AsNoTracking()
-                .Where(budget => budget.ApplicationUserId == applicationUserId.Value)
+                .Where(budget => budget.ApplicationUserId == applicationUserId)
                 .OrderBy(budget => budget.Name)
                 .Select(budget => ToBudget(
                     budget,
@@ -137,18 +132,13 @@ internal sealed class PostgreSqlRepositoryContractContext : RepositoryContractCo
 
         public EntityState<Budget>? Get(Guid budgetId)
         {
-            var applicationUserId = GetApplicationUserId();
-
-            if (applicationUserId is null)
-            {
-                return null;
-            }
+            var applicationUserId = userId.Value;
 
             var budget = context.Budgets
                 .AsNoTracking()
                 .SingleOrDefault(budget =>
                     budget.BudgetId == budgetId
-                    && budget.ApplicationUserId == applicationUserId.Value);
+                    && budget.ApplicationUserId == applicationUserId);
 
             if (budget is null)
             {
@@ -173,18 +163,13 @@ internal sealed class PostgreSqlRepositoryContractContext : RepositoryContractCo
 
         public BudgetItemReference? GetBudgetItemReference(Guid budgetItemId)
         {
-            var applicationUserId = GetApplicationUserId();
-
-            if (applicationUserId is null)
-            {
-                return null;
-            }
+            var applicationUserId = userId.Value;
 
             var record = context.BudgetItems
                 .AsNoTracking()
                 .SingleOrDefault(budgetItem =>
                     budgetItem.BudgetItemId == budgetItemId
-                    && budgetItem.ApplicationUserId == applicationUserId.Value);
+                    && budgetItem.ApplicationUserId == applicationUserId);
 
             if (record is null)
             {
@@ -203,7 +188,7 @@ internal sealed class PostgreSqlRepositoryContractContext : RepositoryContractCo
 
         private BudgetSaveResult SaveCore(Budget budget, long? expectedVersion = null)
         {
-            var applicationUserId = GetOrCreateApplicationUserId();
+            var applicationUserId = userId.Value;
             var existing = context.Budgets.SingleOrDefault(existingBudget =>
                 existingBudget.BudgetId == budget.BudgetId
                 && existingBudget.ApplicationUserId == applicationUserId);
@@ -291,35 +276,6 @@ internal sealed class PostgreSqlRepositoryContractContext : RepositoryContractCo
             context.SaveChanges();
 
             return new BudgetSaveResult.Saved(budget);
-        }
-
-        private Guid? GetApplicationUserId()
-        {
-            return context.ApplicationUsers
-                .AsNoTracking()
-                .Where(user => user.UserKey == userId.Value)
-                .Select(user => (Guid?)user.ApplicationUserId)
-                .SingleOrDefault();
-        }
-
-        private Guid GetOrCreateApplicationUserId()
-        {
-            var existingUserId = GetApplicationUserId();
-
-            if (existingUserId is not null)
-            {
-                return existingUserId.Value;
-            }
-
-            var applicationUserId = Guid.NewGuid();
-            context.ApplicationUsers.Add(new ApplicationUserRecord
-            {
-                ApplicationUserId = applicationUserId,
-                UserKey = userId.Value
-            });
-            context.SaveChanges();
-
-            return applicationUserId;
         }
 
         private static Budget ToBudget(BudgetRecord record, IReadOnlyList<BudgetItemRecord> budgetItems)

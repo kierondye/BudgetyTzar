@@ -14,6 +14,10 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
             migrationBuilder.EnsureSchema(
                 name: "budgetytzar");
 
+            migrationBuilder.CreateSequence(
+                name: "budget_created_order",
+                schema: "budgetytzar");
+
             migrationBuilder.CreateTable(
                 name: "application_users",
                 schema: "budgetytzar",
@@ -37,7 +41,8 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                     application_user_id = table.Column<Guid>(type: "uuid", nullable: false),
                     name = table.Column<string>(type: "text", nullable: false),
                     currency = table.Column<string>(type: "character(3)", nullable: false),
-                    version = table.Column<long>(type: "bigint", nullable: false, defaultValue: 1L)
+                    version = table.Column<long>(type: "bigint", nullable: false, defaultValue: 1L),
+                    created_order = table.Column<long>(type: "bigint", nullable: false, defaultValueSql: "nextval('budgetytzar.budget_created_order')")
                 },
                 constraints: table =>
                 {
@@ -45,6 +50,7 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                     table.UniqueConstraint("ak_budgets_id_owner", x => new { x.budget_id, x.application_user_id });
                     table.UniqueConstraint("ak_budgets_id_owner_currency", x => new { x.budget_id, x.application_user_id, x.currency });
                     table.CheckConstraint("ck_budgets_currency_format", "currency ~ '^[A-Z]{3}$'");
+                    table.CheckConstraint("ck_budgets_created_order_non_negative", "created_order >= 0");
                     table.CheckConstraint("ck_budgets_name_not_blank", "length(btrim(name)) > 0");
                     table.CheckConstraint("ck_budgets_version_positive", "version > 0");
                     table.ForeignKey(
@@ -210,6 +216,12 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                 column: "application_user_id");
 
             migrationBuilder.CreateIndex(
+                name: "ix_budgets_created_order",
+                schema: "budgetytzar",
+                table: "budgets",
+                column: "created_order");
+
+            migrationBuilder.CreateIndex(
                 name: "ux_budgets_application_user_id_name",
                 schema: "budgetytzar",
                 table: "budgets",
@@ -282,6 +294,10 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
 
             migrationBuilder.DropTable(
                 name: "application_users",
+                schema: "budgetytzar");
+
+            migrationBuilder.DropSequence(
+                name: "budget_created_order",
                 schema: "budgetytzar");
         }
     }

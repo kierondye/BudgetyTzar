@@ -54,9 +54,15 @@ public sealed record ExternalIdentity(string Provider, string Subject);
 
 public sealed record CurrentUser(ApplicationUserId UserId) : ICurrentUser;
 
-return ExternalIdentity.TryCreate(provider, subject, out var externalIdentity)
-    ? identityResolver.Resolve(externalIdentity)
-    : new CurrentUserResolution.Unauthenticated();
+if (!ExternalIdentity.TryCreate(provider, subject, out var externalIdentity))
+{
+    return new CurrentUserResolution.Unauthenticated();
+}
+
+var userKey = ApplicationUserKey.FromExternalIdentity(externalIdentity);
+var userId = users.GetOrCreateApplicationUserId(userKey);
+
+return new CurrentUserResolution.Authenticated(new CurrentUser(userId));
 ```
 
 Avoid:
@@ -112,22 +118,22 @@ Prefer:
 ```csharp
 public sealed record ApplicationUserId
 {
-    private ApplicationUserId(string value)
+    private ApplicationUserId(Guid value)
     {
         Value = value;
     }
 
-    public string Value { get; }
+    public Guid Value { get; }
 
-    public static bool TryCreate(string? value, out ApplicationUserId? userId)
+    public static bool TryCreate(Guid value, out ApplicationUserId? userId)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        if (value == Guid.Empty)
         {
             userId = null;
             return false;
         }
 
-        userId = new ApplicationUserId(value.Trim());
+        userId = new ApplicationUserId(value);
         return true;
     }
 }
@@ -136,16 +142,14 @@ public sealed record ApplicationUserId
 Avoid:
 
 ```csharp
-public sealed record ApplicationUserId(string Value)
+public sealed record ApplicationUserId(Guid Value)
 {
     public ApplicationUserId
     {
-        if (string.IsNullOrWhiteSpace(Value))
+        if (Value == Guid.Empty)
         {
             throw new ArgumentException("User identity is required.", nameof(Value));
         }
-
-        Value = Value.Trim();
     }
 }
 ```

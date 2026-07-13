@@ -19,18 +19,13 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
 
     public AllocateTransactionResult Allocate(TransactionAllocation allocation)
     {
-        var applicationUserId = GetApplicationUserId();
-
-        if (applicationUserId is null)
-        {
-            return new AllocateTransactionResult.TransactionNotFound();
-        }
+        var applicationUserId = userId.Value;
 
         var transaction = context.Transactions
             .AsNoTracking()
             .SingleOrDefault(transaction =>
                 transaction.TransactionId == allocation.TransactionId
-                && transaction.ApplicationUserId == applicationUserId.Value);
+                && transaction.ApplicationUserId == applicationUserId);
 
         if (transaction is null)
         {
@@ -39,7 +34,7 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
 
         var budgetItemExists = context.BudgetItems.Any(budgetItem =>
             budgetItem.BudgetItemId == allocation.BudgetItemId
-            && budgetItem.ApplicationUserId == applicationUserId.Value
+            && budgetItem.ApplicationUserId == applicationUserId
             && budgetItem.Currency == transaction.Currency);
 
         if (!budgetItemExists)
@@ -51,7 +46,7 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
             .AsNoTracking()
             .SingleOrDefault(existing =>
                 existing.TransactionId == allocation.TransactionId
-                && existing.ApplicationUserId == applicationUserId.Value);
+                && existing.ApplicationUserId == applicationUserId);
 
         if (existingAllocation is not null)
         {
@@ -63,7 +58,7 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
         var allocationRecord = new TransactionAllocationRecord
         {
             TransactionId = allocation.TransactionId,
-            ApplicationUserId = applicationUserId.Value,
+            ApplicationUserId = applicationUserId,
             BudgetItemId = allocation.BudgetItemId,
             Currency = transaction.Currency
         };
@@ -77,7 +72,7 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
         catch (DbUpdateException exception) when (IsAllocationAlreadyStored(exception))
         {
             context.ChangeTracker.Clear();
-            return GetExistingAllocationResult(allocation, applicationUserId.Value, transaction);
+            return GetExistingAllocationResult(allocation, applicationUserId, transaction);
         }
         catch (DbUpdateException exception) when (PostgreSqlPersistenceErrors.IsForeignKeyViolation(
             exception,
@@ -99,18 +94,13 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
 
     public TransactionAllocation? Get(Guid transactionId)
     {
-        var applicationUserId = GetApplicationUserId();
-
-        if (applicationUserId is null)
-        {
-            return null;
-        }
+        var applicationUserId = userId.Value;
 
         var allocation = context.TransactionAllocations
             .AsNoTracking()
             .SingleOrDefault(allocation =>
                 allocation.TransactionId == transactionId
-                && allocation.ApplicationUserId == applicationUserId.Value);
+                && allocation.ApplicationUserId == applicationUserId);
 
         if (allocation is null)
         {
@@ -121,19 +111,14 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
             .AsNoTracking()
             .Single(transaction =>
                 transaction.TransactionId == allocation.TransactionId
-                && transaction.ApplicationUserId == applicationUserId.Value);
+                && transaction.ApplicationUserId == applicationUserId);
 
         return ToAllocation(allocation, transaction);
     }
 
     public IReadOnlyList<TransactionAllocation> GetAll()
     {
-        var applicationUserId = GetApplicationUserId();
-
-        if (applicationUserId is null)
-        {
-            return [];
-        }
+        var applicationUserId = userId.Value;
 
         var records = context.TransactionAllocations
             .AsNoTracking()
@@ -142,7 +127,7 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
                 allocation => new { allocation.TransactionId, allocation.ApplicationUserId },
                 transaction => new { transaction.TransactionId, transaction.ApplicationUserId },
                 (allocation, transaction) => new { Allocation = allocation, Transaction = transaction })
-            .Where(record => record.Allocation.ApplicationUserId == applicationUserId.Value)
+            .Where(record => record.Allocation.ApplicationUserId == applicationUserId)
             .OrderBy(record => record.Transaction.RecordedOrder)
             .ToList();
 
@@ -153,16 +138,11 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
 
     public void Remove(Guid transactionId)
     {
-        var applicationUserId = GetApplicationUserId();
-
-        if (applicationUserId is null)
-        {
-            return;
-        }
+        var applicationUserId = userId.Value;
 
         var allocation = context.TransactionAllocations.SingleOrDefault(allocation =>
             allocation.TransactionId == transactionId
-            && allocation.ApplicationUserId == applicationUserId.Value);
+            && allocation.ApplicationUserId == applicationUserId);
 
         if (allocation is null)
         {
@@ -179,15 +159,6 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
         {
             context.ChangeTracker.Clear();
         }
-    }
-
-    private Guid? GetApplicationUserId()
-    {
-        return context.ApplicationUsers
-            .AsNoTracking()
-            .Where(user => user.UserKey == userId.Value)
-            .Select(user => (Guid?)user.ApplicationUserId)
-            .SingleOrDefault();
     }
 
     private AllocateTransactionResult GetExistingAllocationResult(

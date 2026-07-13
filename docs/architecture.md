@@ -4,10 +4,10 @@ This guide explains where code belongs and why. It describes the implementation
 structure rather than defining product behaviour or coding style.
 
 BudgetyTzar is currently a modular monolith: one .NET 9 Minimal API process, one
-in-memory runtime persistence boundary, a PostgreSQL schema/migration foundation with
-transaction and allocation repository adapters, and one xUnit test project. The design
-keeps feature boundaries explicit without introducing extra deployable services before
-there is a product or operational reason for them.
+in-memory default runtime persistence boundary, a PostgreSQL persistence foundation
+with budget, transaction, and allocation repository adapters, and one xUnit test
+project. The design keeps feature boundaries explicit without introducing extra
+deployable services before there is a product or operational reason for them.
 
 ## System Context
 
@@ -52,12 +52,12 @@ flowchart TB
 The production container runs only `BudgetyTzar.Api`. Tests and scripts are separate
 executable parts of the repository, but not deployed application services.
 
-Runtime persistence is intentionally in memory today. The observable behaviour should
-survive database-backed adapters, with transactions, constraints, and concurrency
-tokens replacing the current lock and dictionaries. The PostgreSQL foundation captures
-the durable schema and EF Core/Npgsql plumbing, and currently includes transaction and
-allocation repository adapters, without switching the default application composition
-away from the in-memory adapters.
+Runtime persistence defaults to in memory today. The observable behaviour should
+survive database-backed implementations, with transactions, constraints, and
+concurrency tokens replacing the current lock and dictionaries. The PostgreSQL
+foundation captures the durable schema, EF Core/Npgsql plumbing, and feature-owned
+budget, transaction, and allocation repository adapters without switching the default
+application composition away from the in-memory adapters.
 
 ## API Component Model
 
@@ -100,9 +100,10 @@ The Identity feature owns authentication scheme configuration and current-user
 resolution from authenticated claims. It provides a rejecting default scheme when no
 deployment authentication is configured and a JWT bearer/OIDC-compatible scheme when
 deployment configuration supplies the trusted authority or issuer, audience, HTTPS
-metadata setting, and stable user-id claim. User-facing repositories are scoped to that
-current internal application user so handlers can coordinate use cases without
-manually filtering cross-user data.
+metadata setting, and stable user-id claim. The external identity value is a lookup key
+for an internal `ApplicationUserId`; it is not the application user's primary
+identifier. User-facing repositories are scoped to that current internal application
+user so handlers can coordinate use cases without manually filtering cross-user data.
 
 Shared domain types live under `Domain` because Budgeting, Transactions, Allocations,
 and Reporting use the same ubiquitous language and invariant-protecting values.
@@ -125,7 +126,7 @@ ownership of their data.
 | `src/BudgetyTzar.Api/Features/Transactions` | Transaction and allocation endpoints, HTTP contracts, persistence contracts, handlers, and persistence adapters. |
 | `src/BudgetyTzar.Api/Features/Reporting` | Budget summary query model, calculation service, contracts, and endpoint. |
 | `src/BudgetyTzar.Api/Features/InMemoryDataStore.cs` | Shared in-memory state and synchronization boundary. |
-| `src/BudgetyTzar.Api/Persistence/PostgreSql` | EF Core DbContext, storage records, migrations, and PostgreSQL persistence adapters. |
+| `src/BudgetyTzar.Api/Persistence/PostgreSql` | EF Core DbContext, storage records, migrations, and PostgreSQL-backed feature adapters. |
 | `src/BudgetyTzar.Api/Observability` | Correlation ID middleware, low-cardinality API telemetry, and OpenTelemetry composition. |
 | `tests/BudgetyTzar.Tests/Support` | Test-only API host and shared test support. |
 | `tests/BudgetyTzar.Tests/<Feature>` | Domain, repository, and API behaviour tests grouped by feature. |
@@ -207,11 +208,11 @@ emulate database-style constraints atomically while the application is in memory
 example, deleting a budget item and checking whether an allocation references it must
 happen under the same synchronization boundary.
 
-The PostgreSQL persistence foundation owns storage records, migrations, and selected
+The PostgreSQL persistence foundation owns storage records, migrations, and durable
 adapters for current operational data. It models application-user ownership in
-storage, monetary precision, foreign keys, uniqueness, and lookup indexes. Domain
-entities, endpoint handlers, reporting contracts, and HTTP contracts must remain free
-of EF Core, Npgsql, database tokens, and owner identity fields.
+storage, monetary precision, foreign keys, uniqueness, ordering, and lookup indexes.
+Domain entities, endpoint handlers, reporting contracts, and HTTP contracts must
+remain free of EF Core, Npgsql, database tokens, and owner identity fields.
 
 Repositories own storage-wide consistency and concurrency state because those rules
 depend on stored data, not only on a single aggregate's in-memory state. Aggregates own
