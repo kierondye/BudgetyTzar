@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
 {
     [DbContext(typeof(BudgetyTzarDbContext))]
-    [Migration("20260713071518_InitialPostgreSqlSchema")]
+    [Migration("20260713073635_InitialPostgreSqlSchema")]
     partial class InitialPostgreSqlSchema
     {
         /// <inheritdoc />
@@ -58,6 +58,10 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("budget_item_id");
 
+                    b.Property<Guid>("ApplicationUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("application_user_id");
+
                     b.Property<Guid>("BudgetId")
                         .HasColumnType("uuid")
                         .HasColumnName("budget_id");
@@ -65,6 +69,11 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                     b.Property<int>("CreatedOrder")
                         .HasColumnType("integer")
                         .HasColumnName("created_order");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasColumnType("character(3)")
+                        .HasColumnName("currency");
 
                     b.Property<string>("Kind")
                         .IsRequired()
@@ -85,6 +94,12 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                     b.HasKey("BudgetItemId")
                         .HasName("pk_budget_items");
 
+                    b.HasAlternateKey("BudgetItemId", "ApplicationUserId", "Currency")
+                        .HasName("ak_budget_items_id_owner_currency");
+
+                    b.HasIndex("ApplicationUserId")
+                        .HasDatabaseName("ix_budget_items_application_user_id");
+
                     b.HasIndex("BudgetId")
                         .HasDatabaseName("ix_budget_items_budget_id");
 
@@ -96,9 +111,14 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_budget_items_budget_id_name");
 
+                    b.HasIndex("BudgetId", "ApplicationUserId", "Currency")
+                        .HasDatabaseName("ix_budget_items_budget_owner_currency");
+
                     b.ToTable("budget_items", "budgetytzar", t =>
                         {
                             t.HasCheckConstraint("ck_budget_items_created_order_non_negative", "created_order >= 0");
+
+                            t.HasCheckConstraint("ck_budget_items_currency_format", "currency ~ '^[A-Z]{3}$'");
 
                             t.HasCheckConstraint("ck_budget_items_kind", "kind in ('Funding', 'Consumption')");
 
@@ -139,6 +159,12 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                     b.HasKey("BudgetId")
                         .HasName("pk_budgets");
 
+                    b.HasAlternateKey("BudgetId", "ApplicationUserId")
+                        .HasName("ak_budgets_id_owner");
+
+                    b.HasAlternateKey("BudgetId", "ApplicationUserId", "Currency")
+                        .HasName("ak_budgets_id_owner_currency");
+
                     b.HasIndex("ApplicationUserId")
                         .HasDatabaseName("ix_budgets_application_user_id");
 
@@ -162,11 +188,6 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("transaction_id");
 
-                    b.Property<decimal>("Amount")
-                        .HasPrecision(10, 2)
-                        .HasColumnType("numeric(10,2)")
-                        .HasColumnName("amount");
-
                     b.Property<Guid>("ApplicationUserId")
                         .HasColumnType("uuid")
                         .HasColumnName("application_user_id");
@@ -189,10 +210,15 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                     b.HasIndex("BudgetItemId")
                         .HasDatabaseName("ix_transaction_allocations_budget_item_id");
 
+                    b.HasIndex("BudgetItemId", "ApplicationUserId", "Currency")
+                        .HasDatabaseName("ix_allocations_budget_item_owner_currency");
+
+                    b.HasIndex("TransactionId", "ApplicationUserId", "Currency")
+                        .IsUnique()
+                        .HasDatabaseName("ux_allocations_transaction_owner_currency");
+
                     b.ToTable("transaction_allocations", "budgetytzar", t =>
                         {
-                            t.HasCheckConstraint("ck_transaction_allocations_amount_range", "amount > 0.00 and amount <= 99999999.99");
-
                             t.HasCheckConstraint("ck_transaction_allocations_currency_format", "currency ~ '^[A-Z]{3}$'");
                         });
                 });
@@ -240,6 +266,9 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                     b.HasKey("TransactionId")
                         .HasName("pk_transactions");
 
+                    b.HasAlternateKey("TransactionId", "ApplicationUserId", "Currency")
+                        .HasName("ak_transactions_id_owner_currency");
+
                     b.HasIndex("ApplicationUserId")
                         .HasDatabaseName("ix_transactions_application_user_id");
 
@@ -266,12 +295,20 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
 
             modelBuilder.Entity("BudgetyTzar.Api.Persistence.PostgreSql.BudgetItemRecord", b =>
                 {
-                    b.HasOne("BudgetyTzar.Api.Persistence.PostgreSql.BudgetRecord", null)
+                    b.HasOne("BudgetyTzar.Api.Persistence.PostgreSql.ApplicationUserRecord", null)
                         .WithMany()
-                        .HasForeignKey("BudgetId")
+                        .HasForeignKey("ApplicationUserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
-                        .HasConstraintName("fk_budget_items_budgets_budget_id");
+                        .HasConstraintName("fk_budget_items_owner");
+
+                    b.HasOne("BudgetyTzar.Api.Persistence.PostgreSql.BudgetRecord", null)
+                        .WithMany()
+                        .HasForeignKey("BudgetId", "ApplicationUserId", "Currency")
+                        .HasPrincipalKey("BudgetId", "ApplicationUserId", "Currency")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_budget_items_budget_owner_currency");
                 });
 
             modelBuilder.Entity("BudgetyTzar.Api.Persistence.PostgreSql.BudgetRecord", b =>
@@ -291,21 +328,23 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                         .HasForeignKey("ApplicationUserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
-                        .HasConstraintName("fk_transaction_allocations_application_users_application_user_id");
+                        .HasConstraintName("fk_allocations_owner");
 
                     b.HasOne("BudgetyTzar.Api.Persistence.PostgreSql.BudgetItemRecord", null)
                         .WithMany()
-                        .HasForeignKey("BudgetItemId")
+                        .HasForeignKey("BudgetItemId", "ApplicationUserId", "Currency")
+                        .HasPrincipalKey("BudgetItemId", "ApplicationUserId", "Currency")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
-                        .HasConstraintName("fk_transaction_allocations_budget_items_budget_item_id");
+                        .HasConstraintName("fk_allocations_budget_item_owner_currency");
 
                     b.HasOne("BudgetyTzar.Api.Persistence.PostgreSql.TransactionRecord", null)
                         .WithOne()
-                        .HasForeignKey("BudgetyTzar.Api.Persistence.PostgreSql.TransactionAllocationRecord", "TransactionId")
+                        .HasForeignKey("BudgetyTzar.Api.Persistence.PostgreSql.TransactionAllocationRecord", "TransactionId", "ApplicationUserId", "Currency")
+                        .HasPrincipalKey("BudgetyTzar.Api.Persistence.PostgreSql.TransactionRecord", "TransactionId", "ApplicationUserId", "Currency")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
-                        .HasConstraintName("fk_transaction_allocations_transactions_transaction_id");
+                        .HasConstraintName("fk_allocations_transaction_owner_currency");
                 });
 
             modelBuilder.Entity("BudgetyTzar.Api.Persistence.PostgreSql.TransactionRecord", b =>

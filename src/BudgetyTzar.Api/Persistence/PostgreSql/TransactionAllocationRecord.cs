@@ -8,7 +8,5 @@ public sealed class TransactionAllocationRecord
 
     public Guid BudgetItemId { get; set; }
 
-    public decimal Amount { get; set; }
-
     public required string Currency { get; set; }
 }

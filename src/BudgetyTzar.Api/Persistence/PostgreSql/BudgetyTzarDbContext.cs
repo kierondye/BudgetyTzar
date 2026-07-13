@@ -63,6 +63,10 @@ public sealed class BudgetyTzarDbContext(DbContextOptions<BudgetyTzarDbContext> 
 
             entity.HasKey(budget => budget.BudgetId)
                 .HasName("pk_budgets");
+            entity.HasAlternateKey(budget => new { budget.BudgetId, budget.ApplicationUserId })
+                .HasName("ak_budgets_id_owner");
+            entity.HasAlternateKey(budget => new { budget.BudgetId, budget.ApplicationUserId, budget.Currency })
+                .HasName("ak_budgets_id_owner_currency");
 
             entity.Property(budget => budget.BudgetId)
                 .HasColumnName("budget_id");
@@ -115,6 +119,8 @@ public sealed class BudgetyTzarDbContext(DbContextOptions<BudgetyTzarDbContext> 
                 .HasColumnName("budget_item_id");
             entity.Property(budgetItem => budgetItem.BudgetId)
                 .HasColumnName("budget_id");
+            entity.Property(budgetItem => budgetItem.ApplicationUserId)
+                .HasColumnName("application_user_id");
             entity.Property(budgetItem => budgetItem.Name)
                 .HasColumnName("name")
                 .HasColumnType("text")
@@ -126,17 +132,53 @@ public sealed class BudgetyTzarDbContext(DbContextOptions<BudgetyTzarDbContext> 
             entity.Property(budgetItem => budgetItem.PlannedAmount)
                 .HasColumnName("planned_amount")
                 .HasPrecision(10, 2);
+            entity.Property(budgetItem => budgetItem.Currency)
+                .HasColumnName("currency")
+                .HasColumnType("character(3)")
+                .IsRequired();
             entity.Property(budgetItem => budgetItem.CreatedOrder)
                 .HasColumnName("created_order");
 
+            entity.HasAlternateKey(budgetItem => new
+                {
+                    budgetItem.BudgetItemId,
+                    budgetItem.ApplicationUserId,
+                    budgetItem.Currency
+                })
+                .HasName("ak_budget_items_id_owner_currency");
+            entity.HasOne<ApplicationUserRecord>()
+                .WithMany()
+                .HasForeignKey(budgetItem => budgetItem.ApplicationUserId)
+                .HasConstraintName("fk_budget_items_owner")
+                .OnDelete(DeleteBehavior.Cascade);
             entity.HasOne<BudgetRecord>()
                 .WithMany()
-                .HasForeignKey(budgetItem => budgetItem.BudgetId)
-                .HasConstraintName("fk_budget_items_budgets_budget_id")
+                .HasForeignKey(budgetItem => new
+                {
+                    budgetItem.BudgetId,
+                    budgetItem.ApplicationUserId,
+                    budgetItem.Currency
+                })
+                .HasPrincipalKey(budget => new
+                {
+                    budget.BudgetId,
+                    budget.ApplicationUserId,
+                    budget.Currency
+                })
+                .HasConstraintName("fk_budget_items_budget_owner_currency")
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(budgetItem => budgetItem.BudgetId)
                 .HasDatabaseName("ix_budget_items_budget_id");
+            entity.HasIndex(budgetItem => budgetItem.ApplicationUserId)
+                .HasDatabaseName("ix_budget_items_application_user_id");
+            entity.HasIndex(budgetItem => new
+                {
+                    budgetItem.BudgetId,
+                    budgetItem.ApplicationUserId,
+                    budgetItem.Currency
+                })
+                .HasDatabaseName("ix_budget_items_budget_owner_currency");
             entity.HasIndex(budgetItem => new { budgetItem.BudgetId, budgetItem.Name })
                 .IsUnique()
                 .HasDatabaseName("ux_budget_items_budget_id_name");
@@ -148,6 +190,7 @@ public sealed class BudgetyTzarDbContext(DbContextOptions<BudgetyTzarDbContext> 
             {
                 table.HasCheckConstraint("ck_budget_items_name_not_blank", "length(btrim(name)) > 0");
                 table.HasCheckConstraint("ck_budget_items_kind", "kind in ('Funding', 'Consumption')");
+                table.HasCheckConstraint("ck_budget_items_currency_format", "currency ~ '^[A-Z]{3}$'");
                 table.HasCheckConstraint(
                     "ck_budget_items_planned_amount_range",
                     "planned_amount > 0.00 and planned_amount <= 99999999.99");
@@ -164,6 +207,13 @@ public sealed class BudgetyTzarDbContext(DbContextOptions<BudgetyTzarDbContext> 
 
             entity.HasKey(transaction => transaction.TransactionId)
                 .HasName("pk_transactions");
+            entity.HasAlternateKey(transaction => new
+                {
+                    transaction.TransactionId,
+                    transaction.ApplicationUserId,
+                    transaction.Currency
+                })
+                .HasName("ak_transactions_id_owner_currency");
 
             entity.Property(transaction => transaction.TransactionId)
                 .HasColumnName("transaction_id");
@@ -232,9 +282,6 @@ public sealed class BudgetyTzarDbContext(DbContextOptions<BudgetyTzarDbContext> 
                 .HasColumnName("application_user_id");
             entity.Property(allocation => allocation.BudgetItemId)
                 .HasColumnName("budget_item_id");
-            entity.Property(allocation => allocation.Amount)
-                .HasColumnName("amount")
-                .HasPrecision(10, 2);
             entity.Property(allocation => allocation.Currency)
                 .HasColumnName("currency")
                 .HasColumnType("character(3)")
@@ -243,29 +290,63 @@ public sealed class BudgetyTzarDbContext(DbContextOptions<BudgetyTzarDbContext> 
             entity.HasOne<ApplicationUserRecord>()
                 .WithMany()
                 .HasForeignKey(allocation => allocation.ApplicationUserId)
-                .HasConstraintName("fk_transaction_allocations_application_users_application_user_id")
+                .HasConstraintName("fk_allocations_owner")
                 .OnDelete(DeleteBehavior.Cascade);
             entity.HasOne<TransactionRecord>()
                 .WithOne()
-                .HasForeignKey<TransactionAllocationRecord>(allocation => allocation.TransactionId)
-                .HasConstraintName("fk_transaction_allocations_transactions_transaction_id")
+                .HasForeignKey<TransactionAllocationRecord>(allocation => new
+                {
+                    allocation.TransactionId,
+                    allocation.ApplicationUserId,
+                    allocation.Currency
+                })
+                .HasPrincipalKey<TransactionRecord>(transaction => new
+                {
+                    transaction.TransactionId,
+                    transaction.ApplicationUserId,
+                    transaction.Currency
+                })
+                .HasConstraintName("fk_allocations_transaction_owner_currency")
                 .OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<BudgetItemRecord>()
                 .WithMany()
-                .HasForeignKey(allocation => allocation.BudgetItemId)
-                .HasConstraintName("fk_transaction_allocations_budget_items_budget_item_id")
+                .HasForeignKey(allocation => new
+                {
+                    allocation.BudgetItemId,
+                    allocation.ApplicationUserId,
+                    allocation.Currency
+                })
+                .HasPrincipalKey(budgetItem => new
+                {
+                    budgetItem.BudgetItemId,
+                    budgetItem.ApplicationUserId,
+                    budgetItem.Currency
+                })
+                .HasConstraintName("fk_allocations_budget_item_owner_currency")
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(allocation => allocation.ApplicationUserId)
                 .HasDatabaseName("ix_transaction_allocations_application_user_id");
             entity.HasIndex(allocation => allocation.BudgetItemId)
                 .HasDatabaseName("ix_transaction_allocations_budget_item_id");
+            entity.HasIndex(allocation => new
+                {
+                    allocation.BudgetItemId,
+                    allocation.ApplicationUserId,
+                    allocation.Currency
+                })
+                .HasDatabaseName("ix_allocations_budget_item_owner_currency");
+            entity.HasIndex(allocation => new
+                {
+                    allocation.TransactionId,
+                    allocation.ApplicationUserId,
+                    allocation.Currency
+                })
+                .IsUnique()
+                .HasDatabaseName("ux_allocations_transaction_owner_currency");
 
             entity.ToTable(table =>
             {
-                table.HasCheckConstraint(
-                    "ck_transaction_allocations_amount_range",
-                    "amount > 0.00 and amount <= 99999999.99");
                 table.HasCheckConstraint("ck_transaction_allocations_currency_format", "currency ~ '^[A-Z]{3}$'");
             });
         });

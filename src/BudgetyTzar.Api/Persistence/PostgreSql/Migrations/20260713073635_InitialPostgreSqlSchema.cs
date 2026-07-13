@@ -42,6 +42,8 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_budgets", x => x.budget_id);
+                    table.UniqueConstraint("ak_budgets_id_owner", x => new { x.budget_id, x.application_user_id });
+                    table.UniqueConstraint("ak_budgets_id_owner_currency", x => new { x.budget_id, x.application_user_id, x.currency });
                     table.CheckConstraint("ck_budgets_currency_format", "currency ~ '^[A-Z]{3}$'");
                     table.CheckConstraint("ck_budgets_name_not_blank", "length(btrim(name)) > 0");
                     table.CheckConstraint("ck_budgets_version_positive", "version > 0");
@@ -71,6 +73,7 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_transactions", x => x.transaction_id);
+                    table.UniqueConstraint("ak_transactions_id_owner_currency", x => new { x.transaction_id, x.application_user_id, x.currency });
                     table.CheckConstraint("ck_transactions_amount_range", "amount > 0.00 and amount <= 99999999.99");
                     table.CheckConstraint("ck_transactions_currency_format", "currency ~ '^[A-Z]{3}$'");
                     table.CheckConstraint("ck_transactions_description_not_blank", "length(btrim(description)) > 0");
@@ -92,24 +95,35 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                 {
                     budget_item_id = table.Column<Guid>(type: "uuid", nullable: false),
                     budget_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    application_user_id = table.Column<Guid>(type: "uuid", nullable: false),
                     name = table.Column<string>(type: "text", nullable: false),
                     kind = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
                     planned_amount = table.Column<decimal>(type: "numeric(10,2)", precision: 10, scale: 2, nullable: false),
+                    currency = table.Column<string>(type: "character(3)", nullable: false),
                     created_order = table.Column<int>(type: "integer", nullable: false)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_budget_items", x => x.budget_item_id);
+                    table.UniqueConstraint("ak_budget_items_id_owner_currency", x => new { x.budget_item_id, x.application_user_id, x.currency });
                     table.CheckConstraint("ck_budget_items_created_order_non_negative", "created_order >= 0");
+                    table.CheckConstraint("ck_budget_items_currency_format", "currency ~ '^[A-Z]{3}$'");
                     table.CheckConstraint("ck_budget_items_kind", "kind in ('Funding', 'Consumption')");
                     table.CheckConstraint("ck_budget_items_name_not_blank", "length(btrim(name)) > 0");
                     table.CheckConstraint("ck_budget_items_planned_amount_range", "planned_amount > 0.00 and planned_amount <= 99999999.99");
                     table.ForeignKey(
-                        name: "fk_budget_items_budgets_budget_id",
-                        column: x => x.budget_id,
+                        name: "fk_budget_items_budget_owner_currency",
+                        columns: x => new { x.budget_id, x.application_user_id, x.currency },
                         principalSchema: "budgetytzar",
                         principalTable: "budgets",
-                        principalColumn: "budget_id",
+                        principalColumns: new[] { "budget_id", "application_user_id", "currency" },
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "fk_budget_items_owner",
+                        column: x => x.application_user_id,
+                        principalSchema: "budgetytzar",
+                        principalTable: "application_users",
+                        principalColumn: "application_user_id",
                         onDelete: ReferentialAction.Cascade);
                 });
 
@@ -121,34 +135,32 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                     transaction_id = table.Column<Guid>(type: "uuid", nullable: false),
                     application_user_id = table.Column<Guid>(type: "uuid", nullable: false),
                     budget_item_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    amount = table.Column<decimal>(type: "numeric(10,2)", precision: 10, scale: 2, nullable: false),
                     currency = table.Column<string>(type: "character(3)", nullable: false)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_transaction_allocations", x => x.transaction_id);
-                    table.CheckConstraint("ck_transaction_allocations_amount_range", "amount > 0.00 and amount <= 99999999.99");
                     table.CheckConstraint("ck_transaction_allocations_currency_format", "currency ~ '^[A-Z]{3}$'");
                     table.ForeignKey(
-                        name: "fk_transaction_allocations_application_users_application_user_id",
+                        name: "fk_allocations_budget_item_owner_currency",
+                        columns: x => new { x.budget_item_id, x.application_user_id, x.currency },
+                        principalSchema: "budgetytzar",
+                        principalTable: "budget_items",
+                        principalColumns: new[] { "budget_item_id", "application_user_id", "currency" },
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "fk_allocations_owner",
                         column: x => x.application_user_id,
                         principalSchema: "budgetytzar",
                         principalTable: "application_users",
                         principalColumn: "application_user_id",
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
-                        name: "fk_transaction_allocations_budget_items_budget_item_id",
-                        column: x => x.budget_item_id,
-                        principalSchema: "budgetytzar",
-                        principalTable: "budget_items",
-                        principalColumn: "budget_item_id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "fk_transaction_allocations_transactions_transaction_id",
-                        column: x => x.transaction_id,
+                        name: "fk_allocations_transaction_owner_currency",
+                        columns: x => new { x.transaction_id, x.application_user_id, x.currency },
                         principalSchema: "budgetytzar",
                         principalTable: "transactions",
-                        principalColumn: "transaction_id",
+                        principalColumns: new[] { "transaction_id", "application_user_id", "currency" },
                         onDelete: ReferentialAction.Restrict);
                 });
 
@@ -160,10 +172,22 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "ix_budget_items_application_user_id",
+                schema: "budgetytzar",
+                table: "budget_items",
+                column: "application_user_id");
+
+            migrationBuilder.CreateIndex(
                 name: "ix_budget_items_budget_id",
                 schema: "budgetytzar",
                 table: "budget_items",
                 column: "budget_id");
+
+            migrationBuilder.CreateIndex(
+                name: "ix_budget_items_budget_owner_currency",
+                schema: "budgetytzar",
+                table: "budget_items",
+                columns: new[] { "budget_id", "application_user_id", "currency" });
 
             migrationBuilder.CreateIndex(
                 name: "ux_budget_items_budget_id_created_order",
@@ -193,6 +217,12 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "ix_allocations_budget_item_owner_currency",
+                schema: "budgetytzar",
+                table: "transaction_allocations",
+                columns: new[] { "budget_item_id", "application_user_id", "currency" });
+
+            migrationBuilder.CreateIndex(
                 name: "ix_transaction_allocations_application_user_id",
                 schema: "budgetytzar",
                 table: "transaction_allocations",
@@ -203,6 +233,13 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                 schema: "budgetytzar",
                 table: "transaction_allocations",
                 column: "budget_item_id");
+
+            migrationBuilder.CreateIndex(
+                name: "ux_allocations_transaction_owner_currency",
+                schema: "budgetytzar",
+                table: "transaction_allocations",
+                columns: new[] { "transaction_id", "application_user_id", "currency" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "ix_transactions_application_user_id",

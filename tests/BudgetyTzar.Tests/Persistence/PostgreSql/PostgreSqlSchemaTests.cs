@@ -52,10 +52,27 @@ public sealed class PostgreSqlSchemaTests(PostgreSqlSchemaTests.DatabaseFixture 
         Assert.Equal(
             [
                 "budget_items.planned_amount:10,2",
-                "transaction_allocations.amount:10,2",
                 "transactions.amount:10,2"
             ],
             columns);
+    }
+
+    [Fact]
+    public async Task Allocation_amount_is_derived_from_the_referenced_transaction()
+    {
+        await using var context = database.CreateContext();
+
+        var allocationColumns = await ReadStringsAsync(
+            context,
+            """
+            select column_name
+            from information_schema.columns
+            where table_schema = 'budgetytzar'
+              and table_name = 'transaction_allocations'
+            order by column_name
+            """);
+
+        Assert.DoesNotContain("amount", allocationColumns);
     }
 
     [Fact]
@@ -77,14 +94,14 @@ public sealed class PostgreSqlSchemaTests(PostgreSqlSchemaTests.DatabaseFixture 
         Assert.Contains("pk_budget_items", constraints);
         Assert.Contains("pk_transactions", constraints);
         Assert.Contains("pk_transaction_allocations", constraints);
-        Assert.Contains("fk_budget_items_budgets_budget_id", constraints);
+        Assert.Contains("fk_budget_items_budget_owner_currency", constraints);
         Assert.Contains("fk_budgets_application_users_application_user_id", constraints);
-        Assert.Contains("fk_transaction_allocations_budget_items_budget_item_id", constraints);
-        Assert.Contains("fk_transaction_allocations_transactions_transaction_id", constraints);
+        Assert.Contains("fk_allocations_budget_item_owner_currency", constraints);
+        Assert.Contains("fk_allocations_transaction_owner_currency", constraints);
         Assert.Contains("fk_transactions_application_users_application_user_id", constraints);
         Assert.Contains("ck_budget_items_planned_amount_range", constraints);
         Assert.Contains("ck_transactions_amount_range", constraints);
-        Assert.Contains("ck_transaction_allocations_amount_range", constraints);
+        Assert.Contains("ck_transaction_allocations_currency_format", constraints);
     }
 
     [Fact]
@@ -103,11 +120,14 @@ public sealed class PostgreSqlSchemaTests(PostgreSqlSchemaTests.DatabaseFixture 
 
         Assert.Contains("ix_budgets_application_user_id", indexes);
         Assert.Contains("ix_budget_items_budget_id", indexes);
+        Assert.Contains("ix_budget_items_budget_owner_currency", indexes);
+        Assert.Contains("ix_allocations_budget_item_owner_currency", indexes);
         Assert.Contains("ix_transaction_allocations_application_user_id", indexes);
         Assert.Contains("ix_transaction_allocations_budget_item_id", indexes);
         Assert.Contains("ix_transactions_application_user_id", indexes);
         Assert.Contains("ix_transactions_application_user_id_transaction_date", indexes);
         Assert.Contains("ux_application_users_user_key", indexes);
+        Assert.Contains("ux_allocations_transaction_owner_currency", indexes);
         Assert.Contains("ux_budgets_application_user_id_name", indexes);
         Assert.Contains("ux_budget_items_budget_id_name", indexes);
         Assert.Contains("ux_transactions_application_user_id_recorded_order", indexes);
@@ -133,8 +153,8 @@ public sealed class PostgreSqlSchemaTests(PostgreSqlSchemaTests.DatabaseFixture 
                 Budget(budgetA, userA, "UK", "GBP"),
                 Budget(budgetB, userB, "UK", "EUR"));
             context.BudgetItems.AddRange(
-                BudgetItem(firstBudgetItemId, budgetA, "Groceries", 0),
-                BudgetItem(secondBudgetItemId, budgetA, "Transport", 1));
+                BudgetItem(firstBudgetItemId, budgetA, userA, "Groceries", "GBP", 0),
+                BudgetItem(secondBudgetItemId, budgetA, userA, "Transport", "GBP", 1));
             context.Transactions.Add(Transaction(transactionId, userA, 0));
             context.TransactionAllocations.Add(Allocation(transactionId, userA, firstBudgetItemId));
 
@@ -147,7 +167,7 @@ public sealed class PostgreSqlSchemaTests(PostgreSqlSchemaTests.DatabaseFixture 
         });
         await AssertConstraintFailureAsync(context =>
         {
-            context.BudgetItems.Add(BudgetItem(Guid.NewGuid(), budgetA, "Groceries", 2));
+            context.BudgetItems.Add(BudgetItem(Guid.NewGuid(), budgetA, userA, "Groceries", "GBP", 2));
         });
         await AssertConstraintFailureAsync(context =>
         {
@@ -156,6 +176,74 @@ public sealed class PostgreSqlSchemaTests(PostgreSqlSchemaTests.DatabaseFixture 
         await AssertConstraintFailureAsync(context =>
         {
             context.TransactionAllocations.Add(Allocation(Guid.NewGuid(), userA, firstBudgetItemId));
+        });
+    }
+
+    [Fact]
+    public async Task Storage_constraints_reject_cross_owner_allocations()
+    {
+        var userA = Guid.NewGuid();
+        var userB = Guid.NewGuid();
+        var userABudgetId = Guid.NewGuid();
+        var userBBudgetId = Guid.NewGuid();
+        var userATransactionId = Guid.NewGuid();
+        var userBTransactionId = Guid.NewGuid();
+        var userABudgetItemId = Guid.NewGuid();
+        var userBBudgetItemId = Guid.NewGuid();
+
+        await using (var context = database.CreateContext())
+        {
+            context.ApplicationUsers.AddRange(
+                new ApplicationUserRecord { ApplicationUserId = userA, UserKey = "owner:user-a" },
+                new ApplicationUserRecord { ApplicationUserId = userB, UserKey = "owner:user-b" });
+            context.Budgets.AddRange(
+                Budget(userABudgetId, userA, "User A", "GBP"),
+                Budget(userBBudgetId, userB, "User B", "GBP"));
+            context.BudgetItems.AddRange(
+                BudgetItem(userABudgetItemId, userABudgetId, userA, "Groceries", "GBP", 0),
+                BudgetItem(userBBudgetItemId, userBBudgetId, userB, "Groceries", "GBP", 0));
+            context.Transactions.AddRange(
+                Transaction(userATransactionId, userA, 0),
+                Transaction(userBTransactionId, userB, 0));
+
+            await context.SaveChangesAsync();
+        }
+
+        await AssertConstraintFailureAsync(context =>
+        {
+            context.TransactionAllocations.Add(Allocation(userBTransactionId, userA, userABudgetItemId));
+        });
+        await AssertConstraintFailureAsync(context =>
+        {
+            context.TransactionAllocations.Add(Allocation(userATransactionId, userA, userBBudgetItemId));
+        });
+    }
+
+    [Fact]
+    public async Task Storage_constraints_reject_budget_item_and_allocation_currency_drift()
+    {
+        var userId = Guid.NewGuid();
+        var budgetId = Guid.NewGuid();
+        var transactionId = Guid.NewGuid();
+        var budgetItemId = Guid.NewGuid();
+
+        await using (var context = database.CreateContext())
+        {
+            context.ApplicationUsers.Add(new ApplicationUserRecord { ApplicationUserId = userId, UserKey = "currency:user" });
+            context.Budgets.Add(Budget(budgetId, userId, "UK", "GBP"));
+            context.BudgetItems.Add(BudgetItem(budgetItemId, budgetId, userId, "Groceries", "GBP", 0));
+            context.Transactions.Add(Transaction(transactionId, userId, 0));
+
+            await context.SaveChangesAsync();
+        }
+
+        await AssertConstraintFailureAsync(context =>
+        {
+            context.BudgetItems.Add(BudgetItem(Guid.NewGuid(), budgetId, userId, "Transport", "EUR", 1));
+        });
+        await AssertConstraintFailureAsync(context =>
+        {
+            context.TransactionAllocations.Add(Allocation(transactionId, userId, budgetItemId, "EUR"));
         });
     }
 
@@ -179,15 +267,23 @@ public sealed class PostgreSqlSchemaTests(PostgreSqlSchemaTests.DatabaseFixture 
         };
     }
 
-    private static BudgetItemRecord BudgetItem(Guid budgetItemId, Guid budgetId, string name, int createdOrder)
+    private static BudgetItemRecord BudgetItem(
+        Guid budgetItemId,
+        Guid budgetId,
+        Guid userId,
+        string name,
+        string currency,
+        int createdOrder)
     {
         return new BudgetItemRecord
         {
             BudgetItemId = budgetItemId,
             BudgetId = budgetId,
+            ApplicationUserId = userId,
             Name = name,
             Kind = "Consumption",
             PlannedAmount = 400.00m,
+            Currency = currency,
             CreatedOrder = createdOrder
         };
     }
@@ -207,15 +303,18 @@ public sealed class PostgreSqlSchemaTests(PostgreSqlSchemaTests.DatabaseFixture 
         };
     }
 
-    private static TransactionAllocationRecord Allocation(Guid transactionId, Guid userId, Guid budgetItemId)
+    private static TransactionAllocationRecord Allocation(
+        Guid transactionId,
+        Guid userId,
+        Guid budgetItemId,
+        string currency = "GBP")
     {
         return new TransactionAllocationRecord
         {
             TransactionId = transactionId,
             ApplicationUserId = userId,
             BudgetItemId = budgetItemId,
-            Amount = 42.50m,
-            Currency = "GBP"
+            Currency = currency
         };
     }
 
