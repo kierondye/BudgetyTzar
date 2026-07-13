@@ -237,17 +237,17 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
         if (!TransactionType.TryCreate(record.Type, out var type)
             || !PositiveMoneyAmount.TryCreate(record.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture), out var amount)
             || !CurrencyCode.TryCreate(record.Currency, out var currency)
-            || Transaction.Record(
+            || Transaction.Create(
                 record.TransactionId,
                 record.Description,
                 type,
                 record.TransactionDate,
                 amount!,
-                currency) is not RecordTransactionResult.Recorded recorded)
+                currency) is not CreateTransactionResult.Created created)
         {
             throw new InvalidOperationException("Stored transaction data is invalid.");
         }
 
-        return recorded.Transaction;
+        return created.Transaction;
     }
 }

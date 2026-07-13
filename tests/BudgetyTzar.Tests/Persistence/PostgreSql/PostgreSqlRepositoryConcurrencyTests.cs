@@ -48,7 +48,7 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
     {
         await using var database = await CreateDatabaseAsync();
         var userId = Guid.NewGuid();
-        var userKey = "postgres-recorded-order-race-user";
+        var userKey = "postgres-created-order-race-user";
         var existingTransactionId = Guid.NewGuid();
         var concurrentTransactionId = Guid.NewGuid();
         await SeedBudgetItemAndTransactionAsync(database.ConnectionString, userId, userKey, existingTransactionId);
@@ -296,8 +296,8 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
 
     private static Transaction CreateTransaction(Guid? transactionId = null)
     {
-        return Assert.IsType<RecordTransactionResult.Recorded>(
-            Transaction.Record(
+        return Assert.IsType<CreateTransactionResult.Created>(
+            Transaction.Create(
                 transactionId ?? Guid.NewGuid(),
                 "Groceries",
                 TransactionType.Debit,

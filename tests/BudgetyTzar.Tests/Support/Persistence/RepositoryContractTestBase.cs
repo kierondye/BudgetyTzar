@@ -34,8 +34,8 @@ public abstract class RepositoryContractTestBase
 
     protected static Transaction CreateTransaction(string description = "Groceries", string amount = "42.50")
     {
-        return Assert.IsType<RecordTransactionResult.Recorded>(
-            Transaction.Record(
+        return Assert.IsType<CreateTransactionResult.Created>(
+            Transaction.Create(
                 Guid.NewGuid(),
                 description,
                 TransactionType.Debit,
