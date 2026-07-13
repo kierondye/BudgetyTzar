@@ -167,6 +167,10 @@ owner identities, request bodies, response bodies, and raw resource URLs.
 ## Versioning and Releases
 
 BudgetyTzar uses product-wide SemVer derived from Git tags and Conventional Commits.
+Pull requests run a CI check that validates each PR commit subject before merge.
+Use `type(scope): description` or `type: description`; examples include
+`feat: add budget export`, `fix(api): preserve version endpoint metadata`, and
+`ci: validate pull request commit subjects`.
 
 Enable the local commit message hook once per clone:
 

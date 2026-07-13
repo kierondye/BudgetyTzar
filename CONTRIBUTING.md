@@ -306,3 +306,38 @@ Assert.Null(budgets.Get(userBBudgetId));
   for persistence guarantees.
 - Run the build and full test suite, and update the architecture guide if
   responsibilities, request flow, or persistence boundaries changed.
+
+## Commit Messages
+
+BudgetyTzar uses Conventional Commits to calculate release intent and version
+metadata. Pull requests run a `conventional-commits` CI check that validates every PR
+commit subject before merge.
+
+Use this format:
+
+```text
+type(scope): description
+```
+
+The scope is optional, so `type: description` is also valid. Allowed types are
+`feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`, `chore`, `style`,
+and `revert`.
+
+Examples:
+
+```text
+feat: add budget export
+fix(api): preserve version endpoint metadata
+ci: validate pull request commit subjects
+feat(events)!: rename transaction event
+```
+
+Enable the local hook once per clone so invalid commit messages are caught before CI:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The local hook allows temporary `fixup!` and `squash!` commits for autosquash
+workflows, but the pull request CI check rejects them. Squash or amend those commits
+before opening or updating a PR.

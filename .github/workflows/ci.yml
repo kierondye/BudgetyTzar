@@ -9,6 +9,64 @@ on:
       - main
 
 jobs:
+  conventional-commits:
+    name: conventional-commits
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout pull request head
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Fetch pull request base commit
+        run: git fetch --no-tags --depth=1 "${{ github.server_url }}/${{ github.repository }}.git" "${{ github.event.pull_request.base.sha }}"
+
+      - name: Validate PR commit subjects
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cc_subject_re='^(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\([a-z0-9][a-z0-9._/-]*\))?!?: .+$'
+          failures=0
+
+          while IFS=$'\t' read -r sha subject; do
+            [ -n "$sha" ] || continue
+
+            case "$subject" in
+              Merge\ *|Revert\ \"*|revert:\ *)
+                continue
+                ;;
+            esac
+
+            if [[ ! "$subject" =~ $cc_subject_re ]]; then
+              echo "Invalid commit subject in ${sha:0:12}: $subject" >&2
+              failures=$((failures + 1))
+            fi
+          done < <(git log --format='%H%x09%s' "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}")
+
+          if [ "$failures" -ne 0 ]; then
+            cat >&2 <<'EOF'
+
+          Commit message must follow Conventional Commits.
+
+          Expected format:
+            type(scope): description
+
+          Valid examples:
+            feat: add budget export
+            fix(api): preserve version endpoint metadata
+            feat(events)!: rename transaction event
+
+          Allowed types:
+            feat, fix, perf, refactor, docs, test, build, ci, chore, style, revert
+          EOF
+            exit 1
+          fi
+
   dotnet-test:
     name: dotnet-test
     runs-on: ubuntu-latest
