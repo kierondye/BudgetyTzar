@@ -40,6 +40,35 @@ public abstract class BudgetRepositoryContractTests : RepositoryContractTestBase
     }
 
     [Fact]
+    public async Task Adapter_contract_save_allows_only_one_budget_to_claim_a_name_when_saves_overlap()
+    {
+        await using var context = await CreateContextAsync();
+        var firstRepositories = context.ForUser("repository-test-user");
+        var secondRepositories = context.ForUser("repository-test-user");
+        var firstBudget = CreateBudget("Shared", "GBP");
+        var duplicateBudget = CreateBudget("Shared", "EUR");
+        using var start = new ManualResetEventSlim();
+
+        var firstSave = Task.Run(() =>
+        {
+            start.Wait();
+            return firstRepositories.Budgets.Save(firstBudget);
+        });
+        var duplicateSave = Task.Run(() =>
+        {
+            start.Wait();
+            return secondRepositories.Budgets.Save(duplicateBudget);
+        });
+
+        start.Set();
+        var results = await Task.WhenAll(firstSave, duplicateSave);
+
+        Assert.Equal(1, results.Count(result => result is BudgetSaveResult.Saved));
+        Assert.Equal(1, results.Count(result => result is BudgetSaveResult.DuplicateName));
+        Assert.Single(firstRepositories.Budgets.GetAll());
+    }
+
+    [Fact]
     public async Task Adapter_contract_save_rejects_duplicate_budget_identities_without_overwriting_existing_budget()
     {
         await using var context = await CreateContextAsync();
