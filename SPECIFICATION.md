@@ -1152,6 +1152,8 @@ Release requirements:
 
 - Git release tags should use SemVer tags such as `v0.1.0`, `v0.2.0`, and `v1.0.0`; these tags are the canonical released versions.
 - Builds should generate version metadata from the latest reachable tag and subsequent Conventional Commits. Tagged commits expose the tag version; commits after a tag expose deterministic preview metadata.
+- Pull requests should run a required CI check that validates PR commit subjects
+  against the Conventional Commits format before merge.
 - The runtime API should expose product version metadata separately from health status.
 - OpenAPI metadata should include the product SemVer.
 - Container image tags should include explicit SemVer tags such as `budgetytzar-api:0.2.0`; `latest` may exist only as a convenience tag and must not be the release identity.

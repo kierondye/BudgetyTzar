@@ -9,6 +9,25 @@ on:
       - main
 
 jobs:
+  conventional-commits:
+    name: conventional-commits
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout pull request head
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Fetch pull request base commit
+        run: git fetch --no-tags --depth=1 "${{ github.server_url }}/${{ github.repository }}.git" "${{ github.event.pull_request.base.sha }}"
+
+      - name: Validate PR commit subjects
+        run: scripts/validate-commit-message.sh --range "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+
   dotnet-test:
     name: dotnet-test
     runs-on: ubuntu-latest
