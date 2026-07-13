@@ -69,10 +69,10 @@ External identity values are lookup keys, while `ApplicationUserId` is an intern
 application identifier. Domain repositories continue to enforce ownership from the
 resolved internal current user.
 
-Run the test suite:
+Run the fast test suite:
 
 ```bash
-dotnet test
+dotnet test --filter "FullyQualifiedName!~BudgetyTzar.Tests.Persistence.PostgreSql"
 ```
 
 Build the solution:
@@ -142,11 +142,17 @@ Persistence is in memory by default. All budgets, transactions, and allocations
 created through the container are lost when it stops or restarts unless PostgreSQL
 persistence is selected and a database connection string is supplied.
 
-Run the PostgreSQL schema migration tests with Docker available:
+Run the PostgreSQL CI lane locally with Docker available:
 
 ```bash
-dotnet test --filter PostgreSqlSchemaTests
+dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj \
+  --filter "FullyQualifiedName~BudgetyTzar.Tests.Persistence.PostgreSql"
 ```
+
+This starts ephemeral PostgreSQL containers through Testcontainers and verifies
+migration/schema behaviour, PostgreSQL repository adapter contract behaviour, and
+PostgreSQL concurrency behaviour. The GitHub Actions `postgresql-integration-test`
+job runs the same filtered test lane on pull requests and pushes to `main`.
 
 Create or update EF Core migrations with a local tooling connection string:
 

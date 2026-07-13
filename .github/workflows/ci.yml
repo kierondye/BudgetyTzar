@@ -83,8 +83,35 @@ jobs:
       - name: Restore
         run: dotnet restore BudgetyTzar.sln
 
-      - name: Test
-        run: dotnet test BudgetyTzar.sln --configuration Release --no-restore
+      - name: Fast .NET tests
+        run: >
+          dotnet test BudgetyTzar.sln
+          --configuration Release
+          --no-restore
+          --filter "FullyQualifiedName!~BudgetyTzar.Tests.Persistence.PostgreSql"
+
+  postgresql-integration-test:
+    name: postgresql-integration-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore
+        run: dotnet restore BudgetyTzar.sln
+
+      - name: PostgreSQL schema, repository, and concurrency tests
+        run: >
+          dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj
+          --configuration Release
+          --no-restore
+          --filter "FullyQualifiedName~BudgetyTzar.Tests.Persistence.PostgreSql"
 
   container-build:
     name: container-build
