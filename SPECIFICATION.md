@@ -488,7 +488,9 @@ Suggested implementation:
 
 - Use an external identity provider with OpenID Connect where practical.
 - Deployed environments may configure JWT bearer/OIDC-compatible authentication using
-  trusted authority, issuer, audience, and stable user-identifier claim settings.
+  trusted authority or metadata, audience, and stable user-identifier claim settings.
+  Issuer may be configured as an additional validation constraint but does not replace
+  authority or metadata for signing-key discovery.
 - When deployment bearer authentication is not configured, the application uses a safe
   rejecting default authentication scheme.
 - The application should not implement its own password storage or identity management unless there is a deliberate product reason.
@@ -713,10 +715,12 @@ budgeting, transaction, transaction allocation, or reporting endpoint returns
 
 JWT bearer/OIDC-compatible authentication is enabled by deployment configuration, not
 by code changes. The deployment configuration identifies the trusted authority or
-issuer, accepted API audience, whether metadata must be loaded over HTTPS, and the
-stable authenticated claim used to derive the internal application user. Tokens that
-are missing, invalid, or do not contain the configured user identity claim are treated
-as unauthenticated for business API requests and return `401 Unauthorized`.
+metadata address, accepted API audience, whether metadata must be loaded over HTTPS,
+and the stable authenticated claim used to derive the internal application user.
+Issuer may be configured as an additional validation constraint, but it does not
+replace authority or metadata for signing-key discovery. Tokens that are missing,
+invalid, or do not contain the configured user identity claim are treated as
+unauthenticated for business API requests and return `401 Unauthorized`.
 
 Budgets, transactions, transaction allocations, and budget summaries are scoped to the
 authenticated application user. User identity is resolved from authenticated claims and

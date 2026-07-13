@@ -168,11 +168,10 @@ public sealed record BearerAuthenticationOptions
         var errors = new List<string>();
 
         if (string.IsNullOrWhiteSpace(Authority)
-            && string.IsNullOrWhiteSpace(MetadataAddress)
-            && string.IsNullOrWhiteSpace(Issuer))
+            && string.IsNullOrWhiteSpace(MetadataAddress))
         {
             errors.Add(
-                "Authentication:Bearer requires Authority, MetadataAddress, or Issuer when Enabled is true.");
+                "Authentication:Bearer requires Authority or MetadataAddress when Enabled is true.");
         }
 
         if (string.IsNullOrWhiteSpace(Audience) && ValidAudiences.Count == 0)

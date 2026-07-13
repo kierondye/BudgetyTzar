@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 
 namespace BudgetyTzar.Tests.Support;
@@ -69,6 +70,7 @@ public sealed class TestApiServer : IAsyncDisposable
                 builder.Configuration.AddInMemoryCollection(
                 [
                     new KeyValuePair<string, string?>("Authentication:Bearer:Enabled", "true"),
+                    new KeyValuePair<string, string?>("Authentication:Bearer:Authority", TestJwtIssuer),
                     new KeyValuePair<string, string?>("Authentication:Bearer:Audience", TestJwtAudience),
                     new KeyValuePair<string, string?>("Authentication:Bearer:Issuer", TestJwtIssuer),
                     new KeyValuePair<string, string?>("Authentication:Bearer:RequireHttpsMetadata", "false"),
@@ -78,8 +80,13 @@ public sealed class TestApiServer : IAsyncDisposable
                     JwtBearerDefaults.AuthenticationScheme,
                     options =>
                     {
-                        options.TokenValidationParameters.IssuerSigningKey = new SymmetricSecurityKey(
-                            Encoding.UTF8.GetBytes(TestJwtSigningKey));
+                        var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TestJwtSigningKey));
+                        options.Configuration = new OpenIdConnectConfiguration
+                        {
+                            Issuer = TestJwtIssuer
+                        };
+                        options.Configuration.SigningKeys.Add(signingKey);
+                        options.TokenValidationParameters.IssuerSigningKey = signingKey;
                         options.TokenValidationParameters.ValidateIssuerSigningKey = true;
                         options.TokenValidationParameters.ClockSkew = TimeSpan.Zero;
                     });

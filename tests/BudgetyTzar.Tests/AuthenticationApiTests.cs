@@ -87,14 +87,14 @@ public sealed class AuthenticationApiTests
     {
         var exception = Assert.Throws<InvalidOperationException>(() => CreateAppWithBearerConfiguration(
             ("Authentication:Bearer:Enabled", "true"),
-            ("Authentication:Bearer:Issuer", TestApiServer.TestJwtIssuer),
+            ("Authentication:Bearer:Authority", TestApiServer.TestJwtIssuer),
             ("Authentication:Bearer:Audience", TestApiServer.TestJwtAudience)));
 
         Assert.Contains("Authentication:Bearer requires UserIdClaim", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Configured_bearer_authentication_requires_a_trusted_issuer_or_metadata_source()
+    public void Configured_bearer_authentication_requires_a_metadata_source()
     {
         var exception = Assert.Throws<InvalidOperationException>(() => CreateAppWithBearerConfiguration(
             ("Authentication:Bearer:Enabled", "true"),
@@ -102,7 +102,22 @@ public sealed class AuthenticationApiTests
             ("Authentication:Bearer:UserIdClaim", "sub")));
 
         Assert.Contains(
-            "Authentication:Bearer requires Authority, MetadataAddress, or Issuer",
+            "Authentication:Bearer requires Authority or MetadataAddress",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Configured_bearer_authentication_does_not_accept_issuer_as_the_metadata_source()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() => CreateAppWithBearerConfiguration(
+            ("Authentication:Bearer:Enabled", "true"),
+            ("Authentication:Bearer:Issuer", TestApiServer.TestJwtIssuer),
+            ("Authentication:Bearer:Audience", TestApiServer.TestJwtAudience),
+            ("Authentication:Bearer:UserIdClaim", "sub")));
+
+        Assert.Contains(
+            "Authentication:Bearer requires Authority or MetadataAddress",
             exception.Message,
             StringComparison.Ordinal);
     }
@@ -112,7 +127,7 @@ public sealed class AuthenticationApiTests
     {
         var exception = Assert.Throws<InvalidOperationException>(() => CreateAppWithBearerConfiguration(
             ("Authentication:Bearer:Enabled", "true"),
-            ("Authentication:Bearer:Issuer", TestApiServer.TestJwtIssuer),
+            ("Authentication:Bearer:Authority", TestApiServer.TestJwtIssuer),
             ("Authentication:Bearer:UserIdClaim", "sub")));
 
         Assert.Contains("Authentication:Bearer requires Audience or ValidAudiences", exception.Message, StringComparison.Ordinal);
