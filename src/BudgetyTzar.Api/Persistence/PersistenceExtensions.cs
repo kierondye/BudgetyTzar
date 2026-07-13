@@ -4,9 +4,9 @@ using BudgetyTzar.Api.Persistence.PostgreSql;
 
 namespace BudgetyTzar.Api.Persistence;
 
-public static class BudgetyTzarPersistence
+public static class PersistenceExtensions
 {
-    public static IServiceCollection AddBudgetyTzarPersistence(
+    public static IServiceCollection AddPersistence(
         this IServiceCollection services,
         IConfiguration configuration)
     {
@@ -19,7 +19,7 @@ public static class BudgetyTzarPersistence
             return services;
         }
 
-        services.AddBudgetyTzarPostgreSqlPersistence(options.PostgreSqlConnectionString!);
+        services.AddPostgreSqlPersistence(options.PostgreSqlConnectionString!);
         return services;
     }
 }

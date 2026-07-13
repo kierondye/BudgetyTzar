@@ -20,7 +20,7 @@ public static class ApiApplication
         builder.Services.AddHealthChecks();
         builder.Services.AddBudgetyTzarObservability(builder.Configuration);
         builder.Services.AddIdentityBoundary(builder.Configuration);
-        builder.Services.AddBudgetyTzarPersistence(builder.Configuration);
+        builder.Services.AddPersistence(builder.Configuration);
         builder.Services.AddReporting();
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen(options =>

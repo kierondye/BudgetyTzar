@@ -7,7 +7,7 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql;
 
 public static class PostgreSqlPersistenceExtensions
 {
-    public static IServiceCollection AddBudgetyTzarPostgreSqlPersistence(
+    public static IServiceCollection AddPostgreSqlPersistence(
         this IServiceCollection services,
         string connectionString)
     {
