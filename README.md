@@ -142,6 +142,80 @@ Persistence is in memory by default. All budgets, transactions, and allocations
 created through the container are lost when it stops or restarts unless PostgreSQL
 persistence is selected and a database connection string is supplied.
 
+### Docker Compose PostgreSQL Stack
+
+Run the local PostgreSQL-backed API stack from the repository root:
+
+```bash
+docker compose up --build
+```
+
+Compose starts:
+
+- `postgres`, a local PostgreSQL database with a named Docker volume.
+- `migrate`, a one-shot EF Core migration service that applies the repository's
+  migrations to the Compose database.
+- `api`, the BudgetyTzar API configured with `Persistence__Provider=PostgreSql` and
+  a connection string targeting the Compose PostgreSQL service.
+
+The Compose database uses safe local-development credentials only:
+
+```text
+Host=postgres;Port=5432;Database=budgetytzar;Username=budgetytzar;Password=budgetytzar_dev_password
+```
+
+The PostgreSQL port is published on host port `54320` for local inspection tools. The
+API remains available at `http://localhost:8080`.
+
+Verify the public operational endpoints:
+
+```bash
+curl --fail http://localhost:8080/health
+curl --fail http://localhost:8080/api/version
+```
+
+Verify that migrations have initialised the local database:
+
+```bash
+docker compose exec postgres psql \
+  --username budgetytzar \
+  --dbname budgetytzar \
+  --command 'select "MigrationId" from "__EFMigrationsHistory" order by "MigrationId";'
+```
+
+Business API endpoints still require authentication. The Compose file deliberately
+does not add a test-only authentication scheme, local user shortcut, or identity
+provider. To exercise durable budgets, transactions, and allocations through the HTTP
+API, configure bearer authentication for your local identity provider in a local
+Compose override or shell environment, create data through authenticated API requests,
+then restart only the API container:
+
+```bash
+docker compose restart api
+```
+
+After the API restarts, the same authenticated GET requests should return the created
+budgets, transactions, allocations, and summaries while the PostgreSQL volume remains.
+
+Apply migrations again after pulling new migration files with:
+
+```bash
+docker compose up --build migrate
+docker compose up --build api
+```
+
+Stop the stack without deleting the database volume:
+
+```bash
+docker compose down
+```
+
+Delete the local PostgreSQL data volume when you want a clean database:
+
+```bash
+docker compose down --volumes
+```
+
 Run the PostgreSQL CI lane locally with Docker available:
 
 ```bash

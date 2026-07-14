@@ -1,0 +1,47 @@
+name: budgetytzar-local
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: budgetytzar
+      POSTGRES_USER: budgetytzar
+      POSTGRES_PASSWORD: budgetytzar_dev_password
+    ports:
+      - "54320:5432"
+    volumes:
+      - budgetytzar-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U budgetytzar -d budgetytzar"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  migrate:
+    build:
+      context: .
+      target: ef-tools
+    environment:
+      BUDGETYTZAR_MIGRATIONS_CONNECTION_STRING: Host=postgres;Port=5432;Database=budgetytzar;Username=budgetytzar;Password=budgetytzar_dev_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      target: runtime
+    environment:
+      Persistence__Provider: PostgreSql
+      ConnectionStrings__BudgetyTzar: Host=postgres;Port=5432;Database=budgetytzar;Username=budgetytzar;Password=budgetytzar_dev_password
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  budgetytzar-postgres-data:
