@@ -965,7 +965,33 @@ Example version response:
 
 OpenAPI metadata must use the same product SemVer value as the runtime version response.
 
-### 10.6 Example Budget Summary Response
+### 10.6 Operational Health API
+
+```http
+GET /health
+GET /health/ready
+GET /health/live
+```
+
+Health, readiness, and liveness endpoints are public operational endpoints unless
+deployment configuration deliberately restricts them.
+
+`GET /health` is the existing deployment health endpoint and reports readiness for
+the configured runtime persistence provider. `GET /health/ready` is an explicit
+readiness alias for operators that prefer separate probe names. `GET /health/live`
+reports process liveness without checking external dependencies.
+
+When in-memory persistence is selected, readiness does not require database
+configuration. When `Persistence:Provider=PostgreSql` is selected, readiness must
+verify PostgreSQL database connectivity with a lightweight query against the
+configured database. If the configured PostgreSQL database is unreachable or
+misconfigured, readiness returns an unhealthy status.
+
+Health responses and health-related logs must not disclose secrets, raw connection
+strings, user identity, owner identity, resource identifiers, transaction
+descriptions, request or response bodies, or monetary values.
+
+### 10.7 Example Budget Summary Response
 
 ```json
 {
@@ -1357,7 +1383,8 @@ The application should include:
 - Correlation IDs.
 - Distributed tracing with OpenTelemetry.
 - Metrics for API requests.
-- Health endpoints implemented using standard .NET health check infrastructure.
+- Health and readiness endpoints implemented using standard .NET health check
+  infrastructure.
 - Dashboard for service health.
 
 Important signals:

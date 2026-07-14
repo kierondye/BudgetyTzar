@@ -34,6 +34,8 @@ public sealed class AuthenticationApiTests
 
     [Theory]
     [InlineData("/health")]
+    [InlineData("/health/ready")]
+    [InlineData("/health/live")]
     [InlineData("/api/version")]
     [InlineData("/swagger/v1/swagger.json")]
     public async Task Operational_endpoints_remain_public(string path)

@@ -17,6 +17,8 @@ public static class PostgreSqlPersistenceExtensions
         {
             options.UseNpgsql(connectionString);
         });
+        services.AddHealthChecks()
+            .AddCheck<PostgreSqlDatabaseHealthCheck>("postgresql", tags: ["ready"]);
         services.AddScoped<IApplicationUserStore, PostgreSqlApplicationUserStore>();
         services.AddScoped<IBudgetRepository, PostgreSqlBudgetRepository>();
         services.AddScoped<ITransactionRepository, PostgreSqlTransactionRepository>();
