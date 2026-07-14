@@ -151,8 +151,9 @@ dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj \
 
 This starts ephemeral PostgreSQL containers through Testcontainers and verifies
 migration/schema behaviour, PostgreSQL repository adapter contract behaviour, and
-PostgreSQL concurrency behaviour. The GitHub Actions `postgresql-integration-test`
-job runs the same filtered test lane on pull requests and pushes to `main`.
+PostgreSQL concurrency behaviour, plus representative public HTTP API behaviour with
+PostgreSQL selected. The GitHub Actions `postgresql-integration-test` job runs the
+same filtered test lane on pull requests and pushes to `main`.
 
 Create or update EF Core migrations with a local tooling connection string:
 
