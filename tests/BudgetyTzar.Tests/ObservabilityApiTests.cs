@@ -9,16 +9,20 @@ namespace BudgetyTzar.Tests;
 public sealed class ObservabilityApiTests
 {
     [Fact]
-    public async Task Health_endpoint_is_public_and_healthy_for_in_memory_persistence()
+    public async Task Health_and_readiness_endpoints_are_public_and_healthy_for_in_memory_persistence()
     {
         await using var server = await TestApiServer.StartAsync();
         using var client = server.CreateUnauthenticatedClient();
 
-        using var response = await client.GetAsync("/health");
-        var body = await response.Content.ReadAsStringAsync();
+        using var healthResponse = await client.GetAsync("/health");
+        using var readinessResponse = await client.GetAsync("/health/ready");
+        var healthBody = await healthResponse.Content.ReadAsStringAsync();
+        var readinessBody = await readinessResponse.Content.ReadAsStringAsync();
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("Healthy", body);
+        Assert.Equal(HttpStatusCode.OK, healthResponse.StatusCode);
+        Assert.Equal("Healthy", healthBody);
+        Assert.Equal(HttpStatusCode.OK, readinessResponse.StatusCode);
+        Assert.Equal("Healthy", readinessBody);
     }
 
     [Fact]
