@@ -21,5 +21,5 @@ public interface ITransactionAllocationRepository
 
     IReadOnlyList<TransactionAllocation> GetAll();
 
-    void Remove(Guid transactionId);
+    RemoveTransactionAllocationResult Remove(Guid transactionId);
 }

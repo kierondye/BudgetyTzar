@@ -1,5 +1,6 @@
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
+using BudgetyTzar.Api.Features.Audit;
 using BudgetyTzar.Api.Features.Identity;
 using BudgetyTzar.Api.Features.Transactions;
 using BudgetyTzar.Api.Persistence.PostgreSql;
@@ -124,6 +125,7 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
 
         var allocated = Assert.IsType<AllocateTransactionResult.Allocated>(result);
         Assert.Equal(budgetItemId, allocated.Allocation.BudgetItemId);
+        Assert.False(allocated.WasCreated);
     }
 
     [Fact]
@@ -188,9 +190,34 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
         await using var context = CreateContext(database.ConnectionString, interceptor);
         var repository = new PostgreSqlTransactionAllocationRepository(context, CurrentUser(userKey, database.ConnectionString));
 
-        repository.Remove(transactionId);
+        var result = repository.Remove(transactionId);
 
+        Assert.IsType<RemoveTransactionAllocationResult.NotFound>(result);
         Assert.Null(repository.Get(transactionId));
+    }
+
+    [Fact]
+    public async Task Audit_operation_rolls_back_business_write_when_audit_recording_fails()
+    {
+        await using var database = await CreateDatabaseAsync();
+        var userId = Guid.NewGuid();
+        var userKey = "postgres-audit-rollback-user";
+        await SeedUserAsync(database.ConnectionString, userId, userKey);
+        await using var context = CreateContext(database.ConnectionString);
+        var repository = new PostgreSqlTransactionRepository(context, CurrentUser(userKey, database.ConnectionString));
+        var runner = new PostgreSqlAuditOperationRunner(context, new ThrowingAuditRecorder());
+        var transaction = CreateTransaction();
+
+        Assert.Throws<InvalidOperationException>(() => runner.Execute(
+            () =>
+            {
+                repository.Add(transaction);
+                return transaction;
+            },
+            _ => AuditEntry.TransactionCreated(transaction)));
+
+        await using var assertionContext = CreateContext(database.ConnectionString);
+        Assert.False(await assertionContext.Transactions.AnyAsync(record => record.TransactionId == transaction.TransactionId));
     }
 
     private static async Task<PostgreSqlTestDatabase> CreateDatabaseAsync()
@@ -244,6 +271,21 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
         }
 
         context.Transactions.Add(TransactionRecord(transactionId, userId));
+
+        await context.SaveChangesAsync();
+    }
+
+    private static async Task SeedUserAsync(
+        string connectionString,
+        Guid userId,
+        string userKey)
+    {
+        await using var context = CreateContext(connectionString);
+        context.ApplicationUsers.Add(new ApplicationUserRecord
+        {
+            ApplicationUserId = userId,
+            UserKey = UserKey(userKey).Value
+        });
 
         await context.SaveChangesAsync();
     }
@@ -352,6 +394,14 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
         return PositiveMoneyAmount.TryCreate(value, out var amount)
             ? amount!
             : throw new InvalidOperationException("Invalid test amount.");
+    }
+
+    private sealed class ThrowingAuditRecorder : IAuditRecorder
+    {
+        public void Record(AuditEntry entry)
+        {
+            throw new InvalidOperationException("Audit recording failed.");
+        }
     }
 
     private sealed class BeforeSaveInterceptor(

@@ -51,7 +51,7 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
         if (existingAllocation is not null)
         {
             return existingAllocation.BudgetItemId == allocation.BudgetItemId
-                ? new AllocateTransactionResult.Allocated(ToAllocation(existingAllocation, transaction))
+                ? new AllocateTransactionResult.Allocated(ToAllocation(existingAllocation, transaction), WasCreated: false)
                 : new AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem();
         }
 
@@ -89,7 +89,7 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
             return new AllocateTransactionResult.BudgetItemNotFound();
         }
 
-        return new AllocateTransactionResult.Allocated(allocation);
+        return new AllocateTransactionResult.Allocated(allocation, WasCreated: true);
     }
 
     public TransactionAllocation? Get(Guid transactionId)
@@ -136,20 +136,27 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
             .ToList();
     }
 
-    public void Remove(Guid transactionId)
+    public RemoveTransactionAllocationResult Remove(Guid transactionId)
     {
         var applicationUserId = userId.Value;
 
-        var allocation = context.TransactionAllocations.SingleOrDefault(allocation =>
+        var record = context.TransactionAllocations.SingleOrDefault(allocation =>
             allocation.TransactionId == transactionId
             && allocation.ApplicationUserId == applicationUserId);
 
-        if (allocation is null)
+        if (record is null)
         {
-            return;
+            return new RemoveTransactionAllocationResult.NotFound();
         }
 
-        context.TransactionAllocations.Remove(allocation);
+        var transaction = context.Transactions
+            .AsNoTracking()
+            .Single(transaction =>
+                transaction.TransactionId == record.TransactionId
+                && transaction.ApplicationUserId == applicationUserId);
+        var allocation = ToAllocation(record, transaction);
+
+        context.TransactionAllocations.Remove(record);
 
         try
         {
@@ -158,7 +165,10 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
         catch (DbUpdateConcurrencyException)
         {
             context.ChangeTracker.Clear();
+            return new RemoveTransactionAllocationResult.NotFound();
         }
+
+        return new RemoveTransactionAllocationResult.Removed(allocation);
     }
 
     private AllocateTransactionResult GetExistingAllocationResult(
@@ -178,7 +188,7 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
         }
 
         return existingAllocation.BudgetItemId == requestedAllocation.BudgetItemId
-            ? new AllocateTransactionResult.Allocated(ToAllocation(existingAllocation, transaction))
+            ? new AllocateTransactionResult.Allocated(ToAllocation(existingAllocation, transaction), WasCreated: false)
             : new AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem();
     }
 

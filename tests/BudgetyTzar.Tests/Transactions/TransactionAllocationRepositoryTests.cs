@@ -29,6 +29,8 @@ public sealed class TransactionAllocationRepositoryTests
 
         var firstAllocated = Assert.IsType<AllocateTransactionResult.Allocated>(firstResult);
         var secondAllocated = Assert.IsType<AllocateTransactionResult.Allocated>(secondResult);
+        Assert.True(firstAllocated.WasCreated);
+        Assert.False(secondAllocated.WasCreated);
         Assert.Same(firstAllocated.Allocation, secondAllocated.Allocation);
         Assert.Equal(budgetItemId, repository.Get(transaction.TransactionId)?.BudgetItemId);
     }
@@ -52,7 +54,7 @@ public sealed class TransactionAllocationRepositoryTests
         var firstResult = repository.Allocate(CreateAllocation(transaction, firstBudgetItemId));
         var secondResult = repository.Allocate(CreateAllocation(transaction, secondBudgetItemId));
 
-        Assert.IsType<AllocateTransactionResult.Allocated>(firstResult);
+        Assert.True(Assert.IsType<AllocateTransactionResult.Allocated>(firstResult).WasCreated);
         Assert.IsType<AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem>(secondResult);
         Assert.Equal(firstBudgetItemId, repository.Get(transaction.TransactionId)?.BudgetItemId);
     }
@@ -177,9 +179,12 @@ public sealed class TransactionAllocationRepositoryTests
         allocationRepository.Allocate(CreateAllocation(transaction, budgetItemId));
         otherAllocationRepository.Allocate(CreateAllocation(otherTransaction, otherBudgetItemId));
 
-        allocationRepository.Remove(transaction.TransactionId);
-        allocationRepository.Remove(otherTransaction.TransactionId);
+        var removeCurrentUserResult = allocationRepository.Remove(transaction.TransactionId);
+        var removeOtherUserResult = allocationRepository.Remove(otherTransaction.TransactionId);
 
+        var removed = Assert.IsType<RemoveTransactionAllocationResult.Removed>(removeCurrentUserResult);
+        Assert.Equal(transaction.TransactionId, removed.Allocation.TransactionId);
+        Assert.IsType<RemoveTransactionAllocationResult.NotFound>(removeOtherUserResult);
         Assert.Null(allocationRepository.Get(transaction.TransactionId));
         Assert.Equal(otherBudgetItemId, otherAllocationRepository.Get(otherTransaction.TransactionId)?.BudgetItemId);
     }

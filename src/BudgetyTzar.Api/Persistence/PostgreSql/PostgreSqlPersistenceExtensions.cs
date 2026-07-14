@@ -22,6 +22,7 @@ public static class PostgreSqlPersistenceExtensions
             .AddCheck<PostgreSqlDatabaseHealthCheck>("postgresql", tags: ["ready"]);
         services.AddScoped<IApplicationUserStore, PostgreSqlApplicationUserStore>();
         services.AddScoped<IAuditRecorder, PostgreSqlAuditRecorder>();
+        services.AddScoped<IAuditOperationRunner, PostgreSqlAuditOperationRunner>();
         services.AddScoped<IBudgetRepository, PostgreSqlBudgetRepository>();
         services.AddScoped<ITransactionRepository, PostgreSqlTransactionRepository>();
         services.AddScoped<ITransactionAllocationRepository, PostgreSqlTransactionAllocationRepository>();

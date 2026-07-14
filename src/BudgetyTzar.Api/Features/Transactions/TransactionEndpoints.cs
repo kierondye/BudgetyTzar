@@ -55,7 +55,7 @@ public static class TransactionEndpoints
     private static IResult CreateTransaction(
         CreateTransactionRequest request,
         ITransactionRepository transactions,
-        IAuditRecorder audit,
+        IAuditOperationRunner audit,
         ApiTelemetry telemetry)
     {
         var validation = Validate(
@@ -96,8 +96,13 @@ public static class TransactionEndpoints
 
         IResult RecordTransaction(Transaction transaction)
         {
-            transactions.Add(transaction);
-            audit.Record(AuditEntry.TransactionCreated(transaction));
+            audit.Execute(
+                () =>
+                {
+                    transactions.Add(transaction);
+                    return transaction;
+                },
+                savedTransaction => AuditEntry.TransactionCreated(savedTransaction));
 
             return Results.Created(
                 $"/api/transactions/{transaction.TransactionId}",
@@ -144,7 +149,7 @@ public static class TransactionEndpoints
     private static IResult DeleteTransaction(
         Guid transactionId,
         ITransactionRepository transactions,
-        IAuditRecorder audit)
+        IAuditOperationRunner audit)
     {
         var transaction = transactions.Get(transactionId);
 
@@ -153,7 +158,11 @@ public static class TransactionEndpoints
             return Results.NotFound();
         }
 
-        return transactions.Delete(transactionId) switch
+        return audit.Execute(
+            () => transactions.Delete(transactionId),
+            result => result is TransactionDeleteResult.Deleted
+                ? AuditEntry.TransactionDeleted(transaction)
+                : null) switch
         {
             TransactionDeleteResult.NotFound => Results.NotFound(),
             TransactionDeleteResult.TransactionHasAllocation => TransactionHasAllocation(),
@@ -163,7 +172,6 @@ public static class TransactionEndpoints
 
         IResult DeletedTransaction(Transaction deleted)
         {
-            audit.Record(AuditEntry.TransactionDeleted(deleted));
             return Results.NoContent();
         }
     }
@@ -174,7 +182,7 @@ public static class TransactionEndpoints
         ITransactionRepository transactions,
         IBudgetRepository budgets,
         ITransactionAllocationRepository allocations,
-        IAuditRecorder audit,
+        IAuditOperationRunner audit,
         ApiTelemetry telemetry)
     {
         var transaction = transactions.Get(transactionId);
@@ -199,7 +207,6 @@ public static class TransactionEndpoints
             return TransactionCurrencyDoesNotMatchBudget();
         }
 
-        var existingAllocation = allocations.Get(transactionId);
         var allocationResult = TransactionAllocation.Allocate(transaction, request.BudgetItemId);
 
         if (allocationResult is AllocateTransactionEntityResult.InvalidBudgetItemIdentity)
@@ -209,11 +216,18 @@ public static class TransactionEndpoints
         }
 
         var allocation = ((AllocateTransactionEntityResult.Allocated)allocationResult).Allocation;
-        var result = allocations.Allocate(allocation);
+        var result = audit.Execute(
+            () => allocations.Allocate(allocation),
+            allocationResult => allocationResult is AllocateTransactionResult.Allocated allocated
+                ? allocated.WasCreated
+                    ? AuditEntry.TransactionAllocationCreated(allocated.Allocation)
+                    : AuditEntry.TransactionAllocationIdempotent(allocated.Allocation)
+                : null);
 
         return result switch
         {
-            AllocateTransactionResult.Allocated allocated => AllocatedTransaction(allocated.Allocation, existingAllocation),
+            AllocateTransactionResult.Allocated allocated => Results.Ok(
+                TransactionAllocationResponse.FromAllocation(allocated.Allocation)),
             AllocateTransactionResult.TransactionNotFound => AllocationFailed(
                 telemetry,
                 "transaction_not_found",
@@ -228,14 +242,6 @@ public static class TransactionEndpoints
                 TransactionAlreadyAllocated()),
             _ => throw new InvalidOperationException("Unexpected allocate transaction result.")
         };
-
-        IResult AllocatedTransaction(TransactionAllocation allocation, TransactionAllocation? existing)
-        {
-            audit.Record(existing is null
-                ? AuditEntry.TransactionAllocationCreated(allocation)
-                : AuditEntry.TransactionAllocationIdempotent(allocation));
-            return Results.Ok(TransactionAllocationResponse.FromAllocation(allocation));
-        }
     }
 
     private static IResult AllocationFailed(ApiTelemetry telemetry, string failureKind, IResult result)
@@ -265,20 +271,18 @@ public static class TransactionEndpoints
         Guid transactionId,
         ITransactionRepository transactions,
         ITransactionAllocationRepository allocations,
-        IAuditRecorder audit)
+        IAuditOperationRunner audit)
     {
         if (transactions.Get(transactionId) is null)
         {
             return Results.NotFound();
         }
 
-        var allocation = allocations.Get(transactionId);
-        allocations.Remove(transactionId);
-
-        if (allocation is not null)
-        {
-            audit.Record(AuditEntry.TransactionAllocationRemoved(allocation));
-        }
+        audit.Execute(
+            () => allocations.Remove(transactionId),
+            result => result is RemoveTransactionAllocationResult.Removed removed
+                ? AuditEntry.TransactionAllocationRemoved(removed.Allocation)
+                : null);
 
         return Results.NoContent();
     }

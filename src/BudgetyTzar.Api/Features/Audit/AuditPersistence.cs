@@ -10,10 +10,31 @@ public interface IAuditRecorder
     void Record(AuditEntry entry);
 }
 
+public interface IAuditOperationRunner
+{
+    T Execute<T>(Func<T> operation, Func<T, AuditEntry?> auditEntry);
+}
+
 public sealed class NoOpAuditRecorder : IAuditRecorder
 {
     public void Record(AuditEntry entry)
     {
+    }
+}
+
+public sealed class DefaultAuditOperationRunner(IAuditRecorder audit) : IAuditOperationRunner
+{
+    public T Execute<T>(Func<T> operation, Func<T, AuditEntry?> auditEntry)
+    {
+        var result = operation();
+        var entry = auditEntry(result);
+
+        if (entry is not null)
+        {
+            audit.Record(entry);
+        }
+
+        return result;
     }
 }
 
@@ -22,6 +43,7 @@ public static class AuditBoundary
     public static IServiceCollection AddAudit(this IServiceCollection services)
     {
         services.TryAddScoped<IAuditRecorder, NoOpAuditRecorder>();
+        services.TryAddScoped<IAuditOperationRunner, DefaultAuditOperationRunner>();
         return services;
     }
 }

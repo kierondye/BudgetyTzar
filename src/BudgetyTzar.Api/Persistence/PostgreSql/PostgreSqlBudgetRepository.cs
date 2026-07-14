@@ -4,6 +4,7 @@ using BudgetyTzar.Api.Domain.ValueTypes;
 using BudgetyTzar.Api.Features.Budgeting;
 using BudgetyTzar.Api.Features.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 
 namespace BudgetyTzar.Api.Persistence.PostgreSql;
@@ -67,7 +68,7 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
 
         var budget = postgreSqlState.Value;
         var applicationUserId = userId.Value;
-        using var transaction = context.Database.BeginTransaction();
+        using var transaction = BeginTransactionIfNeeded();
 
         var existingBudget = context.Budgets
             .AsNoTracking()
@@ -126,31 +127,31 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
 
             SyncBudgetItems(budget, applicationUserId, existingItems, removedItemIds);
             context.SaveChanges();
-            transaction.Commit();
+            transaction?.Commit();
             ClearChanges();
             return new BudgetSaveResult.Saved(budget);
         }
         catch (DbUpdateException exception) when (IsNamedConstraint(exception, BudgetNameConstraint))
         {
-            transaction.Rollback();
+            transaction?.Rollback();
             ClearChanges();
             return new BudgetSaveResult.DuplicateName();
         }
         catch (PostgresException exception) when (IsNamedConstraint(exception, BudgetNameConstraint))
         {
-            transaction.Rollback();
+            transaction?.Rollback();
             ClearChanges();
             return new BudgetSaveResult.DuplicateName();
         }
         catch (DbUpdateException exception) when (IsNamedConstraint(exception, AllocationBudgetItemConstraint))
         {
-            transaction.Rollback();
+            transaction?.Rollback();
             ClearChanges();
             return new BudgetSaveResult.BudgetItemHasAllocations();
         }
         catch (PostgresException exception) when (IsNamedConstraint(exception, AllocationBudgetItemConstraint))
         {
-            transaction.Rollback();
+            transaction?.Rollback();
             ClearChanges();
             return new BudgetSaveResult.BudgetItemHasAllocations();
         }
@@ -345,6 +346,13 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
     private void ClearChanges()
     {
         context.ChangeTracker.Clear();
+    }
+
+    private IDbContextTransaction? BeginTransactionIfNeeded()
+    {
+        return context.Database.CurrentTransaction is null
+            ? context.Database.BeginTransaction()
+            : null;
     }
 
     private static bool IsNamedConstraint(DbUpdateException exception, string constraintName)

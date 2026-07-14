@@ -33,14 +33,14 @@ public sealed class InMemoryTransactionAllocationRepository : ITransactionAlloca
             if (store.AllocationsByTransactionId.TryGetValue(allocation.TransactionId, out var existingAllocation))
             {
                 return existingAllocation.BudgetItemId == allocation.BudgetItemId
-                    ? new AllocateTransactionResult.Allocated(existingAllocation)
+                    ? new AllocateTransactionResult.Allocated(existingAllocation, WasCreated: false)
                     : new AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem();
             }
 
             store.AllocationsByTransactionId[allocation.TransactionId] = allocation;
             store.AllocationOwnersByTransactionId[allocation.TransactionId] = userId;
 
-            return new AllocateTransactionResult.Allocated(allocation);
+            return new AllocateTransactionResult.Allocated(allocation, WasCreated: true);
         }
     }
 
@@ -65,15 +65,20 @@ public sealed class InMemoryTransactionAllocationRepository : ITransactionAlloca
         }
     }
 
-    public void Remove(Guid transactionId)
+    public RemoveTransactionAllocationResult Remove(Guid transactionId)
     {
         lock (store.SyncRoot)
         {
-            if (AllocationBelongsToCurrentUser(transactionId))
+            if (!AllocationBelongsToCurrentUser(transactionId))
             {
-                store.AllocationsByTransactionId.Remove(transactionId);
-                store.AllocationOwnersByTransactionId.Remove(transactionId);
+                return new RemoveTransactionAllocationResult.NotFound();
             }
+
+            var allocation = store.AllocationsByTransactionId[transactionId];
+            store.AllocationsByTransactionId.Remove(transactionId);
+            store.AllocationOwnersByTransactionId.Remove(transactionId);
+
+            return new RemoveTransactionAllocationResult.Removed(allocation);
         }
     }
 
@@ -100,11 +105,18 @@ public sealed class InMemoryTransactionAllocationRepository : ITransactionAlloca
 
 public abstract record AllocateTransactionResult
 {
-    public sealed record Allocated(TransactionAllocation Allocation) : AllocateTransactionResult;
+    public sealed record Allocated(TransactionAllocation Allocation, bool WasCreated) : AllocateTransactionResult;
 
     public sealed record TransactionNotFound : AllocateTransactionResult;
 
     public sealed record BudgetItemNotFound : AllocateTransactionResult;
 
     public sealed record AlreadyAllocatedToDifferentBudgetItem : AllocateTransactionResult;
+}
+
+public abstract record RemoveTransactionAllocationResult
+{
+    public sealed record Removed(TransactionAllocation Allocation) : RemoveTransactionAllocationResult;
+
+    public sealed record NotFound : RemoveTransactionAllocationResult;
 }
