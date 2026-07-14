@@ -15,6 +15,11 @@ RUN dotnet publish src/BudgetyTzar.Api/BudgetyTzar.Api.csproj \
     --output /app/publish \
     /p:UseAppHost=false
 
+FROM restore AS ef-tools
+COPY . .
+RUN dotnet tool restore
+ENTRYPOINT ["dotnet", "tool", "run", "dotnet-ef", "database", "update", "--project", "src/BudgetyTzar.Api", "--startup-project", "src/BudgetyTzar.Api", "--context", "ApplicationDbContext"]
+
 FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION}-noble-chiseled AS runtime
 WORKDIR /app
 
