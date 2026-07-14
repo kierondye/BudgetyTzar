@@ -69,6 +69,12 @@ public sealed class PostgreSqlPersistenceApiTests(PostgreSqlApiTestDatabase data
             var persistedAllocation = await restartedServer.Client.GetFromJsonAsync<TransactionAllocationResponse>(
                 $"/api/transactions/{groceryTransactionId}/allocation");
             var persistedSummary = await restartedServer.Client.GetFromJsonAsync<BudgetSummaryResponse>($"/api/budgets/{budgetId}/summary");
+            using var deleteAllocationResponse = await restartedServer.Client.DeleteAsync(
+                $"/api/transactions/{groceryTransactionId}/allocation");
+            using var removedAllocationResponse = await restartedServer.Client.GetAsync(
+                $"/api/transactions/{groceryTransactionId}/allocation");
+            var summaryAfterAllocationRemoval = await restartedServer.Client.GetFromJsonAsync<BudgetSummaryResponse>(
+                $"/api/budgets/{budgetId}/summary");
 
             Assert.NotNull(persistedBudget);
             Assert.Equal(budgetName, persistedBudget.Name);
@@ -77,6 +83,11 @@ public sealed class PostgreSqlPersistenceApiTests(PostgreSqlApiTestDatabase data
             Assert.Equal(groceriesId, persistedAllocation.BudgetItemId);
             Assert.NotNull(persistedSummary);
             AssertSectionTotals("500.00", "32.50", "467.50", persistedSummary.Consumption);
+            Assert.Equal(HttpStatusCode.NoContent, deleteAllocationResponse.StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, removedAllocationResponse.StatusCode);
+            Assert.NotNull(summaryAfterAllocationRemoval);
+            AssertSectionTotals("500.00", "-10.00", "510.00", summaryAfterAllocationRemoval.Consumption);
+            Assert.Equal("3010.00", summaryAfterAllocationRemoval.Overall.ActualSurplus);
         }
     }
 

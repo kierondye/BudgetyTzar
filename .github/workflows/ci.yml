@@ -106,7 +106,7 @@ jobs:
       - name: Restore
         run: dotnet restore BudgetyTzar.sln
 
-      - name: PostgreSQL schema, repository, and concurrency tests
+      - name: PostgreSQL schema, repository, concurrency, and API tests
         run: >
           dotnet test tests/BudgetyTzar.Tests/BudgetyTzar.Tests.csproj
           --configuration Release
