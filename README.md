@@ -164,8 +164,8 @@ The Compose database uses safe local-development credentials only:
 Host=postgres;Port=5432;Database=budgetytzar;Username=budgetytzar;Password=budgetytzar_dev_password
 ```
 
-The PostgreSQL port is published on host port `54320` for local inspection tools. The
-API remains available at `http://localhost:8080`.
+The PostgreSQL port is published on loopback host port `54320` for local inspection
+tools. The API remains available at `http://localhost:8080`.
 
 Verify the public operational endpoints:
 
