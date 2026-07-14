@@ -159,6 +159,106 @@ public sealed class PostgreSqlPersistenceApiTests(PostgreSqlApiTestDatabase data
     }
 
     [Fact]
+    public async Task PostgreSql_provider_writes_durable_audit_records_for_successful_commands()
+    {
+        var budgetName = $"Audit {Guid.NewGuid():N}";
+        await using var server = await TestApiServer.StartWithPostgreSqlAsync(database.ConnectionString);
+
+        var budget = await CreateBudgetAsync(server.Client, budgetName, "GBP");
+        using var renameBudgetResponse = await server.Client.PutAsJsonAsync(
+            $"/api/budgets/{budget.BudgetId}/name",
+            new RenameBudgetRequest($"{budgetName} renamed"));
+        var budgetItem = await CreateBudgetItemAsync(server.Client, budget.BudgetId, "Groceries", "Consumption", "400.00");
+        using var renameItemResponse = await server.Client.PutAsJsonAsync(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{budgetItem.BudgetItemId}/name",
+            new RenameBudgetItemRequest("Food"));
+        using var changeAmountResponse = await server.Client.PutAsJsonAsync(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{budgetItem.BudgetItemId}/planned-amount",
+            new ChangeBudgetItemPlannedAmountRequest("450.00"));
+        var transaction = await CreateTransactionAsync(server.Client, "Sensitive supermarket text", "Debit", "2026-07-02", "42.50", "GBP");
+
+        await AllocateTransactionAsync(server.Client, transaction.TransactionId, budgetItem.BudgetItemId);
+        await AllocateTransactionAsync(server.Client, transaction.TransactionId, budgetItem.BudgetItemId);
+        using var removeAllocationResponse = await server.Client.DeleteAsync(
+            $"/api/transactions/{transaction.TransactionId}/allocation");
+        using var deleteTransactionResponse = await server.Client.DeleteAsync(
+            $"/api/transactions/{transaction.TransactionId}");
+        using var deleteBudgetItemResponse = await server.Client.DeleteAsync(
+            $"/api/budgets/{budget.BudgetId}/budget-items/{budgetItem.BudgetItemId}");
+
+        Assert.Equal(HttpStatusCode.OK, renameBudgetResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, renameItemResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, changeAmountResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, removeAllocationResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, deleteTransactionResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, deleteBudgetItemResponse.StatusCode);
+
+        await using var context = CreateDbContext();
+        var resourceIds = new[] { budget.BudgetId, budgetItem.BudgetItemId, transaction.TransactionId };
+        var records = await context.AuditRecords
+            .AsNoTracking()
+            .Where(record => resourceIds.Contains(record.ResourceId))
+            .ToListAsync();
+
+        Assert.Equal(11, records.Count);
+        Assert.All(records, record =>
+        {
+            Assert.NotEqual(Guid.Empty, record.ApplicationUserId);
+            Assert.Equal(record.ApplicationUserId, record.ActorApplicationUserId);
+            Assert.NotEqual(default, record.OccurredAtUtc);
+        });
+        Assert.Contains(records, record => record.OperationName == "budget.create" && record.BeforeState is null && record.AfterState is not null);
+        Assert.Contains(records, record => record.OperationName == "budget.rename" && record.BeforeState is not null && record.AfterState is not null);
+        Assert.Contains(records, record => record.OperationName == "budget_item.create" && record.BeforeState is null && record.AfterState is not null);
+        Assert.Contains(records, record => record.OperationName == "budget_item.rename" && record.BeforeState is not null && record.AfterState is not null);
+        Assert.Contains(records, record => record.OperationName == "budget_item.change_planned_amount" && record.BeforeState is not null && record.AfterState is not null);
+        Assert.Contains(records, record => record.OperationName == "budget_item.delete" && record.BeforeState is not null && record.AfterState is null);
+        Assert.Contains(records, record => record.OperationName == "transaction.create" && record.BeforeState is null && record.AfterState is not null);
+        Assert.Contains(records, record => record.OperationName == "transaction.delete" && record.BeforeState is not null && record.AfterState is null);
+        Assert.Contains(records, record => record.OperationName == "transaction_allocation.create" && record.BeforeState is null && record.AfterState is not null);
+        Assert.Contains(records, record => record.OperationName == "transaction_allocation.idempotent" && record.BeforeState is not null && record.AfterState is not null);
+        Assert.Contains(records, record => record.OperationName == "transaction_allocation.remove" && record.BeforeState is not null && record.AfterState is null);
+        Assert.DoesNotContain(records, record =>
+            (record.BeforeState?.Contains("Sensitive supermarket text", StringComparison.Ordinal) ?? false)
+            || (record.AfterState?.Contains("Sensitive supermarket text", StringComparison.Ordinal) ?? false));
+    }
+
+    [Fact]
+    public async Task PostgreSql_provider_does_not_write_success_audit_records_for_rejected_or_cross_user_commands()
+    {
+        var budgetName = $"Rejected Audit {Guid.NewGuid():N}";
+        await using var server = await TestApiServer.StartWithPostgreSqlAsync(database.ConnectionString);
+        using var userB = server.CreateClientForUser($"audit-user-b-{Guid.NewGuid():N}");
+
+        var budget = await CreateBudgetAsync(server.Client, budgetName, "GBP");
+        var budgetItem = await CreateBudgetItemAsync(server.Client, budget.BudgetId, "Groceries", "Consumption", "400.00");
+        var userBTransaction = await CreateTransactionAsync(userB, "Own groceries", "Debit", "2026-07-02", "42.50", "GBP");
+        var missingBudgetId = Guid.NewGuid();
+
+        await using (var context = CreateDbContext())
+        {
+            var startingRecords = await CountAuditRecordsAsync(context, budget.BudgetId, budgetItem.BudgetItemId, userBTransaction.TransactionId, missingBudgetId);
+
+            using var duplicateBudgetResponse = await server.Client.PostAsJsonAsync(
+                "/api/budgets",
+                new CreateBudgetRequest(budgetName, "GBP"));
+            using var missingRenameResponse = await server.Client.PutAsJsonAsync(
+                $"/api/budgets/{missingBudgetId}/name",
+                new RenameBudgetRequest("Missing"));
+            using var crossUserAllocationResponse = await userB.PutAsJsonAsync(
+                $"/api/transactions/{userBTransaction.TransactionId}/allocation",
+                new AllocateTransactionRequest(budgetItem.BudgetItemId));
+
+            Assert.Equal(HttpStatusCode.Conflict, duplicateBudgetResponse.StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, missingRenameResponse.StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, crossUserAllocationResponse.StatusCode);
+            Assert.Equal(
+                startingRecords,
+                await CountAuditRecordsAsync(context, budget.BudgetId, budgetItem.BudgetItemId, userBTransaction.TransactionId, missingBudgetId));
+        }
+    }
+
+    [Fact]
     public void PostgreSql_provider_requires_connection_configuration()
     {
         var exception = Assert.Throws<InvalidOperationException>(() =>
@@ -184,6 +284,24 @@ public sealed class PostgreSqlPersistenceApiTests(PostgreSqlApiTestDatabase data
         Assert.Equal(plannedAmount, section.TotalPlannedAmount);
         Assert.Equal(actualAmount, section.TotalActualAmount);
         Assert.Equal(remainingAmount, section.TotalRemainingAmount);
+    }
+
+    private ApplicationDbContext CreateDbContext()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(database.ConnectionString)
+            .Options;
+
+        return new ApplicationDbContext(options);
+    }
+
+    private static Task<int> CountAuditRecordsAsync(
+        ApplicationDbContext context,
+        params Guid[] resourceIds)
+    {
+        return context.AuditRecords
+            .AsNoTracking()
+            .CountAsync(record => resourceIds.Contains(record.ResourceId));
     }
 
     private static async Task<BudgetResponse> CreateBudgetAsync(HttpClient client, string name, string currency)
@@ -250,7 +368,13 @@ public sealed class PostgreSqlPersistenceApiTests(PostgreSqlApiTestDatabase data
 
     private sealed record CreateBudgetRequest(string Name, string Currency);
 
+    private sealed record RenameBudgetRequest(string Name);
+
     private sealed record CreateBudgetItemRequest(string Name, string Kind, string PlannedAmount);
+
+    private sealed record RenameBudgetItemRequest(string Name);
+
+    private sealed record ChangeBudgetItemPlannedAmountRequest(string PlannedAmount);
 
     private sealed record CreateTransactionRequest(
         string Description,

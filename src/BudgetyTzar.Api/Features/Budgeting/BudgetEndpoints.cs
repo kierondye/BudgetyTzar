@@ -1,6 +1,7 @@
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
 using BudgetyTzar.Api.Features;
+using BudgetyTzar.Api.Features.Audit;
 using BudgetyTzar.Api.Features.Transactions;
 using BudgetyTzar.Api.Observability;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -59,6 +60,7 @@ public static class BudgetEndpoints
     private static IResult CreateBudget(
         CreateBudgetRequest request,
         IBudgetRepository budgets,
+        IAuditRecorder audit,
         ApiTelemetry telemetry)
     {
         var validation = Validate(request);
@@ -94,11 +96,17 @@ public static class BudgetEndpoints
                 BudgetSaveResult.DuplicateIdentity => BudgetIdentityAlreadyExists(),
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
                 BudgetSaveResult.StaleState => BudgetWasModified(),
-                BudgetSaveResult.Saved saved => Results.Created(
-                    $"/api/budgets/{saved.Budget.BudgetId}",
-                    BudgetResponse.FromBudget(saved.Budget)),
+                BudgetSaveResult.Saved saved => CreatedBudget(saved.Budget),
                 _ => throw new InvalidOperationException("Unexpected save budget result.")
             };
+        }
+
+        IResult CreatedBudget(Budget budget)
+        {
+            audit.Record(AuditEntry.BudgetCreated(budget));
+            return Results.Created(
+                $"/api/budgets/{budget.BudgetId}",
+                BudgetResponse.FromBudget(budget));
         }
     }
 
@@ -124,6 +132,7 @@ public static class BudgetEndpoints
         Guid budgetId,
         RenameBudgetRequest request,
         IBudgetRepository budgets,
+        IAuditRecorder audit,
         ApiTelemetry telemetry)
     {
         var validation = Validate(request);
@@ -147,6 +156,8 @@ public static class BudgetEndpoints
             return BudgetNameAlreadyInUse();
         }
 
+        var before = budgetState.Value;
+
         return budgetState.Value.Rename(valid.Name) switch
         {
             RenameBudgetResult.Renamed renamed => budgets.Save(budgetState.Update(renamed.Budget)) switch
@@ -154,17 +165,24 @@ public static class BudgetEndpoints
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
                 BudgetSaveResult.StaleState => BudgetWasModified(),
                 BudgetSaveResult.NotFound => Results.NotFound(),
-                BudgetSaveResult.Saved saved => Results.Ok(BudgetResponse.FromBudget(saved.Budget)),
+                BudgetSaveResult.Saved saved => RenamedBudget(before, saved.Budget),
                 _ => throw new InvalidOperationException("Unexpected save budget result.")
             },
             _ => throw new InvalidOperationException("Unexpected rename budget result.")
         };
+
+        IResult RenamedBudget(Budget oldBudget, Budget newBudget)
+        {
+            audit.Record(AuditEntry.BudgetRenamed(oldBudget, newBudget));
+            return Results.Ok(BudgetResponse.FromBudget(newBudget));
+        }
     }
 
     private static IResult CreateBudgetItem(
         Guid budgetId,
         CreateBudgetItemRequest request,
         IBudgetRepository budgets,
+        IAuditRecorder audit,
         ApiTelemetry telemetry)
     {
         var validation = Validate(request);
@@ -201,13 +219,19 @@ public static class BudgetEndpoints
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
                 BudgetSaveResult.StaleState => BudgetWasModified(),
                 BudgetSaveResult.NotFound => Results.NotFound(),
-                BudgetSaveResult.Saved => Results.Created(
-                    $"/api/budgets/{budgetId}/budget-items/{budgetItemId}",
-                    BudgetItemResponse.FromBudgetItem(added.BudgetItem)),
+                BudgetSaveResult.Saved => CreatedBudgetItem(added.Budget, added.BudgetItem),
                 _ => throw new InvalidOperationException("Unexpected save budget result.")
             },
             _ => throw new InvalidOperationException("Unexpected add budget item result.")
         };
+
+        IResult CreatedBudgetItem(Budget budget, BudgetItem budgetItem)
+        {
+            audit.Record(AuditEntry.BudgetItemCreated(budget, budgetItem));
+            return Results.Created(
+                $"/api/budgets/{budgetId}/budget-items/{budgetItemId}",
+                BudgetItemResponse.FromBudgetItem(budgetItem));
+        }
     }
 
     private static IResult GetBudgetItems(Guid budgetId, IBudgetRepository budgets)
@@ -240,6 +264,7 @@ public static class BudgetEndpoints
         Guid budgetItemId,
         RenameBudgetItemRequest request,
         IBudgetRepository budgets,
+        IAuditRecorder audit,
         ApiTelemetry telemetry)
     {
         var validation = Validate(request);
@@ -258,6 +283,10 @@ public static class BudgetEndpoints
             return Results.NotFound();
         }
 
+        var before = budgetState.Value.GetBudgetItem(budgetItemId) is GetBudgetItemResult.Found found
+            ? found.BudgetItem
+            : null;
+
         return budgetState.Value.RenameBudgetItem(budgetItemId, valid.Name) switch
         {
             RenameBudgetItemResult.NotFound => Results.NotFound(),
@@ -267,11 +296,17 @@ public static class BudgetEndpoints
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
                 BudgetSaveResult.StaleState => BudgetWasModified(),
                 BudgetSaveResult.NotFound => Results.NotFound(),
-                BudgetSaveResult.Saved => Results.Ok(BudgetItemResponse.FromBudgetItem(renamed.BudgetItem)),
+                BudgetSaveResult.Saved => RenamedBudgetItem(renamed.Budget, before!, renamed.BudgetItem),
                 _ => throw new InvalidOperationException("Unexpected save budget result.")
             },
             _ => throw new InvalidOperationException("Unexpected rename budget item result.")
         };
+
+        IResult RenamedBudgetItem(Budget budget, BudgetItem oldBudgetItem, BudgetItem newBudgetItem)
+        {
+            audit.Record(AuditEntry.BudgetItemRenamed(budget, oldBudgetItem, newBudgetItem));
+            return Results.Ok(BudgetItemResponse.FromBudgetItem(newBudgetItem));
+        }
     }
 
     private static IResult ChangeBudgetItemPlannedAmount(
@@ -279,6 +314,7 @@ public static class BudgetEndpoints
         Guid budgetItemId,
         ChangeBudgetItemPlannedAmountRequest request,
         IBudgetRepository budgets,
+        IAuditRecorder audit,
         ApiTelemetry telemetry)
     {
         var validation = Validate(request);
@@ -297,6 +333,10 @@ public static class BudgetEndpoints
             return Results.NotFound();
         }
 
+        var before = budgetState.Value.GetBudgetItem(budgetItemId) is GetBudgetItemResult.Found found
+            ? found.BudgetItem
+            : null;
+
         return budgetState.Value.ChangeBudgetItemPlannedAmount(budgetItemId, valid.PlannedAmount) switch
         {
             ChangeBudgetItemPlannedAmountResult.NotFound => Results.NotFound(),
@@ -305,17 +345,24 @@ public static class BudgetEndpoints
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
                 BudgetSaveResult.StaleState => BudgetWasModified(),
                 BudgetSaveResult.NotFound => Results.NotFound(),
-                BudgetSaveResult.Saved => Results.Ok(BudgetItemResponse.FromBudgetItem(changed.BudgetItem)),
+                BudgetSaveResult.Saved => ChangedBudgetItemPlannedAmount(changed.Budget, before!, changed.BudgetItem),
                 _ => throw new InvalidOperationException("Unexpected save budget result.")
             },
             _ => throw new InvalidOperationException("Unexpected change budget item planned amount result.")
         };
+
+        IResult ChangedBudgetItemPlannedAmount(Budget budget, BudgetItem oldBudgetItem, BudgetItem newBudgetItem)
+        {
+            audit.Record(AuditEntry.BudgetItemPlannedAmountChanged(budget, oldBudgetItem, newBudgetItem));
+            return Results.Ok(BudgetItemResponse.FromBudgetItem(newBudgetItem));
+        }
     }
 
     private static IResult DeleteBudgetItem(
         Guid budgetId,
         Guid budgetItemId,
-        IBudgetRepository budgets)
+        IBudgetRepository budgets,
+        IAuditRecorder audit)
     {
         var budgetState = budgets.Get(budgetId);
 
@@ -323,6 +370,10 @@ public static class BudgetEndpoints
         {
             return Results.NotFound();
         }
+
+        var before = budgetState.Value.GetBudgetItem(budgetItemId) is GetBudgetItemResult.Found found
+            ? found.BudgetItem
+            : null;
 
         return budgetState.Value.RemoveBudgetItem(budgetItemId) switch
         {
@@ -333,11 +384,17 @@ public static class BudgetEndpoints
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
                 BudgetSaveResult.StaleState => BudgetWasModified(),
                 BudgetSaveResult.NotFound => Results.NotFound(),
-                BudgetSaveResult.Saved => Results.NoContent(),
+                BudgetSaveResult.Saved => DeletedBudgetItem(budgetState.Value, before!),
                 _ => throw new InvalidOperationException("Unexpected save budget result.")
             },
             _ => throw new InvalidOperationException("Unexpected remove budget item result.")
         };
+
+        IResult DeletedBudgetItem(Budget budget, BudgetItem budgetItem)
+        {
+            audit.Record(AuditEntry.BudgetItemDeleted(budget, budgetItem));
+            return Results.NoContent();
+        }
     }
 
     private static CreateBudgetValidationResult Validate(CreateBudgetRequest request)

@@ -26,6 +26,7 @@ public sealed class PostgreSqlSchemaTests(PostgreSqlSchemaTests.DatabaseFixture 
         Assert.Equal(
             [
                 "application_users",
+                "audit_records",
                 "budget_items",
                 "budgets",
                 "transaction_allocations",
@@ -90,6 +91,7 @@ public sealed class PostgreSqlSchemaTests(PostgreSqlSchemaTests.DatabaseFixture 
             """);
 
         Assert.Contains("pk_application_users", constraints);
+        Assert.Contains("pk_audit_records", constraints);
         Assert.Contains("pk_budgets", constraints);
         Assert.Contains("pk_budget_items", constraints);
         Assert.Contains("pk_transactions", constraints);
@@ -99,6 +101,11 @@ public sealed class PostgreSqlSchemaTests(PostgreSqlSchemaTests.DatabaseFixture 
         Assert.Contains("fk_allocations_budget_item_owner_currency", constraints);
         Assert.Contains("fk_allocations_transaction_owner_currency", constraints);
         Assert.Contains("fk_transactions_application_users_application_user_id", constraints);
+        Assert.Contains("fk_audit_records_application_users_application_user_id", constraints);
+        Assert.Contains("fk_audit_records_actor_application_user_id", constraints);
+        Assert.Contains("ck_audit_records_operation_name_not_blank", constraints);
+        Assert.Contains("ck_audit_records_resource_id_not_empty", constraints);
+        Assert.Contains("ck_audit_records_resource_type_not_blank", constraints);
         Assert.Contains("ck_budgets_created_order_non_negative", constraints);
         Assert.Contains("ck_budget_items_planned_amount_range", constraints);
         Assert.Contains("ck_transactions_amount_range", constraints);
@@ -120,6 +127,9 @@ public sealed class PostgreSqlSchemaTests(PostgreSqlSchemaTests.DatabaseFixture 
             """);
 
         Assert.Contains("ix_budgets_application_user_id", indexes);
+        Assert.Contains("ix_audit_records_actor_application_user_id", indexes);
+        Assert.Contains("ix_audit_records_application_user_id_occurred_at_utc", indexes);
+        Assert.Contains("ix_audit_records_application_user_id_resource", indexes);
         Assert.Contains("ix_budgets_created_order", indexes);
         Assert.Contains("ix_budget_items_budget_id", indexes);
         Assert.Contains("ix_budget_items_budget_owner_currency", indexes);

@@ -606,6 +606,25 @@ Each audit record must include enough information to understand:
 
 The Audit boundary is an architectural concern. It should not introduce additional domain concepts into the core budgeting model.
 
+When PostgreSQL persistence is selected, successful important write commands create
+durable audit records. The initial audited operations are budget creation and rename;
+budget item creation, rename, planned amount change, and deletion; transaction
+creation and deletion; transaction allocation creation, idempotent allocation to the
+same budget item, and allocation removal.
+
+Audit records store the internal application user that owns the affected resource,
+the internal actor identity for authenticated user-driven commands, the operation
+name, affected resource type and identifier, occurrence time, and focused before and
+after state where applicable. They must not expose owner identity through existing
+budget, budget item, transaction, allocation, or summary response contracts, and they
+must not store wholesale request or response bodies. Transaction audit state records
+the transaction type, date, amount, and currency, but not the free-text transaction
+description.
+
+Rejected, missing, conflicting, or cross-user operations must not create misleading
+successful-change audit records. Audit records are durable storage for future audit
+timeline use, but this increment does not add a public audit timeline API.
+
 ### 7.7 Web Application
 
 Responsibilities:

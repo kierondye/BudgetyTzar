@@ -111,6 +111,13 @@ Reporting reads across boundaries because a budget summary combines budgets, bud
 items, transactions, and allocations. It does not mutate those boundaries or take
 ownership of their data.
 
+Audit is a separate boundary for durable change records. Command handlers may
+coordinate with the audit recorder after an owned boundary reports a successful write,
+but audit metadata stays out of domain entities and public HTTP response contracts.
+The in-memory runtime uses a no-op audit recorder. PostgreSQL persistence stores
+audit records in its own table, scoped to the current internal application user and
+linked to the authenticated actor for user-driven commands.
+
 ## Repository Map
 
 | Path | Responsibility |
@@ -119,6 +126,7 @@ ownership of their data.
 | `src/BudgetyTzar.Api/ApiApplication.cs` | Composition root. Registers services and endpoint groups. |
 | `src/BudgetyTzar.Api/Domain/Entities` | Immutable entities, aggregates, operations, and result types. |
 | `src/BudgetyTzar.Api/Domain/ValueTypes` | Validated domain values such as names, currencies, money amounts, and kinds. |
+| `src/BudgetyTzar.Api/Features/Audit` | Audit boundary contract, operation metadata shaping, and default no-op recorder. |
 | `src/BudgetyTzar.Api/Features/Identity` | Authentication configuration, authenticated claim resolution, and current-user identity. |
 | `src/BudgetyTzar.Api/Features/Budgeting` | Budget endpoints, HTTP contracts, persistence contracts, handlers, and persistence adapters. |
 | `src/BudgetyTzar.Api/Features/Transactions` | Transaction and allocation endpoints, HTTP contracts, persistence contracts, handlers, and persistence adapters. |
@@ -142,6 +150,7 @@ sequenceDiagram
     participant Endpoint
     participant Domain
     participant Repository
+    participant Audit
     participant Store as InMemoryDataStore
 
     Client->>Endpoint: HTTP command
@@ -154,6 +163,7 @@ sequenceDiagram
     Endpoint->>Repository: Save updated EntityState<T>
     Repository->>Store: check consistency and write atomically
     Repository-->>Endpoint: explicit persistence result
+    Endpoint->>Audit: record successful important change
     Endpoint-->>Client: mapped HTTP response
 ```
 
@@ -209,8 +219,9 @@ happen under the same synchronization boundary.
 
 The persistence composition root selects either in-memory or PostgreSQL adapters from
 configuration. The PostgreSQL provider owns storage records, migrations, and durable
-adapters for current operational data. It models application-user ownership in
-storage, monetary precision, foreign keys, uniqueness, ordering, and lookup indexes.
+adapters for current operational data and audit records. It models application-user
+ownership in storage, monetary precision, foreign keys, uniqueness, ordering, and
+lookup indexes.
 Domain entities, endpoint handlers, reporting contracts, and HTTP contracts must
 remain free of EF Core, Npgsql, connection strings, database tokens, and owner identity
 fields.

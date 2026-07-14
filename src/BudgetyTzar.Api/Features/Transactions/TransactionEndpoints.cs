@@ -2,6 +2,7 @@ using System.Globalization;
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
 using BudgetyTzar.Api.Features;
+using BudgetyTzar.Api.Features.Audit;
 using BudgetyTzar.Api.Features.Budgeting;
 using BudgetyTzar.Api.Observability;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -54,6 +55,7 @@ public static class TransactionEndpoints
     private static IResult CreateTransaction(
         CreateTransactionRequest request,
         ITransactionRepository transactions,
+        IAuditRecorder audit,
         ApiTelemetry telemetry)
     {
         var validation = Validate(
@@ -95,6 +97,7 @@ public static class TransactionEndpoints
         IResult RecordTransaction(Transaction transaction)
         {
             transactions.Add(transaction);
+            audit.Record(AuditEntry.TransactionCreated(transaction));
 
             return Results.Created(
                 $"/api/transactions/{transaction.TransactionId}",
@@ -140,15 +143,29 @@ public static class TransactionEndpoints
 
     private static IResult DeleteTransaction(
         Guid transactionId,
-        ITransactionRepository transactions)
+        ITransactionRepository transactions,
+        IAuditRecorder audit)
     {
+        var transaction = transactions.Get(transactionId);
+
+        if (transaction is null)
+        {
+            return Results.NotFound();
+        }
+
         return transactions.Delete(transactionId) switch
         {
             TransactionDeleteResult.NotFound => Results.NotFound(),
             TransactionDeleteResult.TransactionHasAllocation => TransactionHasAllocation(),
-            TransactionDeleteResult.Deleted => Results.NoContent(),
+            TransactionDeleteResult.Deleted => DeletedTransaction(transaction),
             _ => throw new InvalidOperationException("Unexpected delete transaction result.")
         };
+
+        IResult DeletedTransaction(Transaction deleted)
+        {
+            audit.Record(AuditEntry.TransactionDeleted(deleted));
+            return Results.NoContent();
+        }
     }
 
     private static IResult AllocateTransaction(
@@ -157,6 +174,7 @@ public static class TransactionEndpoints
         ITransactionRepository transactions,
         IBudgetRepository budgets,
         ITransactionAllocationRepository allocations,
+        IAuditRecorder audit,
         ApiTelemetry telemetry)
     {
         var transaction = transactions.Get(transactionId);
@@ -181,6 +199,7 @@ public static class TransactionEndpoints
             return TransactionCurrencyDoesNotMatchBudget();
         }
 
+        var existingAllocation = allocations.Get(transactionId);
         var allocationResult = TransactionAllocation.Allocate(transaction, request.BudgetItemId);
 
         if (allocationResult is AllocateTransactionEntityResult.InvalidBudgetItemIdentity)
@@ -194,8 +213,7 @@ public static class TransactionEndpoints
 
         return result switch
         {
-            AllocateTransactionResult.Allocated allocated => Results.Ok(
-                TransactionAllocationResponse.FromAllocation(allocated.Allocation)),
+            AllocateTransactionResult.Allocated allocated => AllocatedTransaction(allocated.Allocation, existingAllocation),
             AllocateTransactionResult.TransactionNotFound => AllocationFailed(
                 telemetry,
                 "transaction_not_found",
@@ -210,6 +228,14 @@ public static class TransactionEndpoints
                 TransactionAlreadyAllocated()),
             _ => throw new InvalidOperationException("Unexpected allocate transaction result.")
         };
+
+        IResult AllocatedTransaction(TransactionAllocation allocation, TransactionAllocation? existing)
+        {
+            audit.Record(existing is null
+                ? AuditEntry.TransactionAllocationCreated(allocation)
+                : AuditEntry.TransactionAllocationIdempotent(allocation));
+            return Results.Ok(TransactionAllocationResponse.FromAllocation(allocation));
+        }
     }
 
     private static IResult AllocationFailed(ApiTelemetry telemetry, string failureKind, IResult result)
@@ -238,14 +264,21 @@ public static class TransactionEndpoints
     private static IResult DeleteTransactionAllocation(
         Guid transactionId,
         ITransactionRepository transactions,
-        ITransactionAllocationRepository allocations)
+        ITransactionAllocationRepository allocations,
+        IAuditRecorder audit)
     {
         if (transactions.Get(transactionId) is null)
         {
             return Results.NotFound();
         }
 
+        var allocation = allocations.Get(transactionId);
         allocations.Remove(transactionId);
+
+        if (allocation is not null)
+        {
+            audit.Record(AuditEntry.TransactionAllocationRemoved(allocation));
+        }
 
         return Results.NoContent();
     }

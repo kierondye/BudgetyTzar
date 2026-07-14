@@ -1,3 +1,4 @@
+using BudgetyTzar.Api.Features.Audit;
 using BudgetyTzar.Api.Features.Budgeting;
 using BudgetyTzar.Api.Features.Identity;
 using BudgetyTzar.Api.Features.Transactions;
@@ -20,6 +21,7 @@ public static class PostgreSqlPersistenceExtensions
         services.AddHealthChecks()
             .AddCheck<PostgreSqlDatabaseHealthCheck>("postgresql", tags: ["ready"]);
         services.AddScoped<IApplicationUserStore, PostgreSqlApplicationUserStore>();
+        services.AddScoped<IAuditRecorder, PostgreSqlAuditRecorder>();
         services.AddScoped<IBudgetRepository, PostgreSqlBudgetRepository>();
         services.AddScoped<ITransactionRepository, PostgreSqlTransactionRepository>();
         services.AddScoped<ITransactionAllocationRepository, PostgreSqlTransactionAllocationRepository>();

@@ -1,3 +1,4 @@
+using BudgetyTzar.Api.Features.Audit;
 using BudgetyTzar.Api.Features.Budgeting;
 using BudgetyTzar.Api.Features.Identity;
 using BudgetyTzar.Api.Features.Reporting;
@@ -21,6 +22,7 @@ public static class ApiApplication
         builder.Services.AddHealthChecks();
         builder.Services.AddObservability(builder.Configuration);
         builder.Services.AddIdentityBoundary(builder.Configuration);
+        builder.Services.AddAudit();
         builder.Services.AddPersistence(builder.Configuration);
         builder.Services.AddReporting();
         builder.Services.AddEndpointsApiExplorer();

@@ -14,6 +14,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<TransactionAllocationRecord> TransactionAllocations => Set<TransactionAllocationRecord>();
 
+    public DbSet<AuditRecord> AuditRecords => Set<AuditRecord>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("budgetytzar");
@@ -24,6 +26,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         ConfigureBudgetItems(modelBuilder);
         ConfigureTransactions(modelBuilder);
         ConfigureTransactionAllocations(modelBuilder);
+        ConfigureAuditRecords(modelBuilder);
     }
 
     private static void ConfigureApplicationUsers(ModelBuilder modelBuilder)
@@ -355,6 +358,73 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.ToTable(table =>
             {
                 table.HasCheckConstraint("ck_transaction_allocations_currency_format", "currency ~ '^[A-Z]{3}$'");
+            });
+        });
+    }
+
+    private static void ConfigureAuditRecords(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<AuditRecord>(entity =>
+        {
+            entity.ToTable("audit_records");
+
+            entity.HasKey(audit => audit.AuditRecordId)
+                .HasName("pk_audit_records");
+
+            entity.Property(audit => audit.AuditRecordId)
+                .HasColumnName("audit_record_id");
+            entity.Property(audit => audit.OccurredAtUtc)
+                .HasColumnName("occurred_at_utc");
+            entity.Property(audit => audit.ApplicationUserId)
+                .HasColumnName("application_user_id");
+            entity.Property(audit => audit.ActorApplicationUserId)
+                .HasColumnName("actor_application_user_id");
+            entity.Property(audit => audit.OperationName)
+                .HasColumnName("operation_name")
+                .HasColumnType("text")
+                .IsRequired();
+            entity.Property(audit => audit.ResourceType)
+                .HasColumnName("resource_type")
+                .HasColumnType("text")
+                .IsRequired();
+            entity.Property(audit => audit.ResourceId)
+                .HasColumnName("resource_id");
+            entity.Property(audit => audit.BeforeState)
+                .HasColumnName("before_state")
+                .HasColumnType("jsonb");
+            entity.Property(audit => audit.AfterState)
+                .HasColumnName("after_state")
+                .HasColumnType("jsonb");
+
+            entity.HasOne<ApplicationUserRecord>()
+                .WithMany()
+                .HasForeignKey(audit => audit.ApplicationUserId)
+                .HasConstraintName("fk_audit_records_application_users_application_user_id")
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<ApplicationUserRecord>()
+                .WithMany()
+                .HasForeignKey(audit => audit.ActorApplicationUserId)
+                .HasConstraintName("fk_audit_records_actor_application_user_id")
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(audit => new { audit.ApplicationUserId, audit.OccurredAtUtc })
+                .HasDatabaseName("ix_audit_records_application_user_id_occurred_at_utc");
+            entity.HasIndex(audit => new { audit.ApplicationUserId, audit.ResourceType, audit.ResourceId })
+                .HasDatabaseName("ix_audit_records_application_user_id_resource");
+            entity.HasIndex(audit => audit.ActorApplicationUserId)
+                .HasDatabaseName("ix_audit_records_actor_application_user_id");
+
+            entity.ToTable(table =>
+            {
+                table.HasCheckConstraint(
+                    "ck_audit_records_operation_name_not_blank",
+                    "length(btrim(operation_name)) > 0");
+                table.HasCheckConstraint(
+                    "ck_audit_records_resource_type_not_blank",
+                    "length(btrim(resource_type)) > 0");
+                table.HasCheckConstraint(
+                    "ck_audit_records_resource_id_not_empty",
+                    "resource_id <> '00000000-0000-0000-0000-000000000000'::uuid");
             });
         });
     }
