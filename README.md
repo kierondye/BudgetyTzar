@@ -29,12 +29,12 @@ Run the API:
 dotnet run --project src/BudgetyTzar.Api
 ```
 
-The API is available at `http://localhost:7070`. Swagger is available at `http://localhost:7070/swagger`, and the health check is available at `http://localhost:7070/health`.
+The API is available at `http://localhost:7070`. Swagger is available at `http://localhost:7070/swagger`, and operational health checks are available at `http://localhost:7070/health`, `http://localhost:7070/health/ready`, and `http://localhost:7070/health/live`.
 
 Business API endpoints require authentication. The built-in default authentication
 scheme rejects unauthenticated requests safely until a deployment supplies its chosen
-identity provider scheme. Health, runtime version, and Swagger endpoints remain public
-for local and operational inspection.
+identity provider scheme. Health, readiness, liveness, runtime version, and Swagger
+endpoints remain public for local and operational inspection.
 
 ### Authentication Configuration
 
@@ -102,6 +102,22 @@ startup. PostgreSQL persistence uses the durable application-user store and dura
 budget, transaction, and allocation repositories. Business API behaviour and response
 contracts remain the same across supported persistence providers.
 
+### Health and Readiness
+
+Use `GET /health` as the default deployment readiness probe. It returns healthy for
+in-memory persistence without database configuration. When
+`Persistence__Provider=PostgreSql` is selected, it verifies the configured PostgreSQL
+database with a lightweight query and returns unhealthy if the database is unreachable
+or misconfigured.
+
+`GET /health/ready` exposes the same readiness checks for environments that prefer an
+explicit readiness path. `GET /health/live` checks only that the API process can
+respond and does not require PostgreSQL connectivity.
+
+Health responses use the built-in health-check status text only. Do not put secrets,
+raw connection strings, user identity, resource identifiers, transaction descriptions,
+or monetary values in health output or logs.
+
 ## Container
 
 Build the production API image from the repository root:
@@ -123,10 +139,12 @@ The container runs as a non-root user, listens on port `8080`, and sets the
 ASP.NET Core environment to `Production`. Swagger remains enabled in the
 container and is available at `http://localhost:8080/swagger`.
 
-Verify the health and build version endpoints:
+Verify the health, readiness, liveness, and build version endpoints:
 
 ```bash
 curl --fail http://localhost:8080/health
+curl --fail http://localhost:8080/health/ready
+curl --fail http://localhost:8080/health/live
 curl --fail http://localhost:8080/api/version
 ```
 

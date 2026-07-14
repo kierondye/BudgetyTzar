@@ -4,6 +4,7 @@ using BudgetyTzar.Api.Features.Reporting;
 using BudgetyTzar.Api.Features.Transactions;
 using BudgetyTzar.Api.Observability;
 using BudgetyTzar.Api.Persistence;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.OpenApi.Models;
 
 namespace BudgetyTzar.Api;
@@ -50,7 +51,17 @@ public static class ApiApplication
         app.UseAuthentication();
         app.UseAuthorization();
 
-        app.MapHealthChecks("/health");
+        app.MapHealthChecks("/health")
+            .WithName("GetHealth");
+        app.MapHealthChecks("/health/ready")
+            .WithName("GetReadiness");
+        app.MapHealthChecks(
+                "/health/live",
+                new HealthCheckOptions
+                {
+                    Predicate = _ => false
+                })
+            .WithName("GetLiveness");
         app.MapGet("/api/version", () => version)
             .WithName("GetVersion");
         app.MapBudgetEndpoints();

@@ -13,6 +13,45 @@ public sealed class PostgreSqlPersistenceApiTests(PostgreSqlApiTestDatabase data
     : IClassFixture<PostgreSqlApiTestDatabase>
 {
     [Fact]
+    public async Task PostgreSql_provider_reports_healthy_when_database_is_reachable()
+    {
+        await using var server = await TestApiServer.StartWithPostgreSqlAsync(database.ConnectionString);
+        using var client = server.CreateUnauthenticatedClient();
+
+        using var response = await client.GetAsync("/health");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Healthy", body);
+    }
+
+    [Fact]
+    public async Task PostgreSql_provider_reports_unhealthy_when_database_is_unreachable_without_disclosing_configuration()
+    {
+        const string secretPassword = "secret-health-password";
+        var connectionString =
+            $"Host=127.0.0.1;Port=1;Database=budgetytzar;Username=postgres;Password={secretPassword};Timeout=1;Command Timeout=1";
+        await using var server = await TestApiServer.StartWithPostgreSqlAsync(connectionString);
+        using var client = server.CreateUnauthenticatedClient();
+
+        using var healthResponse = await client.GetAsync("/health");
+        using var readinessResponse = await client.GetAsync("/health/ready");
+        using var livenessResponse = await client.GetAsync("/health/live");
+        var healthBody = await healthResponse.Content.ReadAsStringAsync();
+        var readinessBody = await readinessResponse.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, healthResponse.StatusCode);
+        Assert.Equal("Unhealthy", healthBody);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, readinessResponse.StatusCode);
+        Assert.Equal("Unhealthy", readinessBody);
+        Assert.Equal(HttpStatusCode.OK, livenessResponse.StatusCode);
+        Assert.DoesNotContain(secretPassword, healthBody, StringComparison.Ordinal);
+        Assert.DoesNotContain(connectionString, healthBody, StringComparison.Ordinal);
+        Assert.DoesNotContain(secretPassword, readinessBody, StringComparison.Ordinal);
+        Assert.DoesNotContain(connectionString, readinessBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task PostgreSql_provider_preserves_public_api_behaviour_and_persists_data_across_server_instances()
     {
         var budgetName = $"Durable {Guid.NewGuid():N}";
