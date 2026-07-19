@@ -22,6 +22,7 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
     {
         this.context = context;
         userId = currentUser.UserId;
+        context.UseAuditUser(userId.Value);
     }
 
     public BudgetSaveResult Save(Budget budget)
@@ -71,7 +72,6 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
         using var transaction = BeginTransactionIfNeeded();
 
         var existingBudget = context.Budgets
-            .AsNoTracking()
             .SingleOrDefault(record => record.BudgetId == budget.BudgetId);
 
         if (existingBudget is null || existingBudget.ApplicationUserId != applicationUserId)
@@ -110,21 +110,9 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
 
         try
         {
-            var updatedRows = context.Budgets
-                .Where(record =>
-                    record.BudgetId == budget.BudgetId
-                    && record.ApplicationUserId == applicationUserId
-                    && record.Version == postgreSqlState.Version)
-                .ExecuteUpdate(setters => setters
-                    .SetProperty(record => record.Name, budget.Name.Value)
-                    .SetProperty(record => record.Currency, budget.Currency.Value)
-                    .SetProperty(record => record.Version, record => record.Version + 1));
-
-            if (updatedRows == 0)
-            {
-                return new BudgetSaveResult.StaleState();
-            }
-
+            existingBudget.Name = budget.Name.Value;
+            existingBudget.Currency = budget.Currency.Value;
+            existingBudget.Version++;
             SyncBudgetItems(budget, applicationUserId, existingItems, removedItemIds);
             context.SaveChanges();
             transaction?.Commit();
@@ -142,6 +130,12 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
             transaction?.Rollback();
             ClearChanges();
             return new BudgetSaveResult.DuplicateName();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            transaction?.Rollback();
+            ClearChanges();
+            return new BudgetSaveResult.StaleState();
         }
         catch (DbUpdateException exception) when (IsNamedConstraint(exception, AllocationBudgetItemConstraint))
         {

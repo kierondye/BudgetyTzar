@@ -2,7 +2,6 @@ using System.Globalization;
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
 using BudgetyTzar.Api.Features;
-using BudgetyTzar.Api.Features.Audit;
 using BudgetyTzar.Api.Features.Budgeting;
 using BudgetyTzar.Api.Observability;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -55,7 +54,6 @@ public static class TransactionEndpoints
     private static IResult CreateTransaction(
         CreateTransactionRequest request,
         ITransactionRepository transactions,
-        IAuditOperationRunner audit,
         ApiTelemetry telemetry)
     {
         var validation = Validate(
@@ -96,13 +94,7 @@ public static class TransactionEndpoints
 
         IResult RecordTransaction(Transaction transaction)
         {
-            audit.Execute(
-                () =>
-                {
-                    transactions.Add(transaction);
-                    return transaction;
-                },
-                savedTransaction => AuditEntry.TransactionCreated(savedTransaction));
+            transactions.Add(transaction);
 
             return Results.Created(
                 $"/api/transactions/{transaction.TransactionId}",
@@ -148,8 +140,7 @@ public static class TransactionEndpoints
 
     private static IResult DeleteTransaction(
         Guid transactionId,
-        ITransactionRepository transactions,
-        IAuditOperationRunner audit)
+        ITransactionRepository transactions)
     {
         var transaction = transactions.Get(transactionId);
 
@@ -158,19 +149,15 @@ public static class TransactionEndpoints
             return Results.NotFound();
         }
 
-        return audit.Execute(
-            () => transactions.Delete(transactionId),
-            result => result is TransactionDeleteResult.Deleted
-                ? AuditEntry.TransactionDeleted(transaction)
-                : null) switch
+        return transactions.Delete(transactionId) switch
         {
             TransactionDeleteResult.NotFound => Results.NotFound(),
             TransactionDeleteResult.TransactionHasAllocation => TransactionHasAllocation(),
-            TransactionDeleteResult.Deleted => DeletedTransaction(transaction),
+            TransactionDeleteResult.Deleted => DeletedTransaction(),
             _ => throw new InvalidOperationException("Unexpected delete transaction result.")
         };
 
-        IResult DeletedTransaction(Transaction deleted)
+        IResult DeletedTransaction()
         {
             return Results.NoContent();
         }
@@ -182,7 +169,6 @@ public static class TransactionEndpoints
         ITransactionRepository transactions,
         IBudgetRepository budgets,
         ITransactionAllocationRepository allocations,
-        IAuditOperationRunner audit,
         ApiTelemetry telemetry)
     {
         var transaction = transactions.Get(transactionId);
@@ -216,13 +202,7 @@ public static class TransactionEndpoints
         }
 
         var allocation = ((AllocateTransactionEntityResult.Allocated)allocationResult).Allocation;
-        var result = audit.Execute(
-            () => allocations.Allocate(allocation),
-            allocationResult => allocationResult is AllocateTransactionResult.Allocated allocated
-                ? allocated.WasCreated
-                    ? AuditEntry.TransactionAllocationCreated(allocated.Allocation)
-                    : AuditEntry.TransactionAllocationIdempotent(allocated.Allocation)
-                : null);
+        var result = allocations.Allocate(allocation);
 
         return result switch
         {
@@ -270,19 +250,14 @@ public static class TransactionEndpoints
     private static IResult DeleteTransactionAllocation(
         Guid transactionId,
         ITransactionRepository transactions,
-        ITransactionAllocationRepository allocations,
-        IAuditOperationRunner audit)
+        ITransactionAllocationRepository allocations)
     {
         if (transactions.Get(transactionId) is null)
         {
             return Results.NotFound();
         }
 
-        audit.Execute(
-            () => allocations.Remove(transactionId),
-            result => result is RemoveTransactionAllocationResult.Removed removed
-                ? AuditEntry.TransactionAllocationRemoved(removed.Allocation)
-                : null);
+        allocations.Remove(transactionId);
 
         return Results.NoContent();
     }

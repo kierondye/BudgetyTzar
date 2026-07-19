@@ -1,5 +1,6 @@
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
+using BudgetyTzar.Api.Features.Audit;
 using BudgetyTzar.Api.Features.Identity;
 using BudgetyTzar.Api.Features.Transactions;
 using Microsoft.EntityFrameworkCore;
@@ -15,6 +16,7 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
     {
         this.context = context;
         userId = currentUser.UserId;
+        context.UseAuditUser(userId.Value);
     }
 
     public AllocateTransactionResult Allocate(TransactionAllocation allocation)
@@ -50,9 +52,14 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
 
         if (existingAllocation is not null)
         {
-            return existingAllocation.BudgetItemId == allocation.BudgetItemId
-                ? new AllocateTransactionResult.Allocated(ToAllocation(existingAllocation, transaction), WasCreated: false)
-                : new AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem();
+            if (existingAllocation.BudgetItemId != allocation.BudgetItemId)
+            {
+                return new AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem();
+            }
+
+            var existing = ToAllocation(existingAllocation, transaction);
+            RecordIdempotentAllocation(existing);
+            return new AllocateTransactionResult.Allocated(existing, WasCreated: false);
         }
 
         var allocationRecord = new TransactionAllocationRecord
@@ -187,9 +194,20 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
             throw new InvalidOperationException("Allocation conflict was not available after a concurrent create.");
         }
 
-        return existingAllocation.BudgetItemId == requestedAllocation.BudgetItemId
-            ? new AllocateTransactionResult.Allocated(ToAllocation(existingAllocation, transaction), WasCreated: false)
-            : new AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem();
+        if (existingAllocation.BudgetItemId != requestedAllocation.BudgetItemId)
+        {
+            return new AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem();
+        }
+
+        var existing = ToAllocation(existingAllocation, transaction);
+        RecordIdempotentAllocation(existing);
+        return new AllocateTransactionResult.Allocated(existing, WasCreated: false);
+    }
+
+    private void RecordIdempotentAllocation(TransactionAllocation allocation)
+    {
+        context.RecordAudit(AuditEntry.TransactionAllocationIdempotent(allocation));
+        context.SaveChanges();
     }
 
     private static bool IsAllocationAlreadyStored(DbUpdateException exception)

@@ -111,12 +111,13 @@ Reporting reads across boundaries because a budget summary combines budgets, bud
 items, transactions, and allocations. It does not mutate those boundaries or take
 ownership of their data.
 
-Audit is a separate boundary for durable change records. Command handlers may
-coordinate with the audit recorder after an owned boundary reports a successful write,
-but audit metadata stays out of domain entities and public HTTP response contracts.
-The in-memory runtime uses a no-op audit recorder. PostgreSQL persistence stores
-audit records in its own table, scoped to the current internal application user and
-linked to the authenticated actor for user-driven commands.
+Audit is a separate boundary for durable change records. Audit metadata stays out of
+domain entities and public HTTP response contracts. Command handlers express the
+requested use case and save through feature-owned persistence contracts; they do not
+construct durable audit records. PostgreSQL persistence observes auditable storage
+changes through the EF Core save pipeline and stores audit records in its own table,
+scoped to the current internal application user and linked to the authenticated actor
+for user-driven commands. The in-memory runtime does not persist audit records.
 
 ## Repository Map
 
@@ -126,7 +127,7 @@ linked to the authenticated actor for user-driven commands.
 | `src/BudgetyTzar.Api/ApiApplication.cs` | Composition root. Registers services and endpoint groups. |
 | `src/BudgetyTzar.Api/Domain/Entities` | Immutable entities, aggregates, operations, and result types. |
 | `src/BudgetyTzar.Api/Domain/ValueTypes` | Validated domain values such as names, currencies, money amounts, and kinds. |
-| `src/BudgetyTzar.Api/Features/Audit` | Audit boundary contract, operation metadata shaping, and default no-op recorder. |
+| `src/BudgetyTzar.Api/Features/Audit` | Audit boundary registration and explicit audit metadata shaping. |
 | `src/BudgetyTzar.Api/Features/Identity` | Authentication configuration, authenticated claim resolution, and current-user identity. |
 | `src/BudgetyTzar.Api/Features/Budgeting` | Budget endpoints, HTTP contracts, persistence contracts, handlers, and persistence adapters. |
 | `src/BudgetyTzar.Api/Features/Transactions` | Transaction and allocation endpoints, HTTP contracts, persistence contracts, handlers, and persistence adapters. |
@@ -150,7 +151,6 @@ sequenceDiagram
     participant Endpoint
     participant Domain
     participant Repository
-    participant Audit
     participant Store as InMemoryDataStore
 
     Client->>Endpoint: HTTP command
@@ -163,14 +163,13 @@ sequenceDiagram
     Endpoint->>Repository: Save updated EntityState<T>
     Repository->>Store: check consistency and write atomically
     Repository-->>Endpoint: explicit persistence result
-    Endpoint->>Audit: record successful important change
     Endpoint-->>Client: mapped HTTP response
 ```
 
 Handlers coordinate the request. They validate transport input, call domain or
 application operations, pass repository-owned state back to repositories, and map
 explicit outcomes to HTTP responses. They should not know how persistence versions,
-storage locks, or database tokens work.
+storage locks, database tokens, or durable audit records work.
 
 `EntityState<T>` carries opaque repository-owned concurrency state through
 `Get -> domain operation -> Save`. It exists so repositories can enforce stale-write
@@ -229,6 +228,12 @@ fields.
 Repositories own storage-wide consistency and concurrency state because those rules
 depend on stored data, not only on a single aggregate's in-memory state. Aggregates own
 the invariants they can decide from their own state.
+
+PostgreSQL audit records are generated from explicitly whitelisted EF Core storage
+record changes in the `ApplicationDbContext` save pipeline so the business write and
+its audit record commit or roll back together. Operations that intentionally succeed
+without changing a row, such as idempotent allocation to the same budget item, are
+recorded by the PostgreSQL repository that owns that persistence outcome.
 
 Persistence contracts sit between feature orchestration and adapters. A new adapter
 must implement the relevant feature contracts without leaking database tokens, storage

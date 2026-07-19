@@ -15,6 +15,7 @@ public sealed class PostgreSqlTransactionRepository : ITransactionRepository
     {
         this.context = context;
         userId = currentUser.UserId;
+        context.UseAuditUser(userId.Value);
     }
 
     public void Add(Transaction transaction)

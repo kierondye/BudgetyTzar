@@ -1,6 +1,5 @@
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
-using BudgetyTzar.Api.Features.Audit;
 using BudgetyTzar.Api.Features.Identity;
 using BudgetyTzar.Api.Features.Transactions;
 using BudgetyTzar.Api.Persistence.PostgreSql;
@@ -197,27 +196,24 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
     }
 
     [Fact]
-    public async Task Audit_operation_rolls_back_business_write_when_audit_recording_fails()
+    public async Task Audited_save_rolls_back_business_write_when_audit_recording_fails()
     {
         await using var database = await CreateDatabaseAsync();
         var userId = Guid.NewGuid();
         var userKey = "postgres-audit-rollback-user";
         await SeedUserAsync(database.ConnectionString, userId, userKey);
-        await using var context = CreateContext(database.ConnectionString);
+        var interceptor = new BeforeSaveInterceptor(
+            context => HasAdded<AuditRecord>(context, record => record.OperationName == "transaction.create"),
+            _ => throw new InvalidOperationException("Audit recording failed."));
+        await using var context = CreateContext(database.ConnectionString, interceptor);
         var repository = new PostgreSqlTransactionRepository(context, CurrentUser(userKey, database.ConnectionString));
-        var runner = new PostgreSqlAuditOperationRunner(context, new ThrowingAuditRecorder());
         var transaction = CreateTransaction();
 
-        Assert.Throws<InvalidOperationException>(() => runner.Execute(
-            () =>
-            {
-                repository.Add(transaction);
-                return transaction;
-            },
-            _ => AuditEntry.TransactionCreated(transaction)));
+        Assert.Throws<InvalidOperationException>(() => repository.Add(transaction));
 
         await using var assertionContext = CreateContext(database.ConnectionString);
         Assert.False(await assertionContext.Transactions.AnyAsync(record => record.TransactionId == transaction.TransactionId));
+        Assert.False(await assertionContext.AuditRecords.AnyAsync(record => record.ResourceId == transaction.TransactionId));
     }
 
     private static async Task<PostgreSqlTestDatabase> CreateDatabaseAsync()
@@ -394,14 +390,6 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
         return PositiveMoneyAmount.TryCreate(value, out var amount)
             ? amount!
             : throw new InvalidOperationException("Invalid test amount.");
-    }
-
-    private sealed class ThrowingAuditRecorder : IAuditRecorder
-    {
-        public void Record(AuditEntry entry)
-        {
-            throw new InvalidOperationException("Audit recording failed.");
-        }
     }
 
     private sealed class BeforeSaveInterceptor(
