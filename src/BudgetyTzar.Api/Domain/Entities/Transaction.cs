@@ -5,6 +5,17 @@ namespace BudgetyTzar.Api.Domain.Entities;
 
 public sealed class Transaction
 {
+    internal Transaction(
+        Guid transactionId,
+        string description,
+        TransactionType type,
+        DateOnly transactionDate,
+        PositiveMoneyAmount amount,
+        CurrencyCode currency)
+        : this(transactionId, description.Trim(), type, transactionDate, amount, currency, [])
+    {
+    }
+
     private Transaction(
         Guid transactionId,
         string description,
@@ -55,11 +66,11 @@ public sealed class Transaction
             return new CreateTransactionResult.InvalidDescription();
         }
 
-        var transaction = new Transaction(transactionId, description.Trim(), type, transactionDate, amount, currency, []);
-        return new CreateTransactionResult.Created(transaction.WithAuditFact(AuditAction.TransactionCreated, null, transaction));
+        return new CreateTransactionResult.Created(
+            new Transaction(transactionId, description.Trim(), type, transactionDate, amount, currency));
     }
 
-    internal static Transaction Rehydrate(
+    internal static CreateTransactionResult CreateForCommand(
         Guid transactionId,
         string description,
         TransactionType type,
@@ -67,7 +78,14 @@ public sealed class Transaction
         PositiveMoneyAmount amount,
         CurrencyCode currency)
     {
-        return new Transaction(transactionId, description.Trim(), type, transactionDate, amount, currency, []);
+        return Create(transactionId, description, type, transactionDate, amount, currency) switch
+        {
+            CreateTransactionResult.Created created => new CreateTransactionResult.Created(
+                created.Transaction.WithAuditFact(AuditAction.TransactionCreated, null, created.Transaction)),
+            CreateTransactionResult.InvalidIdentity invalid => invalid,
+            CreateTransactionResult.InvalidDescription invalid => invalid,
+            _ => throw new InvalidOperationException("Unexpected create transaction result.")
+        };
     }
 
     public DeleteTransactionEntityResult Delete()

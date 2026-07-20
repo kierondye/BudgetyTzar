@@ -71,7 +71,7 @@ public static class BudgetEndpoints
 
         var valid = (CreateBudgetValidationResult.Valid)validation;
 
-        return Budget.Create(Guid.NewGuid(), valid.Name, valid.Currency) switch
+        return Budget.CreateForCommand(Guid.NewGuid(), valid.Name, valid.Currency) switch
         {
             CreateBudgetResult.InvalidIdentity => Results.ValidationProblem(
                 new Dictionary<string, string[]>(StringComparer.Ordinal)

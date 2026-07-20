@@ -63,14 +63,7 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
                     return new AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem();
                 }
 
-                var existing = ToAllocation(existingAllocation, transaction);
-                var recorded = TryRecordIdempotentAllocation(existing, applicationUserId);
-                if (recorded is null)
-                {
-                    continue;
-                }
-
-                return new AllocateTransactionResult.Allocated(recorded, WasCreated: false);
+                return new AllocateTransactionResult.Allocated(ToAllocation(existingAllocation, transaction));
             }
 
             var allocationRecord = new TransactionAllocationRecord
@@ -108,7 +101,7 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
                 return new AllocateTransactionResult.BudgetItemNotFound();
             }
 
-            return new AllocateTransactionResult.Allocated(allocation, WasCreated: true);
+            return new AllocateTransactionResult.Allocated(allocation);
         }
     }
 
@@ -196,44 +189,6 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
         return new RemoveTransactionAllocationResult.Removed(removed.Allocation);
     }
 
-    private TransactionAllocation? TryRecordIdempotentAllocation(
-        TransactionAllocation allocation,
-        Guid applicationUserId)
-    {
-        using var transaction = context.Database.BeginTransaction();
-        var matchedRows = context.TransactionAllocations
-            .Where(existing =>
-                existing.TransactionId == allocation.TransactionId
-                && existing.ApplicationUserId == applicationUserId
-                && existing.BudgetItemId == allocation.BudgetItemId
-                && existing.Currency == allocation.Currency.Value)
-            .ExecuteUpdate(setters => setters.SetProperty(
-                existing => existing.Currency,
-                existing => existing.Currency));
-
-        if (matchedRows == 0)
-        {
-            transaction.Rollback();
-            context.ChangeTracker.Clear();
-            return null;
-        }
-
-        var idempotent = IdempotentAllocation(allocation);
-        context.AddAuditRecords(idempotent.AuditFacts, applicationUserId, auditContext);
-        context.SaveChanges();
-        transaction.Commit();
-        context.ChangeTracker.Clear();
-
-        return idempotent;
-    }
-
-    private static TransactionAllocation IdempotentAllocation(TransactionAllocation allocation)
-    {
-        return allocation.AllocateIdempotently() is IdempotentTransactionAllocationEntityResult.Allocated allocated
-            ? allocated.Allocation
-            : throw new InvalidOperationException("Unexpected idempotent allocation result.");
-    }
-
     private static bool IsAllocationAlreadyStored(DbUpdateException exception)
     {
         return PostgreSqlPersistenceErrors.IsUniqueViolation(exception, "pk_transaction_allocations")
@@ -246,7 +201,7 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
     {
         var domainTransaction = ToTransaction(transaction);
 
-        return TransactionAllocation.Rehydrate(
+        return new TransactionAllocation(
             allocation.TransactionId,
             allocation.BudgetItemId,
             domainTransaction.Amount,
@@ -263,7 +218,7 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
             throw new InvalidOperationException("Stored transaction data is invalid.");
         }
 
-        return Transaction.Rehydrate(
+        return new Transaction(
             record.TransactionId,
             record.Description,
             type,

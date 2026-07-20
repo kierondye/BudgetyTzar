@@ -279,7 +279,7 @@ internal sealed class PostgreSqlTestTransactionAllocationRepository(
         if (existingAllocation is not null)
         {
             return existingAllocation.BudgetItemId == allocation.BudgetItemId
-                ? new AllocateTransactionResult.Allocated(existingAllocation, WasCreated: false)
+                ? new AllocateTransactionResult.Allocated(existingAllocation)
                 : new AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem();
         }
 
@@ -293,7 +293,7 @@ internal sealed class PostgreSqlTestTransactionAllocationRepository(
         context.SaveChanges();
         context.ChangeTracker.Clear();
 
-        return new AllocateTransactionResult.Allocated(allocation, WasCreated: true);
+        return new AllocateTransactionResult.Allocated(allocation);
     }
 
     public TransactionAllocation? Get(Guid transactionId)

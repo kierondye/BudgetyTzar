@@ -1,6 +1,7 @@
-using System.Collections.Immutable;
-using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
+using BudgetyTzar.Api.Domain.ValueTypes;
 
 namespace BudgetyTzar.Api.Domain.Entities;
 
@@ -15,7 +16,6 @@ public enum AuditAction
     TransactionCreated,
     TransactionDeleted,
     TransactionAllocationCreated,
-    TransactionAllocationIdempotent,
     TransactionAllocationRemoved
 }
 
@@ -45,75 +45,71 @@ public sealed record AuditFact
 
 internal static class AuditValueSerializer
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
 
     public static string Serialize(Budget budget)
     {
-        var value = new BudgetAuditValue(
-            budget.BudgetId,
-            budget.Name.Value,
-            budget.Currency.Value,
-            budget.BudgetItems
-                .Select(item => new BudgetItemAuditValue(
-                    item.BudgetItemId,
-                    item.Name.Value,
-                    item.Kind.Value,
-                    Money(item.PlannedAmount.Value)))
-                .ToImmutableArray());
-
-        return JsonSerializer.Serialize(value, JsonOptions);
+        return JsonSerializer.Serialize(budget, JsonOptions);
     }
 
     public static string Serialize(Transaction transaction)
     {
-        var value = new TransactionAuditValue(
-            transaction.TransactionId,
-            transaction.Type.Value,
-            transaction.TransactionDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            Money(transaction.Amount.Value),
-            transaction.Currency.Value);
-
-        return JsonSerializer.Serialize(value, JsonOptions);
+        return JsonSerializer.Serialize(transaction, JsonOptions);
     }
 
     public static string Serialize(TransactionAllocation allocation)
     {
-        var value = new TransactionAllocationAuditValue(
-            allocation.TransactionId,
-            allocation.BudgetItemId,
-            Money(allocation.Amount.Value),
-            allocation.Currency.Value);
-
-        return JsonSerializer.Serialize(value, JsonOptions);
+        return JsonSerializer.Serialize(allocation, JsonOptions);
     }
 
-    private static string Money(decimal value)
+    private static JsonSerializerOptions CreateJsonOptions()
     {
-        return value.ToString("0.00", CultureInfo.InvariantCulture);
+        var resolver = new DefaultJsonTypeInfoResolver();
+        resolver.Modifiers.Add(RemoveExcludedProperties);
+
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            TypeInfoResolver = resolver
+        };
+        options.Converters.Add(new StringValueJsonConverter<NormalizedName>(value => value.Value));
+        options.Converters.Add(new StringValueJsonConverter<CurrencyCode>(value => value.Value));
+        options.Converters.Add(new StringValueJsonConverter<BudgetItemKind>(value => value.Value));
+        options.Converters.Add(new StringValueJsonConverter<TransactionType>(value => value.Value));
+        options.Converters.Add(new StringValueJsonConverter<PositiveMoneyAmount>(value => value.FormattedValue));
+
+        return options;
     }
 
-    private sealed record BudgetAuditValue(
-        Guid BudgetId,
-        string Name,
-        string Currency,
-        ImmutableArray<BudgetItemAuditValue> BudgetItems);
+    private static void RemoveExcludedProperties(JsonTypeInfo typeInfo)
+    {
+        for (var index = typeInfo.Properties.Count - 1; index >= 0; index--)
+        {
+            var property = typeInfo.Properties[index];
+            var isAuditFacts = typeInfo.Type is not null
+                && (typeInfo.Type == typeof(Budget)
+                    || typeInfo.Type == typeof(Transaction)
+                    || typeInfo.Type == typeof(TransactionAllocation))
+                && string.Equals(property.Name, "auditFacts", StringComparison.OrdinalIgnoreCase);
+            var isTransactionDescription = typeInfo.Type == typeof(Transaction)
+                && string.Equals(property.Name, "description", StringComparison.OrdinalIgnoreCase);
 
-    private sealed record BudgetItemAuditValue(
-        Guid BudgetItemId,
-        string Name,
-        string Kind,
-        string PlannedAmount);
+            if (isAuditFacts || isTransactionDescription)
+            {
+                typeInfo.Properties.RemoveAt(index);
+            }
+        }
+    }
 
-    private sealed record TransactionAuditValue(
-        Guid TransactionId,
-        string Type,
-        string TransactionDate,
-        string Amount,
-        string Currency);
+    private sealed class StringValueJsonConverter<T>(Func<T, string> value) : JsonConverter<T>
+    {
+        public override T Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            throw new NotSupportedException("Audit values are write-only.");
+        }
 
-    private sealed record TransactionAllocationAuditValue(
-        Guid TransactionId,
-        Guid BudgetItemId,
-        string Amount,
-        string Currency);
+        public override void Write(Utf8JsonWriter writer, T valueToWrite, JsonSerializerOptions options)
+        {
+            writer.WriteStringValue(value(valueToWrite));
+        }
+    }
 }

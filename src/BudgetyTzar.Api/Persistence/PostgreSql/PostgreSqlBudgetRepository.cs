@@ -256,7 +256,7 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
             budgetItems.Add(createdItem.BudgetItem);
         }
 
-        return Budget.Rehydrate(
+        return new Budget(
             budgetRecord.BudgetId,
             Name(budgetRecord.Name),
             Currency(budgetRecord.Currency),

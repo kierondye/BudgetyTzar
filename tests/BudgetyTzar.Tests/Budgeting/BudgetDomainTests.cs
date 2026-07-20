@@ -12,6 +12,7 @@ public sealed class BudgetDomainTests
 
         Assert.Equal("UK", budget.Name.Value);
         Assert.Empty(budget.BudgetItems);
+        Assert.Empty(budget.AuditFacts);
     }
 
     [Fact]
@@ -52,8 +53,8 @@ public sealed class BudgetDomainTests
         var added = Assert.IsType<AddBudgetItemResult.Added>(
             budget.AddBudgetItem(budgetItemId, Name("Salary"), BudgetItemKind.Funding, Money("3000.00")));
 
-        Assert.Single(budget.AuditFacts);
-        Assert.Equal(2, added.Budget.AuditFacts.Length);
+        Assert.Empty(budget.AuditFacts);
+        Assert.Single(added.Budget.AuditFacts);
 
         var fact = added.Budget.AuditFacts[^1];
         Assert.NotEqual(Guid.Empty, fact.Id);
@@ -62,6 +63,7 @@ public sealed class BudgetDomainTests
         Assert.Contains(budgetItemId.ToString(), fact.NewValue, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(nameof(Budget.AuditFacts), fact.OldValue, StringComparison.Ordinal);
         Assert.DoesNotContain(nameof(Budget.AuditFacts), fact.NewValue, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"value\"", fact.NewValue, StringComparison.Ordinal);
     }
 
     [Fact]

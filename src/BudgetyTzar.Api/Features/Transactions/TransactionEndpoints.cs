@@ -70,7 +70,7 @@ public static class TransactionEndpoints
         }
 
         var valid = (CreateTransactionValidationResult.Valid)validation;
-        return Transaction.Create(
+        return Transaction.CreateForCommand(
             Guid.NewGuid(),
             valid.Description,
             valid.Type,
@@ -193,7 +193,7 @@ public static class TransactionEndpoints
             return TransactionCurrencyDoesNotMatchBudget();
         }
 
-        var allocationResult = TransactionAllocation.Allocate(transaction, request.BudgetItemId);
+        var allocationResult = TransactionAllocation.AllocateForCommand(transaction, request.BudgetItemId);
 
         if (allocationResult is AllocateTransactionEntityResult.InvalidBudgetItemIdentity)
         {

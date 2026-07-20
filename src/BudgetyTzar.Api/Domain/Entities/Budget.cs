@@ -5,6 +5,15 @@ namespace BudgetyTzar.Api.Domain.Entities;
 
 public sealed class Budget
 {
+    internal Budget(
+        Guid budgetId,
+        NormalizedName name,
+        CurrencyCode currency,
+        ImmutableArray<BudgetItem> budgetItems)
+        : this(budgetId, name, currency, budgetItems, [])
+    {
+    }
+
     private Budget(
         Guid budgetId,
         NormalizedName name,
@@ -36,17 +45,21 @@ public sealed class Budget
             return new CreateBudgetResult.InvalidIdentity();
         }
 
-        var budget = new Budget(budgetId, name, currency, [], []);
-        return new CreateBudgetResult.Created(budget.WithAuditFact(AuditAction.BudgetCreated, null, budget));
+        return new CreateBudgetResult.Created(new Budget(budgetId, name, currency, []));
     }
 
-    internal static Budget Rehydrate(
+    internal static CreateBudgetResult CreateForCommand(
         Guid budgetId,
         NormalizedName name,
-        CurrencyCode currency,
-        ImmutableArray<BudgetItem> budgetItems)
+        CurrencyCode currency)
     {
-        return new Budget(budgetId, name, currency, budgetItems, []);
+        return Create(budgetId, name, currency) switch
+        {
+            CreateBudgetResult.Created created => new CreateBudgetResult.Created(
+                created.Budget.WithAuditFact(AuditAction.BudgetCreated, null, created.Budget)),
+            CreateBudgetResult.InvalidIdentity invalid => invalid,
+            _ => throw new InvalidOperationException("Unexpected create budget result.")
+        };
     }
 
     public RenameBudgetResult Rename(NormalizedName name)

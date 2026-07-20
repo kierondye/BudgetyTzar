@@ -109,6 +109,10 @@ Domain code does not depend on endpoints, repositories, ASP.NET Core, or storage
 Immutable aggregates may carry semantic `AuditFact` values that describe what the
 aggregate operation did and the aggregate business state before and after it did it.
 Those facts are domain-owned operation results, not persistence metadata.
+Neutral construction factories remain available for constructing or restoring domain
+values without implying that a user-visible command occurred. Command-facing creation
+operations return the newly created aggregate with its creation audit fact already
+attached.
 
 Reporting reads across boundaries because a budget summary combines budgets, budget
 items, transactions, and allocations. It does not mutate those boundaries or take
@@ -240,9 +244,9 @@ PostgreSQL audit records are generated from aggregate-owned `AuditFact` values a
 are enriched by persistence with current-user, endpoint or operation, correlation ID,
 and save timestamp metadata. Repositories add those records to the same EF Core
 context before saving so the business write and audit records commit or roll back
-together. Operations that intentionally succeed without changing a row, such as
-idempotent allocation to the same budget item, use a semantic aggregate operation to
-produce an audit fact before persistence stores it.
+together. Operations that intentionally succeed without changing state, such as
+idempotent allocation to the same budget item, do not produce an audit fact or durable
+audit record.
 
 Persistence contracts sit between feature orchestration and adapters. A new adapter
 must implement the relevant feature contracts without leaking database tokens, storage

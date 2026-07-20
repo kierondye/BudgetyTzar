@@ -33,14 +33,14 @@ public sealed class InMemoryTransactionAllocationRepository : ITransactionAlloca
             if (store.AllocationsByTransactionId.TryGetValue(allocation.TransactionId, out var existingAllocation))
             {
                 return existingAllocation.BudgetItemId == allocation.BudgetItemId
-                    ? new AllocateTransactionResult.Allocated(existingAllocation, WasCreated: false)
+                    ? new AllocateTransactionResult.Allocated(existingAllocation)
                     : new AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem();
             }
 
             store.AllocationsByTransactionId[allocation.TransactionId] = allocation;
             store.AllocationOwnersByTransactionId[allocation.TransactionId] = userId;
 
-            return new AllocateTransactionResult.Allocated(allocation, WasCreated: true);
+            return new AllocateTransactionResult.Allocated(allocation);
         }
     }
 
@@ -105,7 +105,7 @@ public sealed class InMemoryTransactionAllocationRepository : ITransactionAlloca
 
 public abstract record AllocateTransactionResult
 {
-    public sealed record Allocated(TransactionAllocation Allocation, bool WasCreated) : AllocateTransactionResult;
+    public sealed record Allocated(TransactionAllocation Allocation) : AllocateTransactionResult;
 
     public sealed record TransactionNotFound : AllocateTransactionResult;
 

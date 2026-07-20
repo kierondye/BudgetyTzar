@@ -17,6 +17,7 @@ public sealed class TransactionDomainTests
             Currency("GBP")));
 
         Assert.Equal("Salary", created.Transaction.Description);
+        Assert.Empty(created.Transaction.AuditFacts);
     }
 
     [Fact]
@@ -53,14 +54,16 @@ public sealed class TransactionDomainTests
             Money("42.50"),
             Currency("GBP"));
 
-        var fact = Assert.Single(transaction.AuditFacts);
+        var deleted = Assert.IsType<DeleteTransactionEntityResult.Deleted>(transaction.Delete());
+        var fact = Assert.Single(deleted.Transaction.AuditFacts);
 
-        Assert.Equal(AuditAction.TransactionCreated, fact.Action);
-        Assert.Null(fact.OldValue);
-        Assert.NotNull(fact.NewValue);
-        Assert.DoesNotContain("Sensitive supermarket text", fact.NewValue, StringComparison.Ordinal);
-        Assert.DoesNotContain(nameof(Transaction.AuditFacts), fact.NewValue, StringComparison.Ordinal);
-        Assert.Contains(transaction.TransactionId.ToString(), fact.NewValue, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(AuditAction.TransactionDeleted, fact.Action);
+        Assert.NotNull(fact.OldValue);
+        Assert.Null(fact.NewValue);
+        Assert.DoesNotContain("Sensitive supermarket text", fact.OldValue, StringComparison.Ordinal);
+        Assert.DoesNotContain(nameof(Transaction.AuditFacts), fact.OldValue, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"value\"", fact.OldValue, StringComparison.Ordinal);
+        Assert.Contains(transaction.TransactionId.ToString(), fact.OldValue, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -83,10 +86,11 @@ public sealed class TransactionDomainTests
         Assert.Equal(budgetItemId, allocation.BudgetItemId);
         Assert.Same(transaction.Amount, allocation.Amount);
         Assert.Equal(transaction.Currency, allocation.Currency);
+        Assert.Empty(allocation.AuditFacts);
     }
 
     [Fact]
-    public void Allocation_semantic_operations_create_audit_facts()
+    public void Allocation_removal_creates_an_audit_fact_for_the_state_change()
     {
         var transaction = CreateTransaction(
             Guid.NewGuid(),
@@ -98,16 +102,14 @@ public sealed class TransactionDomainTests
         var allocated = Assert.IsType<AllocateTransactionEntityResult.Allocated>(
             TransactionAllocation.Allocate(transaction, Guid.NewGuid()));
 
-        var idempotent = Assert.IsType<IdempotentTransactionAllocationEntityResult.Allocated>(
-            allocated.Allocation.AllocateIdempotently());
         var removed = Assert.IsType<RemoveTransactionAllocationEntityResult.Removed>(
-            idempotent.Allocation.Remove());
+            allocated.Allocation.Remove());
 
-        Assert.Equal(AuditAction.TransactionAllocationCreated, Assert.Single(allocated.Allocation.AuditFacts).Action);
-        Assert.Equal(AuditAction.TransactionAllocationIdempotent, idempotent.Allocation.AuditFacts[^1].Action);
-        Assert.Equal(AuditAction.TransactionAllocationRemoved, removed.Allocation.AuditFacts[^1].Action);
-        Assert.NotNull(removed.Allocation.AuditFacts[^1].OldValue);
-        Assert.Null(removed.Allocation.AuditFacts[^1].NewValue);
+        Assert.Empty(allocated.Allocation.AuditFacts);
+        var fact = Assert.Single(removed.Allocation.AuditFacts);
+        Assert.Equal(AuditAction.TransactionAllocationRemoved, fact.Action);
+        Assert.NotNull(fact.OldValue);
+        Assert.Null(fact.NewValue);
     }
 
     [Fact]

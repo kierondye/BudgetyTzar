@@ -127,7 +127,7 @@ public sealed class PostgreSqlTransactionRepository : ITransactionRepository
             throw new InvalidOperationException("Stored transaction data is invalid.");
         }
 
-        return Transaction.Rehydrate(
+        return new Transaction(
             record.TransactionId,
             record.Description,
             type,

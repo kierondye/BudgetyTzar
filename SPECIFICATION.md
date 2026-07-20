@@ -613,8 +613,9 @@ appear in existing public HTTP response contracts.
 When PostgreSQL persistence is selected, successful important write commands create
 durable audit records. The initial audited operations are budget creation and rename;
 budget item creation, rename, planned amount change, and deletion; transaction
-creation and deletion; transaction allocation creation, idempotent allocation to the
-same budget item, and allocation removal.
+creation and deletion; and transaction allocation creation and removal. An idempotent
+allocation to the same budget item succeeds without changing state and therefore does
+not create an audit fact or durable audit record.
 
 An aggregate mutation creates an immutable audit fact as part of the mutation result.
 The fact has a stable unique identity, an action, and serialized old and new aggregate
@@ -623,6 +624,11 @@ state for that aggregate, not only the affected child entity. Audit serializatio
 exclude audit facts themselves and infrastructure metadata. Transaction audit values
 record transaction type, date, amount, and currency, but not the free-text transaction
 description.
+
+Neutral domain construction factories retain their ordinary construction behaviour
+and do not imply that a user-visible command occurred. Command-facing aggregate
+creation operations add the creation audit fact as part of returning the new immutable
+aggregate; handlers do not construct or pass that fact separately.
 
 Persistence enriches audit facts with the authenticated internal application user,
 the committing endpoint or operation, a correlation ID shared by records created in

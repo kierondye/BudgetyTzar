@@ -202,7 +202,7 @@ public sealed class PostgreSqlPersistenceApiTests(PostgreSqlApiTestDatabase data
             .Where(record => record.CorrelationId == correlationId)
             .ToListAsync();
 
-        Assert.Equal(11, records.Count);
+        Assert.Equal(10, records.Count);
         Assert.All(records, record =>
         {
             Assert.NotEqual(Guid.Empty, record.ApplicationUserId);
@@ -220,7 +220,7 @@ public sealed class PostgreSqlPersistenceApiTests(PostgreSqlApiTestDatabase data
         Assert.Contains(records, record => record.Action == "TransactionCreated" && record.OperationName == "CreateTransaction" && record.OldValue is null && record.NewValue is not null);
         Assert.Contains(records, record => record.Action == "TransactionDeleted" && record.OperationName == "DeleteTransaction" && record.OldValue is not null && record.NewValue is null);
         Assert.Contains(records, record => record.Action == "TransactionAllocationCreated" && record.OperationName == "AllocateTransaction" && record.OldValue is null && record.NewValue is not null);
-        Assert.Contains(records, record => record.Action == "TransactionAllocationIdempotent" && record.OperationName == "AllocateTransaction" && record.OldValue is not null && record.NewValue is not null);
+        Assert.DoesNotContain(records, record => record.Action == "TransactionAllocationIdempotent");
         Assert.Contains(records, record => record.Action == "TransactionAllocationRemoved" && record.OperationName == "DeleteTransactionAllocation" && record.OldValue is not null && record.NewValue is null);
         Assert.DoesNotContain(records, record =>
             (record.OldValue?.Contains("Sensitive supermarket text", StringComparison.Ordinal) ?? false)

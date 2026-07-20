@@ -5,6 +5,15 @@ namespace BudgetyTzar.Api.Domain.Entities;
 
 public sealed class TransactionAllocation
 {
+    internal TransactionAllocation(
+        Guid transactionId,
+        Guid budgetItemId,
+        PositiveMoneyAmount amount,
+        CurrencyCode currency)
+        : this(transactionId, budgetItemId, amount, currency, [])
+    {
+    }
+
     private TransactionAllocation(
         Guid transactionId,
         Guid budgetItemId,
@@ -36,30 +45,25 @@ public sealed class TransactionAllocation
             return new AllocateTransactionEntityResult.InvalidBudgetItemIdentity();
         }
 
-        var allocation = new TransactionAllocation(
+        return new AllocateTransactionEntityResult.Allocated(new TransactionAllocation(
             transaction.TransactionId,
             budgetItemId,
             transaction.Amount,
-            transaction.Currency,
-            []);
-
-        return new AllocateTransactionEntityResult.Allocated(
-            allocation.WithAuditFact(AuditAction.TransactionAllocationCreated, null, allocation));
+            transaction.Currency));
     }
 
-    internal static TransactionAllocation Rehydrate(
-        Guid transactionId,
-        Guid budgetItemId,
-        PositiveMoneyAmount amount,
-        CurrencyCode currency)
+    internal static AllocateTransactionEntityResult AllocateForCommand(Transaction transaction, Guid budgetItemId)
     {
-        return new TransactionAllocation(transactionId, budgetItemId, amount, currency, []);
-    }
-
-    public IdempotentTransactionAllocationEntityResult AllocateIdempotently()
-    {
-        return new IdempotentTransactionAllocationEntityResult.Allocated(
-            WithAuditFact(AuditAction.TransactionAllocationIdempotent, this, this));
+        return Allocate(transaction, budgetItemId) switch
+        {
+            AllocateTransactionEntityResult.Allocated allocated => new AllocateTransactionEntityResult.Allocated(
+                allocated.Allocation.WithAuditFact(
+                    AuditAction.TransactionAllocationCreated,
+                    null,
+                    allocated.Allocation)),
+            AllocateTransactionEntityResult.InvalidBudgetItemIdentity invalid => invalid,
+            _ => throw new InvalidOperationException("Unexpected allocate transaction result.")
+        };
     }
 
     public RemoveTransactionAllocationEntityResult Remove()
@@ -91,11 +95,6 @@ public abstract record AllocateTransactionEntityResult
     public sealed record Allocated(TransactionAllocation Allocation) : AllocateTransactionEntityResult;
 
     public sealed record InvalidBudgetItemIdentity : AllocateTransactionEntityResult;
-}
-
-public abstract record IdempotentTransactionAllocationEntityResult
-{
-    public sealed record Allocated(TransactionAllocation Allocation) : IdempotentTransactionAllocationEntityResult;
 }
 
 public abstract record RemoveTransactionAllocationEntityResult

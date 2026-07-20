@@ -23,8 +23,6 @@ public abstract class TransactionAllocationRepositoryContractTests : RepositoryC
 
         var firstAllocated = Assert.IsType<AllocateTransactionResult.Allocated>(firstResult);
         var secondAllocated = Assert.IsType<AllocateTransactionResult.Allocated>(secondResult);
-        Assert.True(firstAllocated.WasCreated);
-        Assert.False(secondAllocated.WasCreated);
         Assert.Equal(firstAllocated.Allocation.TransactionId, secondAllocated.Allocation.TransactionId);
         Assert.Equal(firstAllocated.Allocation.BudgetItemId, secondAllocated.Allocation.BudgetItemId);
         Assert.Equal(budgetItemId, repositories.Allocations.Get(transaction.TransactionId)?.BudgetItemId);
@@ -46,7 +44,7 @@ public abstract class TransactionAllocationRepositoryContractTests : RepositoryC
         var firstResult = repositories.Allocations.Allocate(CreateAllocation(transaction, firstBudgetItemId));
         var secondResult = repositories.Allocations.Allocate(CreateAllocation(transaction, secondBudgetItemId));
 
-        Assert.True(Assert.IsType<AllocateTransactionResult.Allocated>(firstResult).WasCreated);
+        Assert.IsType<AllocateTransactionResult.Allocated>(firstResult);
         Assert.IsType<AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem>(secondResult);
         Assert.Equal(firstBudgetItemId, repositories.Allocations.Get(transaction.TransactionId)?.BudgetItemId);
     }
