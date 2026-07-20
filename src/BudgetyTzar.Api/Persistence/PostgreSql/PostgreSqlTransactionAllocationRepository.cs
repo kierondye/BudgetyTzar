@@ -27,83 +27,89 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
     {
         var applicationUserId = userId.Value;
 
-        var transaction = context.Transactions
-            .AsNoTracking()
-            .SingleOrDefault(transaction =>
-                transaction.TransactionId == allocation.TransactionId
-                && transaction.ApplicationUserId == applicationUserId);
-
-        if (transaction is null)
+        while (true)
         {
-            return new AllocateTransactionResult.TransactionNotFound();
-        }
+            var transaction = context.Transactions
+                .AsNoTracking()
+                .SingleOrDefault(transaction =>
+                    transaction.TransactionId == allocation.TransactionId
+                    && transaction.ApplicationUserId == applicationUserId);
 
-        var budgetItemExists = context.BudgetItems.Any(budgetItem =>
-            budgetItem.BudgetItemId == allocation.BudgetItemId
-            && budgetItem.ApplicationUserId == applicationUserId
-            && budgetItem.Currency == transaction.Currency);
-
-        if (!budgetItemExists)
-        {
-            return new AllocateTransactionResult.BudgetItemNotFound();
-        }
-
-        var existingAllocation = context.TransactionAllocations
-            .AsNoTracking()
-            .SingleOrDefault(existing =>
-                existing.TransactionId == allocation.TransactionId
-                && existing.ApplicationUserId == applicationUserId);
-
-        if (existingAllocation is not null)
-        {
-            if (existingAllocation.BudgetItemId != allocation.BudgetItemId)
+            if (transaction is null)
             {
-                return new AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem();
+                return new AllocateTransactionResult.TransactionNotFound();
             }
 
-            var existing = ToAllocation(existingAllocation, transaction);
-            var idempotent = IdempotentAllocation(existing);
-            context.AddAuditRecords(idempotent.AuditFacts, applicationUserId, auditContext);
-            context.SaveChanges();
-            return new AllocateTransactionResult.Allocated(idempotent, WasCreated: false);
-        }
+            var budgetItemExists = context.BudgetItems.Any(budgetItem =>
+                budgetItem.BudgetItemId == allocation.BudgetItemId
+                && budgetItem.ApplicationUserId == applicationUserId
+                && budgetItem.Currency == transaction.Currency);
 
-        var allocationRecord = new TransactionAllocationRecord
-        {
-            TransactionId = allocation.TransactionId,
-            ApplicationUserId = applicationUserId,
-            BudgetItemId = allocation.BudgetItemId,
-            Currency = transaction.Currency
-        };
+            if (!budgetItemExists)
+            {
+                return new AllocateTransactionResult.BudgetItemNotFound();
+            }
 
-        context.TransactionAllocations.Add(allocationRecord);
-        context.AddAuditRecords(allocation.AuditFacts, applicationUserId, auditContext);
+            var existingAllocation = context.TransactionAllocations
+                .AsNoTracking()
+                .SingleOrDefault(existing =>
+                    existing.TransactionId == allocation.TransactionId
+                    && existing.ApplicationUserId == applicationUserId);
 
-        try
-        {
-            context.SaveChanges();
-        }
-        catch (DbUpdateException exception) when (IsAllocationAlreadyStored(exception))
-        {
-            context.ChangeTracker.Clear();
-            return GetExistingAllocationResult(allocation, applicationUserId, transaction);
-        }
-        catch (DbUpdateException exception) when (PostgreSqlPersistenceErrors.IsForeignKeyViolation(
-            exception,
-            "fk_allocations_transaction_owner_currency"))
-        {
-            context.ChangeTracker.Clear();
-            return new AllocateTransactionResult.TransactionNotFound();
-        }
-        catch (DbUpdateException exception) when (PostgreSqlPersistenceErrors.IsForeignKeyViolation(
-            exception,
-            "fk_allocations_budget_item_owner_currency"))
-        {
-            context.ChangeTracker.Clear();
-            return new AllocateTransactionResult.BudgetItemNotFound();
-        }
+            if (existingAllocation is not null)
+            {
+                if (existingAllocation.BudgetItemId != allocation.BudgetItemId)
+                {
+                    return new AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem();
+                }
 
-        return new AllocateTransactionResult.Allocated(allocation, WasCreated: true);
+                var existing = ToAllocation(existingAllocation, transaction);
+                var recorded = TryRecordIdempotentAllocation(existing, applicationUserId);
+                if (recorded is null)
+                {
+                    continue;
+                }
+
+                return new AllocateTransactionResult.Allocated(recorded, WasCreated: false);
+            }
+
+            var allocationRecord = new TransactionAllocationRecord
+            {
+                TransactionId = allocation.TransactionId,
+                ApplicationUserId = applicationUserId,
+                BudgetItemId = allocation.BudgetItemId,
+                Currency = transaction.Currency
+            };
+
+            context.TransactionAllocations.Add(allocationRecord);
+            context.AddAuditRecords(allocation.AuditFacts, applicationUserId, auditContext);
+
+            try
+            {
+                context.SaveChanges();
+            }
+            catch (DbUpdateException exception) when (IsAllocationAlreadyStored(exception))
+            {
+                context.ChangeTracker.Clear();
+                continue;
+            }
+            catch (DbUpdateException exception) when (PostgreSqlPersistenceErrors.IsForeignKeyViolation(
+                exception,
+                "fk_allocations_transaction_owner_currency"))
+            {
+                context.ChangeTracker.Clear();
+                return new AllocateTransactionResult.TransactionNotFound();
+            }
+            catch (DbUpdateException exception) when (PostgreSqlPersistenceErrors.IsForeignKeyViolation(
+                exception,
+                "fk_allocations_budget_item_owner_currency"))
+            {
+                context.ChangeTracker.Clear();
+                return new AllocateTransactionResult.BudgetItemNotFound();
+            }
+
+            return new AllocateTransactionResult.Allocated(allocation, WasCreated: true);
+        }
     }
 
     public TransactionAllocation? Get(Guid transactionId)
@@ -190,32 +196,35 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
         return new RemoveTransactionAllocationResult.Removed(removed.Allocation);
     }
 
-    private AllocateTransactionResult GetExistingAllocationResult(
-        TransactionAllocation requestedAllocation,
-        Guid applicationUserId,
-        TransactionRecord transaction)
+    private TransactionAllocation? TryRecordIdempotentAllocation(
+        TransactionAllocation allocation,
+        Guid applicationUserId)
     {
-        var existingAllocation = context.TransactionAllocations
-            .AsNoTracking()
-            .SingleOrDefault(existing =>
-                existing.TransactionId == requestedAllocation.TransactionId
-                && existing.ApplicationUserId == applicationUserId);
+        using var transaction = context.Database.BeginTransaction();
+        var matchedRows = context.TransactionAllocations
+            .Where(existing =>
+                existing.TransactionId == allocation.TransactionId
+                && existing.ApplicationUserId == applicationUserId
+                && existing.BudgetItemId == allocation.BudgetItemId
+                && existing.Currency == allocation.Currency.Value)
+            .ExecuteUpdate(setters => setters.SetProperty(
+                existing => existing.Currency,
+                existing => existing.Currency));
 
-        if (existingAllocation is null)
+        if (matchedRows == 0)
         {
-            throw new InvalidOperationException("Allocation conflict was not available after a concurrent create.");
+            transaction.Rollback();
+            context.ChangeTracker.Clear();
+            return null;
         }
 
-        if (existingAllocation.BudgetItemId != requestedAllocation.BudgetItemId)
-        {
-            return new AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem();
-        }
-
-        var existing = ToAllocation(existingAllocation, transaction);
-        var idempotent = IdempotentAllocation(existing);
+        var idempotent = IdempotentAllocation(allocation);
         context.AddAuditRecords(idempotent.AuditFacts, applicationUserId, auditContext);
         context.SaveChanges();
-        return new AllocateTransactionResult.Allocated(idempotent, WasCreated: false);
+        transaction.Commit();
+        context.ChangeTracker.Clear();
+
+        return idempotent;
     }
 
     private static TransactionAllocation IdempotentAllocation(TransactionAllocation allocation)

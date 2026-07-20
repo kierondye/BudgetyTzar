@@ -1,3 +1,4 @@
+using System.Data.Common;
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
 using BudgetyTzar.Api.Features.Identity;
@@ -193,6 +194,187 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
 
         Assert.IsType<RemoveTransactionAllocationResult.NotFound>(result);
         Assert.Null(repository.Get(transactionId));
+    }
+
+    [Fact]
+    public async Task Allocation_remove_does_not_delete_concurrent_replacement_allocation()
+    {
+        await using var database = await CreateDatabaseAsync();
+        var userId = Guid.NewGuid();
+        var userKey = "postgres-remove-reallocate-race-user";
+        var transactionId = Guid.NewGuid();
+        var firstBudgetItemId = Guid.NewGuid();
+        var secondBudgetItemId = Guid.NewGuid();
+        await SeedBudgetItemAndTransactionAsync(
+            database.ConnectionString,
+            userId,
+            userKey,
+            transactionId,
+            firstBudgetItemId,
+            secondBudgetItemId);
+        await using (var seedContext = CreateContext(database.ConnectionString))
+        {
+            seedContext.TransactionAllocations.Add(Allocation(transactionId, userId, firstBudgetItemId));
+            await seedContext.SaveChangesAsync();
+        }
+
+        var interceptor = new BeforeSaveInterceptor(
+            context => HasDeleted<TransactionAllocationRecord>(context, allocation => allocation.TransactionId == transactionId),
+            connectionString =>
+            {
+                using var concurrentContext = CreateContext(connectionString);
+                var allocation = concurrentContext.TransactionAllocations.Single(allocation =>
+                    allocation.TransactionId == transactionId
+                    && allocation.ApplicationUserId == userId);
+                concurrentContext.TransactionAllocations.Remove(allocation);
+                concurrentContext.SaveChanges();
+                concurrentContext.TransactionAllocations.Add(Allocation(transactionId, userId, secondBudgetItemId));
+                concurrentContext.SaveChanges();
+            });
+        await using var context = CreateContext(database.ConnectionString, interceptor);
+        var repository = new PostgreSqlTransactionAllocationRepository(context, CurrentUser(userKey, database.ConnectionString));
+
+        var result = repository.Remove(transactionId);
+
+        Assert.IsType<RemoveTransactionAllocationResult.NotFound>(result);
+
+        await using var assertionContext = CreateContext(database.ConnectionString);
+        var storedAllocation = await assertionContext.TransactionAllocations.SingleAsync(allocation =>
+            allocation.TransactionId == transactionId
+            && allocation.ApplicationUserId == userId);
+        Assert.Equal(secondBudgetItemId, storedAllocation.BudgetItemId);
+        Assert.False(await assertionContext.AuditRecords.AnyAsync(record =>
+            record.Action == "TransactionAllocationRemoved"
+            && record.ApplicationUserId == userId));
+    }
+
+    [Fact]
+    public async Task Allocation_idempotent_retry_creates_when_concurrent_remove_wins_before_audit()
+    {
+        await using var database = await CreateDatabaseAsync();
+        var userId = Guid.NewGuid();
+        var userKey = "postgres-idempotent-remove-race-user";
+        var transactionId = Guid.NewGuid();
+        var budgetItemId = Guid.NewGuid();
+        await SeedBudgetItemAndTransactionAsync(database.ConnectionString, userId, userKey, transactionId, budgetItemId);
+        await using (var seedContext = CreateContext(database.ConnectionString))
+        {
+            seedContext.TransactionAllocations.Add(Allocation(transactionId, userId, budgetItemId));
+            await seedContext.SaveChangesAsync();
+        }
+
+        var interceptor = new BeforeAllocationRevalidationInterceptor(connectionString =>
+        {
+            using var concurrentContext = CreateContext(connectionString);
+            var allocation = concurrentContext.TransactionAllocations.Single(allocation =>
+                allocation.TransactionId == transactionId
+                && allocation.ApplicationUserId == userId);
+            concurrentContext.TransactionAllocations.Remove(allocation);
+            concurrentContext.SaveChanges();
+        });
+        await using var context = CreateContext(database.ConnectionString, interceptor);
+        var repository = new PostgreSqlTransactionAllocationRepository(context, CurrentUser(userKey, database.ConnectionString));
+
+        var result = repository.Allocate(CreateAllocation(CreateTransaction(transactionId), budgetItemId));
+
+        var allocated = Assert.IsType<AllocateTransactionResult.Allocated>(result);
+        Assert.True(allocated.WasCreated);
+        Assert.Equal(budgetItemId, allocated.Allocation.BudgetItemId);
+
+        await using var assertionContext = CreateContext(database.ConnectionString);
+        Assert.Equal(budgetItemId, (await assertionContext.TransactionAllocations.SingleAsync(
+            allocation => allocation.TransactionId == transactionId)).BudgetItemId);
+        Assert.False(await assertionContext.AuditRecords.AnyAsync(record =>
+            record.Action == "TransactionAllocationIdempotent"
+            && record.ApplicationUserId == userId));
+    }
+
+    [Fact]
+    public async Task Allocation_idempotent_retry_conflicts_when_concurrent_reallocation_wins_before_audit()
+    {
+        await using var database = await CreateDatabaseAsync();
+        var userId = Guid.NewGuid();
+        var userKey = "postgres-idempotent-reallocate-race-user";
+        var transactionId = Guid.NewGuid();
+        var firstBudgetItemId = Guid.NewGuid();
+        var secondBudgetItemId = Guid.NewGuid();
+        await SeedBudgetItemAndTransactionAsync(
+            database.ConnectionString,
+            userId,
+            userKey,
+            transactionId,
+            firstBudgetItemId,
+            secondBudgetItemId);
+        await using (var seedContext = CreateContext(database.ConnectionString))
+        {
+            seedContext.TransactionAllocations.Add(Allocation(transactionId, userId, firstBudgetItemId));
+            await seedContext.SaveChangesAsync();
+        }
+
+        var interceptor = new BeforeAllocationRevalidationInterceptor(connectionString =>
+        {
+            using var concurrentContext = CreateContext(connectionString);
+            var allocation = concurrentContext.TransactionAllocations.Single(allocation =>
+                allocation.TransactionId == transactionId
+                && allocation.ApplicationUserId == userId);
+            concurrentContext.TransactionAllocations.Remove(allocation);
+            concurrentContext.SaveChanges();
+            concurrentContext.TransactionAllocations.Add(Allocation(transactionId, userId, secondBudgetItemId));
+            concurrentContext.SaveChanges();
+        });
+        await using var context = CreateContext(database.ConnectionString, interceptor);
+        var repository = new PostgreSqlTransactionAllocationRepository(context, CurrentUser(userKey, database.ConnectionString));
+
+        var result = repository.Allocate(CreateAllocation(CreateTransaction(transactionId), firstBudgetItemId));
+
+        Assert.IsType<AllocateTransactionResult.AlreadyAllocatedToDifferentBudgetItem>(result);
+
+        await using var assertionContext = CreateContext(database.ConnectionString);
+        Assert.Equal(secondBudgetItemId, (await assertionContext.TransactionAllocations.SingleAsync(
+            allocation => allocation.TransactionId == transactionId)).BudgetItemId);
+        Assert.False(await assertionContext.AuditRecords.AnyAsync(record =>
+            record.Action == "TransactionAllocationIdempotent"
+            && record.ApplicationUserId == userId));
+    }
+
+    [Fact]
+    public async Task Allocation_create_retries_when_concurrent_winner_is_removed_before_recovery()
+    {
+        await using var database = await CreateDatabaseAsync();
+        var userId = Guid.NewGuid();
+        var userKey = "postgres-create-winner-removed-race-user";
+        var transactionId = Guid.NewGuid();
+        var budgetItemId = Guid.NewGuid();
+        await SeedBudgetItemAndTransactionAsync(database.ConnectionString, userId, userKey, transactionId, budgetItemId);
+        var beforeSave = new BeforeSaveInterceptor(
+            context => HasAdded<TransactionAllocationRecord>(context, allocation => allocation.TransactionId == transactionId),
+            connectionString =>
+            {
+                using var concurrentContext = CreateContext(connectionString);
+                concurrentContext.TransactionAllocations.Add(Allocation(transactionId, userId, budgetItemId));
+                concurrentContext.SaveChanges();
+            });
+        var afterFailure = new AfterSaveFailureInterceptor(connectionString =>
+        {
+            using var concurrentContext = CreateContext(connectionString);
+            var allocation = concurrentContext.TransactionAllocations.Single(allocation =>
+                allocation.TransactionId == transactionId
+                && allocation.ApplicationUserId == userId);
+            concurrentContext.TransactionAllocations.Remove(allocation);
+            concurrentContext.SaveChanges();
+        });
+        await using var context = CreateContext(database.ConnectionString, beforeSave, afterFailure);
+        var repository = new PostgreSqlTransactionAllocationRepository(context, CurrentUser(userKey, database.ConnectionString));
+
+        var result = repository.Allocate(CreateAllocation(CreateTransaction(transactionId), budgetItemId));
+
+        var allocated = Assert.IsType<AllocateTransactionResult.Allocated>(result);
+        Assert.True(allocated.WasCreated);
+        Assert.Equal(budgetItemId, allocated.Allocation.BudgetItemId);
+
+        await using var assertionContext = CreateContext(database.ConnectionString);
+        Assert.Equal(budgetItemId, (await assertionContext.TransactionAllocations.SingleAsync(
+            allocation => allocation.TransactionId == transactionId)).BudgetItemId);
     }
 
     [Fact]
@@ -405,6 +587,45 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
             if (!hasRun
                 && eventData.Context is ApplicationDbContext context
                 && shouldRun(context))
+            {
+                hasRun = true;
+                action(context.Database.GetConnectionString()
+                    ?? throw new InvalidOperationException("A test connection string is required."));
+            }
+
+            return result;
+        }
+    }
+
+    private sealed class AfterSaveFailureInterceptor(Action<string> action) : SaveChangesInterceptor
+    {
+        private bool hasRun;
+
+        public override void SaveChangesFailed(DbContextErrorEventData eventData)
+        {
+            if (!hasRun
+                && eventData.Context is ApplicationDbContext context)
+            {
+                hasRun = true;
+                action(context.Database.GetConnectionString()
+                    ?? throw new InvalidOperationException("A test connection string is required."));
+            }
+        }
+    }
+
+    private sealed class BeforeAllocationRevalidationInterceptor(Action<string> action) : DbCommandInterceptor
+    {
+        private bool hasRun;
+
+        public override InterceptionResult<int> NonQueryExecuting(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result)
+        {
+            if (!hasRun
+                && eventData.Context is ApplicationDbContext context
+                && command.CommandText.Contains("UPDATE", StringComparison.OrdinalIgnoreCase)
+                && command.CommandText.Contains("transaction_allocations", StringComparison.OrdinalIgnoreCase))
             {
                 hasRun = true;
                 action(context.Database.GetConnectionString()

@@ -289,13 +289,16 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(allocation => allocation.TransactionId)
                 .HasColumnName("transaction_id");
             entity.Property(allocation => allocation.ApplicationUserId)
-                .HasColumnName("application_user_id");
+                .HasColumnName("application_user_id")
+                .IsConcurrencyToken();
             entity.Property(allocation => allocation.BudgetItemId)
-                .HasColumnName("budget_item_id");
+                .HasColumnName("budget_item_id")
+                .IsConcurrencyToken();
             entity.Property(allocation => allocation.Currency)
                 .HasColumnName("currency")
                 .HasColumnType("character(3)")
-                .IsRequired();
+                .IsRequired()
+                .IsConcurrencyToken();
 
             entity.HasOne<ApplicationUserRecord>()
                 .WithMany()

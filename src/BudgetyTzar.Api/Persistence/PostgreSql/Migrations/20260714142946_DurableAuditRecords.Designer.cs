@@ -262,15 +262,18 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                         .HasColumnName("transaction_id");
 
                     b.Property<Guid>("ApplicationUserId")
+                        .IsConcurrencyToken()
                         .HasColumnType("uuid")
                         .HasColumnName("application_user_id");
 
                     b.Property<Guid>("BudgetItemId")
+                        .IsConcurrencyToken()
                         .HasColumnType("uuid")
                         .HasColumnName("budget_item_id");
 
                     b.Property<string>("Currency")
                         .IsRequired()
+                        .IsConcurrencyToken()
                         .HasColumnType("character(3)")
                         .HasColumnName("currency");
 
