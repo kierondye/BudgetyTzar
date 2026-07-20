@@ -320,7 +320,7 @@ internal sealed class PostgreSqlTestTransactionAllocationRepository(
             .ToList();
     }
 
-    public void Remove(Guid transactionId)
+    public RemoveTransactionAllocationResult Remove(Guid transactionId)
     {
         var applicationUserId = currentUser.UserId.Value;
         var record = context.TransactionAllocations
@@ -330,12 +330,15 @@ internal sealed class PostgreSqlTestTransactionAllocationRepository(
 
         if (record is null)
         {
-            return;
+            return new RemoveTransactionAllocationResult.NotFound();
         }
 
+        var allocation = ToAllocation(record);
         context.TransactionAllocations.Remove(record);
         context.SaveChanges();
         context.ChangeTracker.Clear();
+
+        return new RemoveTransactionAllocationResult.Removed(allocation);
     }
 
     private static TransactionAllocation ToAllocation(TransactionAllocationRecord record)

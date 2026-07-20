@@ -12,6 +12,7 @@ public sealed class BudgetDomainTests
 
         Assert.Equal("UK", budget.Name.Value);
         Assert.Empty(budget.BudgetItems);
+        Assert.Empty(budget.AuditFacts);
     }
 
     [Fact]
@@ -41,6 +42,28 @@ public sealed class BudgetDomainTests
         Assert.Equal("Pay", updatedBudgetItem.Name.Value);
         Assert.Equal(BudgetItemKind.Funding, updatedBudgetItem.Kind);
         Assert.Equal("3200.00", updatedBudgetItem.PlannedAmount.FormattedValue);
+    }
+
+    [Fact]
+    public void Mutations_append_immutable_audit_facts_with_complete_budget_values()
+    {
+        var budget = CreateBudget("UK");
+        var budgetItemId = Guid.NewGuid();
+
+        var added = Assert.IsType<AddBudgetItemResult.Added>(
+            budget.AddBudgetItem(budgetItemId, Name("Salary"), BudgetItemKind.Funding, Money("3000.00")));
+
+        Assert.Empty(budget.AuditFacts);
+        Assert.Single(added.Budget.AuditFacts);
+
+        var fact = added.Budget.AuditFacts[^1];
+        Assert.NotEqual(Guid.Empty, fact.Id);
+        Assert.Equal(AuditAction.BudgetItemCreated, fact.Action);
+        Assert.Contains(budget.BudgetId.ToString(), fact.OldValue, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(budgetItemId.ToString(), fact.NewValue, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(nameof(Budget.AuditFacts), fact.OldValue, StringComparison.Ordinal);
+        Assert.DoesNotContain(nameof(Budget.AuditFacts), fact.NewValue, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"value\"", fact.NewValue, StringComparison.Ordinal);
     }
 
     [Fact]

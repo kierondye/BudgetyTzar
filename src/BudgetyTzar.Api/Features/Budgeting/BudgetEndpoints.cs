@@ -71,7 +71,7 @@ public static class BudgetEndpoints
 
         var valid = (CreateBudgetValidationResult.Valid)validation;
 
-        return Budget.Create(Guid.NewGuid(), valid.Name, valid.Currency) switch
+        return Budget.CreateForCommand(Guid.NewGuid(), valid.Name, valid.Currency) switch
         {
             CreateBudgetResult.InvalidIdentity => Results.ValidationProblem(
                 new Dictionary<string, string[]>(StringComparer.Ordinal)
@@ -89,16 +89,23 @@ public static class BudgetEndpoints
                 return BudgetNameAlreadyInUse();
             }
 
-            return budgets.Save(budget) switch
+            var saveResult = budgets.Save(budget);
+
+            return saveResult switch
             {
                 BudgetSaveResult.DuplicateIdentity => BudgetIdentityAlreadyExists(),
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
                 BudgetSaveResult.StaleState => BudgetWasModified(),
-                BudgetSaveResult.Saved saved => Results.Created(
-                    $"/api/budgets/{saved.Budget.BudgetId}",
-                    BudgetResponse.FromBudget(saved.Budget)),
+                BudgetSaveResult.Saved saved => CreatedBudget(saved.Budget),
                 _ => throw new InvalidOperationException("Unexpected save budget result.")
             };
+        }
+
+        static IResult CreatedBudget(Budget budget)
+        {
+            return Results.Created(
+                $"/api/budgets/{budget.BudgetId}",
+                BudgetResponse.FromBudget(budget));
         }
     }
 
@@ -154,11 +161,16 @@ public static class BudgetEndpoints
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
                 BudgetSaveResult.StaleState => BudgetWasModified(),
                 BudgetSaveResult.NotFound => Results.NotFound(),
-                BudgetSaveResult.Saved saved => Results.Ok(BudgetResponse.FromBudget(saved.Budget)),
+                BudgetSaveResult.Saved saved => RenamedBudget(saved.Budget),
                 _ => throw new InvalidOperationException("Unexpected save budget result.")
             },
             _ => throw new InvalidOperationException("Unexpected rename budget result.")
         };
+
+        static IResult RenamedBudget(Budget newBudget)
+        {
+            return Results.Ok(BudgetResponse.FromBudget(newBudget));
+        }
     }
 
     private static IResult CreateBudgetItem(
@@ -201,13 +213,18 @@ public static class BudgetEndpoints
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
                 BudgetSaveResult.StaleState => BudgetWasModified(),
                 BudgetSaveResult.NotFound => Results.NotFound(),
-                BudgetSaveResult.Saved => Results.Created(
-                    $"/api/budgets/{budgetId}/budget-items/{budgetItemId}",
-                    BudgetItemResponse.FromBudgetItem(added.BudgetItem)),
+                BudgetSaveResult.Saved => CreatedBudgetItem(added.Budget, added.BudgetItem),
                 _ => throw new InvalidOperationException("Unexpected save budget result.")
             },
             _ => throw new InvalidOperationException("Unexpected add budget item result.")
         };
+
+        IResult CreatedBudgetItem(Budget budget, BudgetItem budgetItem)
+        {
+            return Results.Created(
+                $"/api/budgets/{budgetId}/budget-items/{budgetItemId}",
+                BudgetItemResponse.FromBudgetItem(budgetItem));
+        }
     }
 
     private static IResult GetBudgetItems(Guid budgetId, IBudgetRepository budgets)
@@ -267,11 +284,16 @@ public static class BudgetEndpoints
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
                 BudgetSaveResult.StaleState => BudgetWasModified(),
                 BudgetSaveResult.NotFound => Results.NotFound(),
-                BudgetSaveResult.Saved => Results.Ok(BudgetItemResponse.FromBudgetItem(renamed.BudgetItem)),
+                BudgetSaveResult.Saved => RenamedBudgetItem(renamed.BudgetItem),
                 _ => throw new InvalidOperationException("Unexpected save budget result.")
             },
             _ => throw new InvalidOperationException("Unexpected rename budget item result.")
         };
+
+        static IResult RenamedBudgetItem(BudgetItem newBudgetItem)
+        {
+            return Results.Ok(BudgetItemResponse.FromBudgetItem(newBudgetItem));
+        }
     }
 
     private static IResult ChangeBudgetItemPlannedAmount(
@@ -305,11 +327,16 @@ public static class BudgetEndpoints
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
                 BudgetSaveResult.StaleState => BudgetWasModified(),
                 BudgetSaveResult.NotFound => Results.NotFound(),
-                BudgetSaveResult.Saved => Results.Ok(BudgetItemResponse.FromBudgetItem(changed.BudgetItem)),
+                BudgetSaveResult.Saved => ChangedBudgetItemPlannedAmount(changed.BudgetItem),
                 _ => throw new InvalidOperationException("Unexpected save budget result.")
             },
             _ => throw new InvalidOperationException("Unexpected change budget item planned amount result.")
         };
+
+        static IResult ChangedBudgetItemPlannedAmount(BudgetItem newBudgetItem)
+        {
+            return Results.Ok(BudgetItemResponse.FromBudgetItem(newBudgetItem));
+        }
     }
 
     private static IResult DeleteBudgetItem(
@@ -333,11 +360,16 @@ public static class BudgetEndpoints
                 BudgetSaveResult.DuplicateName => BudgetNameAlreadyInUse(),
                 BudgetSaveResult.StaleState => BudgetWasModified(),
                 BudgetSaveResult.NotFound => Results.NotFound(),
-                BudgetSaveResult.Saved => Results.NoContent(),
+                BudgetSaveResult.Saved => DeletedBudgetItem(),
                 _ => throw new InvalidOperationException("Unexpected save budget result.")
             },
             _ => throw new InvalidOperationException("Unexpected remove budget item result.")
         };
+
+        static IResult DeletedBudgetItem()
+        {
+            return Results.NoContent();
+        }
     }
 
     private static CreateBudgetValidationResult Validate(CreateBudgetRequest request)

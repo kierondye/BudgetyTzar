@@ -158,9 +158,12 @@ public abstract class TransactionAllocationRepositoryContractTests : RepositoryC
         currentUser.Allocations.Allocate(CreateAllocation(transaction, budgetItemId));
         otherUser.Allocations.Allocate(CreateAllocation(otherTransaction, otherBudgetItemId));
 
-        currentUser.Allocations.Remove(transaction.TransactionId);
-        currentUser.Allocations.Remove(otherTransaction.TransactionId);
+        var removeCurrentUserResult = currentUser.Allocations.Remove(transaction.TransactionId);
+        var removeOtherUserResult = currentUser.Allocations.Remove(otherTransaction.TransactionId);
 
+        var removed = Assert.IsType<RemoveTransactionAllocationResult.Removed>(removeCurrentUserResult);
+        Assert.Equal(transaction.TransactionId, removed.Allocation.TransactionId);
+        Assert.IsType<RemoveTransactionAllocationResult.NotFound>(removeOtherUserResult);
         Assert.Null(currentUser.Allocations.Get(transaction.TransactionId));
         Assert.Equal(otherBudgetItemId, otherUser.Allocations.Get(otherTransaction.TransactionId)?.BudgetItemId);
     }

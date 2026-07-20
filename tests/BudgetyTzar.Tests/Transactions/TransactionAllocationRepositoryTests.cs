@@ -177,9 +177,12 @@ public sealed class TransactionAllocationRepositoryTests
         allocationRepository.Allocate(CreateAllocation(transaction, budgetItemId));
         otherAllocationRepository.Allocate(CreateAllocation(otherTransaction, otherBudgetItemId));
 
-        allocationRepository.Remove(transaction.TransactionId);
-        allocationRepository.Remove(otherTransaction.TransactionId);
+        var removeCurrentUserResult = allocationRepository.Remove(transaction.TransactionId);
+        var removeOtherUserResult = allocationRepository.Remove(otherTransaction.TransactionId);
 
+        var removed = Assert.IsType<RemoveTransactionAllocationResult.Removed>(removeCurrentUserResult);
+        Assert.Equal(transaction.TransactionId, removed.Allocation.TransactionId);
+        Assert.IsType<RemoveTransactionAllocationResult.NotFound>(removeOtherUserResult);
         Assert.Null(allocationRepository.Get(transaction.TransactionId));
         Assert.Equal(otherBudgetItemId, otherAllocationRepository.Get(otherTransaction.TransactionId)?.BudgetItemId);
     }

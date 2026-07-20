@@ -14,6 +14,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<TransactionAllocationRecord> TransactionAllocations => Set<TransactionAllocationRecord>();
 
+    public DbSet<AuditRecord> AuditRecords => Set<AuditRecord>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("budgetytzar");
@@ -24,6 +26,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         ConfigureBudgetItems(modelBuilder);
         ConfigureTransactions(modelBuilder);
         ConfigureTransactionAllocations(modelBuilder);
+        ConfigureAuditRecords(modelBuilder);
     }
 
     private static void ConfigureApplicationUsers(ModelBuilder modelBuilder)
@@ -286,13 +289,16 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(allocation => allocation.TransactionId)
                 .HasColumnName("transaction_id");
             entity.Property(allocation => allocation.ApplicationUserId)
-                .HasColumnName("application_user_id");
+                .HasColumnName("application_user_id")
+                .IsConcurrencyToken();
             entity.Property(allocation => allocation.BudgetItemId)
-                .HasColumnName("budget_item_id");
+                .HasColumnName("budget_item_id")
+                .IsConcurrencyToken();
             entity.Property(allocation => allocation.Currency)
                 .HasColumnName("currency")
                 .HasColumnType("character(3)")
-                .IsRequired();
+                .IsRequired()
+                .IsConcurrencyToken();
 
             entity.HasOne<ApplicationUserRecord>()
                 .WithMany()
@@ -355,6 +361,67 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.ToTable(table =>
             {
                 table.HasCheckConstraint("ck_transaction_allocations_currency_format", "currency ~ '^[A-Z]{3}$'");
+            });
+        });
+    }
+
+    private static void ConfigureAuditRecords(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<AuditRecord>(entity =>
+        {
+            entity.ToTable("audit_records");
+
+            entity.HasKey(audit => audit.AuditRecordId)
+                .HasName("pk_audit_records");
+
+            entity.Property(audit => audit.AuditRecordId)
+                .HasColumnName("audit_record_id");
+            entity.Property(audit => audit.PersistedAtUtc)
+                .HasColumnName("persisted_at_utc");
+            entity.Property(audit => audit.ApplicationUserId)
+                .HasColumnName("application_user_id");
+            entity.Property(audit => audit.OperationName)
+                .HasColumnName("operation_name")
+                .HasColumnType("text")
+                .IsRequired();
+            entity.Property(audit => audit.CorrelationId)
+                .HasColumnName("correlation_id")
+                .HasColumnType("text")
+                .IsRequired();
+            entity.Property(audit => audit.Action)
+                .HasColumnName("action")
+                .HasColumnType("text")
+                .IsRequired();
+            entity.Property(audit => audit.OldValue)
+                .HasColumnName("old_value")
+                .HasColumnType("jsonb");
+            entity.Property(audit => audit.NewValue)
+                .HasColumnName("new_value")
+                .HasColumnType("jsonb");
+
+            entity.HasOne<ApplicationUserRecord>()
+                .WithMany()
+                .HasForeignKey(audit => audit.ApplicationUserId)
+                .HasConstraintName("fk_audit_records_application_users_application_user_id")
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(audit => new { audit.ApplicationUserId, audit.PersistedAtUtc })
+                .HasDatabaseName("ix_audit_records_application_user_id_persisted_at_utc");
+            entity.HasIndex(audit => new { audit.ApplicationUserId, audit.Action })
+                .HasDatabaseName("ix_audit_records_application_user_id_action");
+            entity.HasIndex(audit => audit.CorrelationId)
+                .HasDatabaseName("ix_audit_records_correlation_id");
+
+            entity.ToTable(table =>
+            {
+                table.HasCheckConstraint(
+                    "ck_audit_records_operation_name_not_blank",
+                    "length(btrim(operation_name)) > 0");
+                table.HasCheckConstraint(
+                    "ck_audit_records_correlation_id_not_blank",
+                    "length(btrim(correlation_id)) > 0");
+                table.HasCheckConstraint(
+                    "ck_audit_records_action_not_blank",
+                    "length(btrim(action)) > 0");
             });
         });
     }

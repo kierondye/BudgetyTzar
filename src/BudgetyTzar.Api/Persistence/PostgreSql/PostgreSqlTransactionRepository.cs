@@ -1,5 +1,6 @@
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
+using BudgetyTzar.Api.Features.Audit;
 using BudgetyTzar.Api.Features.Identity;
 using BudgetyTzar.Api.Features.Transactions;
 using Microsoft.EntityFrameworkCore;
@@ -10,11 +11,16 @@ public sealed class PostgreSqlTransactionRepository : ITransactionRepository
 {
     private readonly ApplicationDbContext context;
     private readonly ApplicationUserId userId;
+    private readonly IAuditRequestContext auditContext;
 
-    public PostgreSqlTransactionRepository(ApplicationDbContext context, ICurrentUser currentUser)
+    public PostgreSqlTransactionRepository(
+        ApplicationDbContext context,
+        ICurrentUser currentUser,
+        IAuditRequestContext? auditContext = null)
     {
         this.context = context;
         userId = currentUser.UserId;
+        this.auditContext = auditContext ?? new RepositoryAuditRequestContext();
     }
 
     public void Add(Transaction transaction)
@@ -24,6 +30,7 @@ public sealed class PostgreSqlTransactionRepository : ITransactionRepository
         while (true)
         {
             context.Transactions.Add(CreateRecord(transaction, applicationUserId));
+            context.AddAuditRecords(transaction.AuditFacts, applicationUserId, auditContext);
 
             try
             {
@@ -87,6 +94,14 @@ public sealed class PostgreSqlTransactionRepository : ITransactionRepository
         }
 
         context.Transactions.Remove(transaction);
+        var domainTransaction = ToTransaction(transaction);
+        if (domainTransaction.Delete() is not DeleteTransactionEntityResult.Deleted deleted)
+        {
+            throw new InvalidOperationException("Unexpected delete transaction result.");
+        }
+
+        context.AddAuditRecords(deleted.Transaction.AuditFacts, applicationUserId, auditContext);
+
         try
         {
             context.SaveChanges();
@@ -107,18 +122,18 @@ public sealed class PostgreSqlTransactionRepository : ITransactionRepository
         if (!TransactionType.TryCreate(record.Type, out var type)
             || !PositiveMoneyAmount.TryCreate(record.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture), out var amount)
             || !CurrencyCode.TryCreate(record.Currency, out var currency)
-            || Transaction.Create(
-                record.TransactionId,
-                record.Description,
-                type,
-                record.TransactionDate,
-                amount!,
-                currency) is not CreateTransactionResult.Created created)
+            || string.IsNullOrWhiteSpace(record.Description))
         {
             throw new InvalidOperationException("Stored transaction data is invalid.");
         }
 
-        return created.Transaction;
+        return new Transaction(
+            record.TransactionId,
+            record.Description,
+            type,
+            record.TransactionDate,
+            amount!,
+            currency);
     }
 
     private TransactionRecord CreateRecord(Transaction transaction, Guid applicationUserId)

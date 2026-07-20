@@ -17,6 +17,7 @@ public sealed class TransactionDomainTests
             Currency("GBP")));
 
         Assert.Equal("Salary", created.Transaction.Description);
+        Assert.Empty(created.Transaction.AuditFacts);
     }
 
     [Fact]
@@ -43,6 +44,29 @@ public sealed class TransactionDomainTests
     }
 
     [Fact]
+    public void Transaction_audit_values_exclude_description_and_audit_facts()
+    {
+        var transaction = CreateTransaction(
+            Guid.NewGuid(),
+            "Sensitive supermarket text",
+            TransactionType.Debit,
+            new DateOnly(2026, 7, 2),
+            Money("42.50"),
+            Currency("GBP"));
+
+        var deleted = Assert.IsType<DeleteTransactionEntityResult.Deleted>(transaction.Delete());
+        var fact = Assert.Single(deleted.Transaction.AuditFacts);
+
+        Assert.Equal(AuditAction.TransactionDeleted, fact.Action);
+        Assert.NotNull(fact.OldValue);
+        Assert.Null(fact.NewValue);
+        Assert.DoesNotContain("Sensitive supermarket text", fact.OldValue, StringComparison.Ordinal);
+        Assert.DoesNotContain(nameof(Transaction.AuditFacts), fact.OldValue, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"value\"", fact.OldValue, StringComparison.Ordinal);
+        Assert.Contains(transaction.TransactionId.ToString(), fact.OldValue, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Allocation_uses_full_transaction_amount_and_currency()
     {
         var transaction = CreateTransaction(
@@ -62,6 +86,30 @@ public sealed class TransactionDomainTests
         Assert.Equal(budgetItemId, allocation.BudgetItemId);
         Assert.Same(transaction.Amount, allocation.Amount);
         Assert.Equal(transaction.Currency, allocation.Currency);
+        Assert.Empty(allocation.AuditFacts);
+    }
+
+    [Fact]
+    public void Allocation_removal_creates_an_audit_fact_for_the_state_change()
+    {
+        var transaction = CreateTransaction(
+            Guid.NewGuid(),
+            "Groceries",
+            TransactionType.Debit,
+            new DateOnly(2026, 7, 2),
+            Money("42.50"),
+            Currency("GBP"));
+        var allocated = Assert.IsType<AllocateTransactionEntityResult.Allocated>(
+            TransactionAllocation.Allocate(transaction, Guid.NewGuid()));
+
+        var removed = Assert.IsType<RemoveTransactionAllocationEntityResult.Removed>(
+            allocated.Allocation.Remove());
+
+        Assert.Empty(allocated.Allocation.AuditFacts);
+        var fact = Assert.Single(removed.Allocation.AuditFacts);
+        Assert.Equal(AuditAction.TransactionAllocationRemoved, fact.Action);
+        Assert.NotNull(fact.OldValue);
+        Assert.Null(fact.NewValue);
     }
 
     [Fact]

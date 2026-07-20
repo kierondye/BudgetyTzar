@@ -65,15 +65,20 @@ public sealed class InMemoryTransactionAllocationRepository : ITransactionAlloca
         }
     }
 
-    public void Remove(Guid transactionId)
+    public RemoveTransactionAllocationResult Remove(Guid transactionId)
     {
         lock (store.SyncRoot)
         {
-            if (AllocationBelongsToCurrentUser(transactionId))
+            if (!AllocationBelongsToCurrentUser(transactionId))
             {
-                store.AllocationsByTransactionId.Remove(transactionId);
-                store.AllocationOwnersByTransactionId.Remove(transactionId);
+                return new RemoveTransactionAllocationResult.NotFound();
             }
+
+            var allocation = store.AllocationsByTransactionId[transactionId];
+            store.AllocationsByTransactionId.Remove(transactionId);
+            store.AllocationOwnersByTransactionId.Remove(transactionId);
+
+            return new RemoveTransactionAllocationResult.Removed(allocation);
         }
     }
 
@@ -107,4 +112,11 @@ public abstract record AllocateTransactionResult
     public sealed record BudgetItemNotFound : AllocateTransactionResult;
 
     public sealed record AlreadyAllocatedToDifferentBudgetItem : AllocateTransactionResult;
+}
+
+public abstract record RemoveTransactionAllocationResult
+{
+    public sealed record Removed(TransactionAllocation Allocation) : RemoveTransactionAllocationResult;
+
+    public sealed record NotFound : RemoveTransactionAllocationResult;
 }

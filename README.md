@@ -99,8 +99,12 @@ When `PostgreSql` is selected, a connection string is required through
 `ConnectionStrings__BudgetyTzar`, `Persistence__ConnectionString`, or
 `Persistence__PostgreSql__ConnectionString`; missing configuration fails during
 startup. PostgreSQL persistence uses the durable application-user store and durable
-budget, transaction, and allocation repositories. Business API behaviour and response
-contracts remain the same across supported persistence providers.
+budget, transaction, allocation, and audit record storage. Business API behaviour and
+response contracts remain the same across supported persistence providers. Audit
+records are built from aggregate-owned semantic audit facts, enriched by persistence
+with the internal authenticated application user, endpoint or operation, request
+correlation ID, and durable-save timestamp, and retained for a future audit timeline
+API; no public audit API is exposed yet.
 
 ### Health and Readiness
 

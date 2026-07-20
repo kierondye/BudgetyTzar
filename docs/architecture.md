@@ -106,10 +106,27 @@ user so handlers can coordinate use cases without manually filtering cross-user 
 Shared domain types live under `Domain` because Budgeting, Transactions, Allocations,
 and Reporting use the same ubiquitous language and invariant-protecting values.
 Domain code does not depend on endpoints, repositories, ASP.NET Core, or storage.
+Immutable aggregates may carry semantic `AuditFact` values that describe what the
+aggregate operation did and the aggregate business state before and after it did it.
+Those facts are domain-owned operation results, not persistence metadata.
+Neutral construction factories remain available for constructing or restoring domain
+values without implying that a user-visible command occurred. Command-facing creation
+operations return the newly created aggregate with its creation audit fact already
+attached.
 
 Reporting reads across boundaries because a budget summary combines budgets, budget
 items, transactions, and allocations. It does not mutate those boundaries or take
 ownership of their data.
+
+Audit is a separate boundary for durable change records. Aggregates own semantic
+audit facts for audited mutations, while persistence owns durable record enrichment:
+the authenticated application user, the committing endpoint or operation, the request
+correlation ID, and the authoritative save timestamp. Command handlers express the
+requested use case and save through feature-owned persistence contracts; they do not
+construct or pass audit records. PostgreSQL repositories store aggregate audit facts
+in the audit table in the same `SaveChanges` call as the business change. Public HTTP
+response contracts do not expose audit facts or audit records. The in-memory runtime
+does not persist audit records.
 
 ## Repository Map
 
@@ -117,8 +134,9 @@ ownership of their data.
 | --- | --- |
 | `src/BudgetyTzar.Api/Program.cs` | Process entry point. Creates and runs the web application. |
 | `src/BudgetyTzar.Api/ApiApplication.cs` | Composition root. Registers services and endpoint groups. |
-| `src/BudgetyTzar.Api/Domain/Entities` | Immutable entities, aggregates, operations, and result types. |
+| `src/BudgetyTzar.Api/Domain/Entities` | Immutable entities, aggregates, semantic audit facts, operations, and result types. |
 | `src/BudgetyTzar.Api/Domain/ValueTypes` | Validated domain values such as names, currencies, money amounts, and kinds. |
+| `src/BudgetyTzar.Api/Features/Audit` | Audit boundary registration and explicit audit metadata shaping. |
 | `src/BudgetyTzar.Api/Features/Identity` | Authentication configuration, authenticated claim resolution, and current-user identity. |
 | `src/BudgetyTzar.Api/Features/Budgeting` | Budget endpoints, HTTP contracts, persistence contracts, handlers, and persistence adapters. |
 | `src/BudgetyTzar.Api/Features/Transactions` | Transaction and allocation endpoints, HTTP contracts, persistence contracts, handlers, and persistence adapters. |
@@ -150,9 +168,9 @@ sequenceDiagram
     Repository->>Store: read under persistence rules
     Repository-->>Endpoint: EntityState<T>
     Endpoint->>Domain: invoke named operation
-    Domain-->>Endpoint: explicit operation result
+    Domain-->>Endpoint: explicit operation result, including semantic audit facts
     Endpoint->>Repository: Save updated EntityState<T>
-    Repository->>Store: check consistency and write atomically
+    Repository->>Store: check consistency and write business rows plus audit records atomically
     Repository-->>Endpoint: explicit persistence result
     Endpoint-->>Client: mapped HTTP response
 ```
@@ -160,7 +178,9 @@ sequenceDiagram
 Handlers coordinate the request. They validate transport input, call domain or
 application operations, pass repository-owned state back to repositories, and map
 explicit outcomes to HTTP responses. They should not know how persistence versions,
-storage locks, or database tokens work.
+storage locks, database tokens, or durable audit records work. Handlers do not create
+or pass audit facts separately; audited facts are part of the immutable aggregate
+returned by the domain operation.
 
 `EntityState<T>` carries opaque repository-owned concurrency state through
 `Get -> domain operation -> Save`. It exists so repositories can enforce stale-write
@@ -209,8 +229,9 @@ happen under the same synchronization boundary.
 
 The persistence composition root selects either in-memory or PostgreSQL adapters from
 configuration. The PostgreSQL provider owns storage records, migrations, and durable
-adapters for current operational data. It models application-user ownership in
-storage, monetary precision, foreign keys, uniqueness, ordering, and lookup indexes.
+adapters for current operational data and audit records. It models application-user
+ownership in storage, monetary precision, foreign keys, uniqueness, ordering, and
+lookup indexes.
 Domain entities, endpoint handlers, reporting contracts, and HTTP contracts must
 remain free of EF Core, Npgsql, connection strings, database tokens, and owner identity
 fields.
@@ -218,6 +239,14 @@ fields.
 Repositories own storage-wide consistency and concurrency state because those rules
 depend on stored data, not only on a single aggregate's in-memory state. Aggregates own
 the invariants they can decide from their own state.
+
+PostgreSQL audit records are generated from aggregate-owned `AuditFact` values and
+are enriched by persistence with current-user, endpoint or operation, correlation ID,
+and save timestamp metadata. Repositories add those records to the same EF Core
+context before saving so the business write and audit records commit or roll back
+together. Operations that intentionally succeed without changing state, such as
+idempotent allocation to the same budget item, do not produce an audit fact or durable
+audit record.
 
 Persistence contracts sit between feature orchestration and adapters. A new adapter
 must implement the relevant feature contracts without leaking database tokens, storage

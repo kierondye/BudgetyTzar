@@ -1,16 +1,29 @@
+using System.Collections.Immutable;
 using BudgetyTzar.Api.Domain.ValueTypes;
 
 namespace BudgetyTzar.Api.Domain.Entities;
 
 public sealed class Transaction
 {
-    private Transaction(
+    internal Transaction(
         Guid transactionId,
         string description,
         TransactionType type,
         DateOnly transactionDate,
         PositiveMoneyAmount amount,
         CurrencyCode currency)
+        : this(transactionId, description.Trim(), type, transactionDate, amount, currency, [])
+    {
+    }
+
+    private Transaction(
+        Guid transactionId,
+        string description,
+        TransactionType type,
+        DateOnly transactionDate,
+        PositiveMoneyAmount amount,
+        CurrencyCode currency,
+        ImmutableArray<AuditFact> auditFacts)
     {
         TransactionId = transactionId;
         Description = description;
@@ -18,6 +31,7 @@ public sealed class Transaction
         TransactionDate = transactionDate;
         Amount = amount;
         Currency = currency;
+        AuditFacts = auditFacts;
     }
 
     public Guid TransactionId { get; }
@@ -31,6 +45,8 @@ public sealed class Transaction
     public PositiveMoneyAmount Amount { get; }
 
     public CurrencyCode Currency { get; }
+
+    public ImmutableArray<AuditFact> AuditFacts { get; }
 
     public static CreateTransactionResult Create(
         Guid transactionId,
@@ -53,6 +69,44 @@ public sealed class Transaction
         return new CreateTransactionResult.Created(
             new Transaction(transactionId, description.Trim(), type, transactionDate, amount, currency));
     }
+
+    internal static CreateTransactionResult CreateForCommand(
+        Guid transactionId,
+        string description,
+        TransactionType type,
+        DateOnly transactionDate,
+        PositiveMoneyAmount amount,
+        CurrencyCode currency)
+    {
+        return Create(transactionId, description, type, transactionDate, amount, currency) switch
+        {
+            CreateTransactionResult.Created created => new CreateTransactionResult.Created(
+                created.Transaction.WithAuditFact(AuditAction.TransactionCreated, null, created.Transaction)),
+            CreateTransactionResult.InvalidIdentity invalid => invalid,
+            CreateTransactionResult.InvalidDescription invalid => invalid,
+            _ => throw new InvalidOperationException("Unexpected create transaction result.")
+        };
+    }
+
+    public DeleteTransactionEntityResult Delete()
+    {
+        return new DeleteTransactionEntityResult.Deleted(WithAuditFact(AuditAction.TransactionDeleted, this, null));
+    }
+
+    private Transaction WithAuditFact(AuditAction action, Transaction? oldValue, Transaction? newValue)
+    {
+        return new Transaction(
+            TransactionId,
+            Description,
+            Type,
+            TransactionDate,
+            Amount,
+            Currency,
+            AuditFacts.Add(AuditFact.Create(
+                action,
+                oldValue is null ? null : AuditValueSerializer.Serialize(oldValue),
+                newValue is null ? null : AuditValueSerializer.Serialize(newValue))));
+    }
 }
 
 public abstract record CreateTransactionResult
@@ -62,4 +116,9 @@ public abstract record CreateTransactionResult
     public sealed record InvalidIdentity : CreateTransactionResult;
 
     public sealed record InvalidDescription : CreateTransactionResult;
+}
+
+public abstract record DeleteTransactionEntityResult
+{
+    public sealed record Deleted(Transaction Transaction) : DeleteTransactionEntityResult;
 }
