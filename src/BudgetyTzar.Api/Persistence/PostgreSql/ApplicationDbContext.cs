@@ -1,13 +1,9 @@
-using BudgetyTzar.Api.Features.Audit;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace BudgetyTzar.Api.Persistence.PostgreSql;
 
 public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : DbContext(options)
 {
-    private Guid? auditApplicationUserId;
-
     public DbSet<ApplicationUserRecord> ApplicationUsers => Set<ApplicationUserRecord>();
 
     public DbSet<BudgetRecord> Budgets => Set<BudgetRecord>();
@@ -20,46 +16,6 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<AuditRecord> AuditRecords => Set<AuditRecord>();
 
-    public void UseAuditUser(Guid applicationUserId)
-    {
-        auditApplicationUserId = applicationUserId;
-    }
-
-    public void RecordAudit(AuditEntry entry)
-    {
-        if (auditApplicationUserId is not { } applicationUserId)
-        {
-            return;
-        }
-
-        AuditRecords.Add(new AuditRecord
-        {
-            AuditRecordId = Guid.NewGuid(),
-            OccurredAtUtc = DateTimeOffset.UtcNow,
-            ApplicationUserId = applicationUserId,
-            ActorApplicationUserId = applicationUserId,
-            OperationName = entry.OperationName,
-            ResourceType = entry.ResourceType,
-            ResourceId = entry.ResourceId,
-            BeforeState = entry.BeforeStateJson,
-            AfterState = entry.AfterStateJson
-        });
-    }
-
-    public override int SaveChanges(bool acceptAllChangesOnSuccess)
-    {
-        AddAuditRecordsForTrackedChanges();
-        return base.SaveChanges(acceptAllChangesOnSuccess);
-    }
-
-    public override Task<int> SaveChangesAsync(
-        bool acceptAllChangesOnSuccess,
-        CancellationToken cancellationToken = default)
-    {
-        AddAuditRecordsForTrackedChanges();
-        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-    }
-
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("budgetytzar");
@@ -71,212 +27,6 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         ConfigureTransactions(modelBuilder);
         ConfigureTransactionAllocations(modelBuilder);
         ConfigureAuditRecords(modelBuilder);
-    }
-
-    private void AddAuditRecordsForTrackedChanges()
-    {
-        if (auditApplicationUserId is null)
-        {
-            return;
-        }
-
-        ChangeTracker.DetectChanges();
-
-        var entries = ChangeTracker.Entries()
-            .Where(entry => entry.Entity is not AuditRecord
-                && entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
-            .ToList();
-
-        foreach (var entry in entries)
-        {
-            foreach (var auditEntry in CreateAuditEntries(entry))
-            {
-                RecordAudit(auditEntry);
-            }
-        }
-    }
-
-    private IEnumerable<AuditEntry> CreateAuditEntries(EntityEntry entry)
-    {
-        return entry.Entity switch
-        {
-            BudgetRecord => CreateBudgetAuditEntries(entry),
-            BudgetItemRecord => CreateBudgetItemAuditEntries(entry),
-            TransactionRecord => CreateTransactionAuditEntries(entry),
-            TransactionAllocationRecord => CreateTransactionAllocationAuditEntries(entry),
-            _ => []
-        };
-    }
-
-    private static IEnumerable<AuditEntry> CreateBudgetAuditEntries(EntityEntry entry)
-    {
-        var budget = (BudgetRecord)entry.Entity;
-
-        return entry.State switch
-        {
-            EntityState.Added =>
-            [
-                AuditEntry.BudgetCreated(
-                    budget.BudgetId,
-                    budget.Name,
-                    budget.Currency)
-            ],
-            EntityState.Modified when IsModified(entry, nameof(BudgetRecord.Name), nameof(BudgetRecord.Currency)) =>
-            [
-                AuditEntry.BudgetRenamed(
-                    budget.BudgetId,
-                    Original<string>(entry, nameof(BudgetRecord.Name)),
-                    Original<string>(entry, nameof(BudgetRecord.Currency)),
-                    budget.Name,
-                    budget.Currency)
-            ],
-            _ => []
-        };
-    }
-
-    private static IEnumerable<AuditEntry> CreateBudgetItemAuditEntries(EntityEntry entry)
-    {
-        var budgetItem = (BudgetItemRecord)entry.Entity;
-
-        return entry.State switch
-        {
-            EntityState.Added =>
-            [
-                AuditEntry.BudgetItemCreated(
-                    budgetItem.BudgetId,
-                    budgetItem.BudgetItemId,
-                    budgetItem.Name,
-                    budgetItem.Kind,
-                    budgetItem.PlannedAmount)
-            ],
-            EntityState.Deleted =>
-            [
-                AuditEntry.BudgetItemDeleted(
-                    budgetItem.BudgetId,
-                    budgetItem.BudgetItemId,
-                    Original<string>(entry, nameof(BudgetItemRecord.Name)),
-                    Original<string>(entry, nameof(BudgetItemRecord.Kind)),
-                    Original<decimal>(entry, nameof(BudgetItemRecord.PlannedAmount)))
-            ],
-            EntityState.Modified => CreateModifiedBudgetItemAuditEntries(entry, budgetItem),
-            _ => []
-        };
-    }
-
-    private static IEnumerable<AuditEntry> CreateModifiedBudgetItemAuditEntries(
-        EntityEntry entry,
-        BudgetItemRecord budgetItem)
-    {
-        if (IsModified(entry, nameof(BudgetItemRecord.Name)))
-        {
-            yield return AuditEntry.BudgetItemRenamed(
-                budgetItem.BudgetId,
-                budgetItem.BudgetItemId,
-                Original<string>(entry, nameof(BudgetItemRecord.Name)),
-                Original<string>(entry, nameof(BudgetItemRecord.Kind)),
-                Original<decimal>(entry, nameof(BudgetItemRecord.PlannedAmount)),
-                budgetItem.Name,
-                budgetItem.Kind,
-                budgetItem.PlannedAmount);
-        }
-
-        if (IsModified(entry, nameof(BudgetItemRecord.PlannedAmount)))
-        {
-            yield return AuditEntry.BudgetItemPlannedAmountChanged(
-                budgetItem.BudgetId,
-                budgetItem.BudgetItemId,
-                Original<string>(entry, nameof(BudgetItemRecord.Name)),
-                Original<string>(entry, nameof(BudgetItemRecord.Kind)),
-                Original<decimal>(entry, nameof(BudgetItemRecord.PlannedAmount)),
-                budgetItem.Name,
-                budgetItem.Kind,
-                budgetItem.PlannedAmount);
-        }
-    }
-
-    private static IEnumerable<AuditEntry> CreateTransactionAuditEntries(EntityEntry entry)
-    {
-        var transaction = (TransactionRecord)entry.Entity;
-
-        return entry.State switch
-        {
-            EntityState.Added =>
-            [
-                AuditEntry.TransactionCreated(
-                    transaction.TransactionId,
-                    transaction.Type,
-                    transaction.TransactionDate,
-                    transaction.Amount,
-                    transaction.Currency)
-            ],
-            EntityState.Deleted =>
-            [
-                AuditEntry.TransactionDeleted(
-                    transaction.TransactionId,
-                    Original<string>(entry, nameof(TransactionRecord.Type)),
-                    Original<DateOnly>(entry, nameof(TransactionRecord.TransactionDate)),
-                    Original<decimal>(entry, nameof(TransactionRecord.Amount)),
-                    Original<string>(entry, nameof(TransactionRecord.Currency)))
-            ],
-            _ => []
-        };
-    }
-
-    private IEnumerable<AuditEntry> CreateTransactionAllocationAuditEntries(EntityEntry entry)
-    {
-        var allocation = (TransactionAllocationRecord)entry.Entity;
-
-        return entry.State switch
-        {
-            EntityState.Added =>
-            [
-                AuditEntry.TransactionAllocationCreated(
-                    allocation.TransactionId,
-                    allocation.BudgetItemId,
-                    TransactionAmount(allocation.TransactionId, allocation.ApplicationUserId),
-                    allocation.Currency)
-            ],
-            EntityState.Deleted =>
-            [
-                AuditEntry.TransactionAllocationRemoved(
-                    allocation.TransactionId,
-                    Original<Guid>(entry, nameof(TransactionAllocationRecord.BudgetItemId)),
-                    TransactionAmount(
-                        allocation.TransactionId,
-                        Original<Guid>(entry, nameof(TransactionAllocationRecord.ApplicationUserId))),
-                    Original<string>(entry, nameof(TransactionAllocationRecord.Currency)))
-            ],
-            _ => []
-        };
-    }
-
-    private decimal TransactionAmount(Guid transactionId, Guid applicationUserId)
-    {
-        var localTransaction = ChangeTracker.Entries<TransactionRecord>()
-            .Where(entry => entry.State is not EntityState.Deleted)
-            .Select(entry => entry.Entity)
-            .SingleOrDefault(transaction =>
-                transaction.TransactionId == transactionId
-                && transaction.ApplicationUserId == applicationUserId);
-
-        return localTransaction?.Amount
-            ?? Transactions
-                .AsNoTracking()
-                .Where(transaction =>
-                    transaction.TransactionId == transactionId
-                    && transaction.ApplicationUserId == applicationUserId)
-                .Select(transaction => transaction.Amount)
-                .Single();
-    }
-
-    private static bool IsModified(EntityEntry entry, params string[] propertyNames)
-    {
-        return propertyNames.Any(propertyName => entry.Property(propertyName).IsModified);
-    }
-
-    private static T Original<T>(EntityEntry entry, string propertyName)
-    {
-        return (T)entry.Property(propertyName).OriginalValue!;
     }
 
     private static void ConfigureApplicationUsers(ModelBuilder modelBuilder)
@@ -623,27 +373,27 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
             entity.Property(audit => audit.AuditRecordId)
                 .HasColumnName("audit_record_id");
-            entity.Property(audit => audit.OccurredAtUtc)
-                .HasColumnName("occurred_at_utc");
+            entity.Property(audit => audit.PersistedAtUtc)
+                .HasColumnName("persisted_at_utc");
             entity.Property(audit => audit.ApplicationUserId)
                 .HasColumnName("application_user_id");
-            entity.Property(audit => audit.ActorApplicationUserId)
-                .HasColumnName("actor_application_user_id");
             entity.Property(audit => audit.OperationName)
                 .HasColumnName("operation_name")
                 .HasColumnType("text")
                 .IsRequired();
-            entity.Property(audit => audit.ResourceType)
-                .HasColumnName("resource_type")
+            entity.Property(audit => audit.CorrelationId)
+                .HasColumnName("correlation_id")
                 .HasColumnType("text")
                 .IsRequired();
-            entity.Property(audit => audit.ResourceId)
-                .HasColumnName("resource_id");
-            entity.Property(audit => audit.BeforeState)
-                .HasColumnName("before_state")
+            entity.Property(audit => audit.Action)
+                .HasColumnName("action")
+                .HasColumnType("text")
+                .IsRequired();
+            entity.Property(audit => audit.OldValue)
+                .HasColumnName("old_value")
                 .HasColumnType("jsonb");
-            entity.Property(audit => audit.AfterState)
-                .HasColumnName("after_state")
+            entity.Property(audit => audit.NewValue)
+                .HasColumnName("new_value")
                 .HasColumnType("jsonb");
 
             entity.HasOne<ApplicationUserRecord>()
@@ -651,18 +401,12 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .HasForeignKey(audit => audit.ApplicationUserId)
                 .HasConstraintName("fk_audit_records_application_users_application_user_id")
                 .OnDelete(DeleteBehavior.Cascade);
-            entity.HasOne<ApplicationUserRecord>()
-                .WithMany()
-                .HasForeignKey(audit => audit.ActorApplicationUserId)
-                .HasConstraintName("fk_audit_records_actor_application_user_id")
-                .OnDelete(DeleteBehavior.SetNull);
-
-            entity.HasIndex(audit => new { audit.ApplicationUserId, audit.OccurredAtUtc })
-                .HasDatabaseName("ix_audit_records_application_user_id_occurred_at_utc");
-            entity.HasIndex(audit => new { audit.ApplicationUserId, audit.ResourceType, audit.ResourceId })
-                .HasDatabaseName("ix_audit_records_application_user_id_resource");
-            entity.HasIndex(audit => audit.ActorApplicationUserId)
-                .HasDatabaseName("ix_audit_records_actor_application_user_id");
+            entity.HasIndex(audit => new { audit.ApplicationUserId, audit.PersistedAtUtc })
+                .HasDatabaseName("ix_audit_records_application_user_id_persisted_at_utc");
+            entity.HasIndex(audit => new { audit.ApplicationUserId, audit.Action })
+                .HasDatabaseName("ix_audit_records_application_user_id_action");
+            entity.HasIndex(audit => audit.CorrelationId)
+                .HasDatabaseName("ix_audit_records_correlation_id");
 
             entity.ToTable(table =>
             {
@@ -670,11 +414,11 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                     "ck_audit_records_operation_name_not_blank",
                     "length(btrim(operation_name)) > 0");
                 table.HasCheckConstraint(
-                    "ck_audit_records_resource_type_not_blank",
-                    "length(btrim(resource_type)) > 0");
+                    "ck_audit_records_correlation_id_not_blank",
+                    "length(btrim(correlation_id)) > 0");
                 table.HasCheckConstraint(
-                    "ck_audit_records_resource_id_not_empty",
-                    "resource_id <> '00000000-0000-0000-0000-000000000000'::uuid");
+                    "ck_audit_records_action_not_blank",
+                    "length(btrim(action)) > 0");
             });
         });
     }

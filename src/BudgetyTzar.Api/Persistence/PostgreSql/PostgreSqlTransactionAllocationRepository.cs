@@ -11,12 +11,16 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
 {
     private readonly ApplicationDbContext context;
     private readonly ApplicationUserId userId;
+    private readonly IAuditRequestContext auditContext;
 
-    public PostgreSqlTransactionAllocationRepository(ApplicationDbContext context, ICurrentUser currentUser)
+    public PostgreSqlTransactionAllocationRepository(
+        ApplicationDbContext context,
+        ICurrentUser currentUser,
+        IAuditRequestContext? auditContext = null)
     {
         this.context = context;
         userId = currentUser.UserId;
-        context.UseAuditUser(userId.Value);
+        this.auditContext = auditContext ?? new RepositoryAuditRequestContext();
     }
 
     public AllocateTransactionResult Allocate(TransactionAllocation allocation)
@@ -58,8 +62,10 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
             }
 
             var existing = ToAllocation(existingAllocation, transaction);
-            RecordIdempotentAllocation(existing);
-            return new AllocateTransactionResult.Allocated(existing, WasCreated: false);
+            var idempotent = IdempotentAllocation(existing);
+            context.AddAuditRecords(idempotent.AuditFacts, applicationUserId, auditContext);
+            context.SaveChanges();
+            return new AllocateTransactionResult.Allocated(idempotent, WasCreated: false);
         }
 
         var allocationRecord = new TransactionAllocationRecord
@@ -71,6 +77,7 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
         };
 
         context.TransactionAllocations.Add(allocationRecord);
+        context.AddAuditRecords(allocation.AuditFacts, applicationUserId, auditContext);
 
         try
         {
@@ -162,8 +169,13 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
                 transaction.TransactionId == record.TransactionId
                 && transaction.ApplicationUserId == applicationUserId);
         var allocation = ToAllocation(record, transaction);
+        if (allocation.Remove() is not RemoveTransactionAllocationEntityResult.Removed removed)
+        {
+            throw new InvalidOperationException("Unexpected remove allocation result.");
+        }
 
         context.TransactionAllocations.Remove(record);
+        context.AddAuditRecords(removed.Allocation.AuditFacts, applicationUserId, auditContext);
 
         try
         {
@@ -175,7 +187,7 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
             return new RemoveTransactionAllocationResult.NotFound();
         }
 
-        return new RemoveTransactionAllocationResult.Removed(allocation);
+        return new RemoveTransactionAllocationResult.Removed(removed.Allocation);
     }
 
     private AllocateTransactionResult GetExistingAllocationResult(
@@ -200,14 +212,17 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
         }
 
         var existing = ToAllocation(existingAllocation, transaction);
-        RecordIdempotentAllocation(existing);
-        return new AllocateTransactionResult.Allocated(existing, WasCreated: false);
+        var idempotent = IdempotentAllocation(existing);
+        context.AddAuditRecords(idempotent.AuditFacts, applicationUserId, auditContext);
+        context.SaveChanges();
+        return new AllocateTransactionResult.Allocated(idempotent, WasCreated: false);
     }
 
-    private void RecordIdempotentAllocation(TransactionAllocation allocation)
+    private static TransactionAllocation IdempotentAllocation(TransactionAllocation allocation)
     {
-        context.RecordAudit(AuditEntry.TransactionAllocationIdempotent(allocation));
-        context.SaveChanges();
+        return allocation.AllocateIdempotently() is IdempotentTransactionAllocationEntityResult.Allocated allocated
+            ? allocated.Allocation
+            : throw new InvalidOperationException("Unexpected idempotent allocation result.");
     }
 
     private static bool IsAllocationAlreadyStored(DbUpdateException exception)
@@ -222,13 +237,11 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
     {
         var domainTransaction = ToTransaction(transaction);
 
-        if (TransactionAllocation.Allocate(domainTransaction, allocation.BudgetItemId)
-            is not AllocateTransactionEntityResult.Allocated allocated)
-        {
-            throw new InvalidOperationException("Stored allocation data is invalid.");
-        }
-
-        return allocated.Allocation;
+        return TransactionAllocation.Rehydrate(
+            allocation.TransactionId,
+            allocation.BudgetItemId,
+            domainTransaction.Amount,
+            domainTransaction.Currency);
     }
 
     private static Transaction ToTransaction(TransactionRecord record)
@@ -236,17 +249,17 @@ public sealed class PostgreSqlTransactionAllocationRepository : ITransactionAllo
         if (!TransactionType.TryCreate(record.Type, out var type)
             || !PositiveMoneyAmount.TryCreate(record.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture), out var amount)
             || !CurrencyCode.TryCreate(record.Currency, out var currency)
-            || Transaction.Create(
-                record.TransactionId,
-                record.Description,
-                type,
-                record.TransactionDate,
-                amount!,
-                currency) is not CreateTransactionResult.Created created)
+            || string.IsNullOrWhiteSpace(record.Description))
         {
             throw new InvalidOperationException("Stored transaction data is invalid.");
         }
 
-        return created.Transaction;
+        return Transaction.Rehydrate(
+            record.TransactionId,
+            record.Description,
+            type,
+            record.TransactionDate,
+            amount!,
+            currency);
     }
 }

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using BudgetyTzar.Api;
+using BudgetyTzar.Api.Observability;
 using BudgetyTzar.Api.Persistence.PostgreSql;
 using BudgetyTzar.Tests.Support;
 using BudgetyTzar.Tests.Support.PostgreSql;
@@ -162,7 +163,9 @@ public sealed class PostgreSqlPersistenceApiTests(PostgreSqlApiTestDatabase data
     public async Task PostgreSql_provider_writes_durable_audit_records_for_successful_commands()
     {
         var budgetName = $"Audit {Guid.NewGuid():N}";
+        var correlationId = $"audit-{Guid.NewGuid():N}";
         await using var server = await TestApiServer.StartWithPostgreSqlAsync(database.ConnectionString);
+        server.Client.DefaultRequestHeaders.Add(CorrelationIdMiddleware.HeaderName, correlationId);
 
         var budget = await CreateBudgetAsync(server.Client, budgetName, "GBP");
         using var renameBudgetResponse = await server.Client.PutAsJsonAsync(
@@ -194,39 +197,41 @@ public sealed class PostgreSqlPersistenceApiTests(PostgreSqlApiTestDatabase data
         Assert.Equal(HttpStatusCode.NoContent, deleteBudgetItemResponse.StatusCode);
 
         await using var context = CreateDbContext();
-        var resourceIds = new[] { budget.BudgetId, budgetItem.BudgetItemId, transaction.TransactionId };
         var records = await context.AuditRecords
             .AsNoTracking()
-            .Where(record => resourceIds.Contains(record.ResourceId))
+            .Where(record => record.CorrelationId == correlationId)
             .ToListAsync();
 
         Assert.Equal(11, records.Count);
         Assert.All(records, record =>
         {
             Assert.NotEqual(Guid.Empty, record.ApplicationUserId);
-            Assert.Equal(record.ApplicationUserId, record.ActorApplicationUserId);
-            Assert.NotEqual(default, record.OccurredAtUtc);
+            Assert.Equal(correlationId, record.CorrelationId);
+            Assert.NotEqual(default, record.PersistedAtUtc);
+            Assert.DoesNotContain("AuditFacts", record.OldValue ?? string.Empty, StringComparison.Ordinal);
+            Assert.DoesNotContain("AuditFacts", record.NewValue ?? string.Empty, StringComparison.Ordinal);
         });
-        Assert.Contains(records, record => record.OperationName == "budget.create" && record.BeforeState is null && record.AfterState is not null);
-        Assert.Contains(records, record => record.OperationName == "budget.rename" && record.BeforeState is not null && record.AfterState is not null);
-        Assert.Contains(records, record => record.OperationName == "budget_item.create" && record.BeforeState is null && record.AfterState is not null);
-        Assert.Contains(records, record => record.OperationName == "budget_item.rename" && record.BeforeState is not null && record.AfterState is not null);
-        Assert.Contains(records, record => record.OperationName == "budget_item.change_planned_amount" && record.BeforeState is not null && record.AfterState is not null);
-        Assert.Contains(records, record => record.OperationName == "budget_item.delete" && record.BeforeState is not null && record.AfterState is null);
-        Assert.Contains(records, record => record.OperationName == "transaction.create" && record.BeforeState is null && record.AfterState is not null);
-        Assert.Contains(records, record => record.OperationName == "transaction.delete" && record.BeforeState is not null && record.AfterState is null);
-        Assert.Contains(records, record => record.OperationName == "transaction_allocation.create" && record.BeforeState is null && record.AfterState is not null);
-        Assert.Contains(records, record => record.OperationName == "transaction_allocation.idempotent" && record.BeforeState is not null && record.AfterState is not null);
-        Assert.Contains(records, record => record.OperationName == "transaction_allocation.remove" && record.BeforeState is not null && record.AfterState is null);
+        Assert.Contains(records, record => record.Action == "BudgetCreated" && record.OperationName == "CreateBudget" && record.OldValue is null && record.NewValue is not null);
+        Assert.Contains(records, record => record.Action == "BudgetRenamed" && record.OperationName == "RenameBudget" && record.OldValue is not null && record.NewValue is not null);
+        Assert.Contains(records, record => record.Action == "BudgetItemCreated" && record.OperationName == "CreateBudgetItem" && record.OldValue is not null && record.NewValue is not null);
+        Assert.Contains(records, record => record.Action == "BudgetItemRenamed" && record.OperationName == "RenameBudgetItem" && record.OldValue is not null && record.NewValue is not null);
+        Assert.Contains(records, record => record.Action == "BudgetItemPlannedAmountChanged" && record.OperationName == "ChangeBudgetItemPlannedAmount" && record.OldValue is not null && record.NewValue is not null);
+        Assert.Contains(records, record => record.Action == "BudgetItemDeleted" && record.OperationName == "DeleteBudgetItem" && record.OldValue is not null && record.NewValue is not null);
+        Assert.Contains(records, record => record.Action == "TransactionCreated" && record.OperationName == "CreateTransaction" && record.OldValue is null && record.NewValue is not null);
+        Assert.Contains(records, record => record.Action == "TransactionDeleted" && record.OperationName == "DeleteTransaction" && record.OldValue is not null && record.NewValue is null);
+        Assert.Contains(records, record => record.Action == "TransactionAllocationCreated" && record.OperationName == "AllocateTransaction" && record.OldValue is null && record.NewValue is not null);
+        Assert.Contains(records, record => record.Action == "TransactionAllocationIdempotent" && record.OperationName == "AllocateTransaction" && record.OldValue is not null && record.NewValue is not null);
+        Assert.Contains(records, record => record.Action == "TransactionAllocationRemoved" && record.OperationName == "DeleteTransactionAllocation" && record.OldValue is not null && record.NewValue is null);
         Assert.DoesNotContain(records, record =>
-            (record.BeforeState?.Contains("Sensitive supermarket text", StringComparison.Ordinal) ?? false)
-            || (record.AfterState?.Contains("Sensitive supermarket text", StringComparison.Ordinal) ?? false));
+            (record.OldValue?.Contains("Sensitive supermarket text", StringComparison.Ordinal) ?? false)
+            || (record.NewValue?.Contains("Sensitive supermarket text", StringComparison.Ordinal) ?? false));
     }
 
     [Fact]
     public async Task PostgreSql_provider_does_not_write_success_audit_records_for_rejected_or_cross_user_commands()
     {
         var budgetName = $"Rejected Audit {Guid.NewGuid():N}";
+        var rejectedCorrelationId = $"rejected-audit-{Guid.NewGuid():N}";
         await using var server = await TestApiServer.StartWithPostgreSqlAsync(database.ConnectionString);
         using var userB = server.CreateClientForUser($"audit-user-b-{Guid.NewGuid():N}");
 
@@ -234,10 +239,12 @@ public sealed class PostgreSqlPersistenceApiTests(PostgreSqlApiTestDatabase data
         var budgetItem = await CreateBudgetItemAsync(server.Client, budget.BudgetId, "Groceries", "Consumption", "400.00");
         var userBTransaction = await CreateTransactionAsync(userB, "Own groceries", "Debit", "2026-07-02", "42.50", "GBP");
         var missingBudgetId = Guid.NewGuid();
+        server.Client.DefaultRequestHeaders.Add(CorrelationIdMiddleware.HeaderName, rejectedCorrelationId);
+        userB.DefaultRequestHeaders.Add(CorrelationIdMiddleware.HeaderName, rejectedCorrelationId);
 
         await using (var context = CreateDbContext())
         {
-            var startingRecords = await CountAuditRecordsAsync(context, budget.BudgetId, budgetItem.BudgetItemId, userBTransaction.TransactionId, missingBudgetId);
+            var startingRecords = await CountAuditRecordsAsync(context, rejectedCorrelationId);
 
             using var duplicateBudgetResponse = await server.Client.PostAsJsonAsync(
                 "/api/budgets",
@@ -254,7 +261,7 @@ public sealed class PostgreSqlPersistenceApiTests(PostgreSqlApiTestDatabase data
             Assert.Equal(HttpStatusCode.NotFound, crossUserAllocationResponse.StatusCode);
             Assert.Equal(
                 startingRecords,
-                await CountAuditRecordsAsync(context, budget.BudgetId, budgetItem.BudgetItemId, userBTransaction.TransactionId, missingBudgetId));
+                await CountAuditRecordsAsync(context, rejectedCorrelationId));
         }
     }
 
@@ -297,11 +304,11 @@ public sealed class PostgreSqlPersistenceApiTests(PostgreSqlApiTestDatabase data
 
     private static Task<int> CountAuditRecordsAsync(
         ApplicationDbContext context,
-        params Guid[] resourceIds)
+        string correlationId)
     {
         return context.AuditRecords
             .AsNoTracking()
-            .CountAsync(record => resourceIds.Contains(record.ResourceId));
+            .CountAsync(record => record.CorrelationId == correlationId);
     }
 
     private static async Task<BudgetResponse> CreateBudgetAsync(HttpClient client, string name, string currency)

@@ -1,10 +1,11 @@
+using System.Collections.Immutable;
 using System.Globalization;
 using BudgetyTzar.Api.Domain.Entities;
 using BudgetyTzar.Api.Domain.ValueTypes;
+using BudgetyTzar.Api.Features.Audit;
 using BudgetyTzar.Api.Features.Budgeting;
 using BudgetyTzar.Api.Features.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 
 namespace BudgetyTzar.Api.Persistence.PostgreSql;
@@ -17,12 +18,16 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
 
     private readonly ApplicationDbContext context;
     private readonly ApplicationUserId userId;
+    private readonly IAuditRequestContext auditContext;
 
-    public PostgreSqlBudgetRepository(ApplicationDbContext context, ICurrentUser currentUser)
+    public PostgreSqlBudgetRepository(
+        ApplicationDbContext context,
+        ICurrentUser currentUser,
+        IAuditRequestContext? auditContext = null)
     {
         this.context = context;
         userId = currentUser.UserId;
-        context.UseAuditUser(userId.Value);
+        this.auditContext = auditContext ?? new RepositoryAuditRequestContext();
     }
 
     public BudgetSaveResult Save(Budget budget)
@@ -41,6 +46,7 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
 
         context.Budgets.Add(ToRecord(budget, applicationUserId));
         context.BudgetItems.AddRange(ToItemRecords(budget, applicationUserId));
+        context.AddAuditRecords(budget.AuditFacts, applicationUserId, auditContext);
 
         try
         {
@@ -69,7 +75,6 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
 
         var budget = postgreSqlState.Value;
         var applicationUserId = userId.Value;
-        using var transaction = BeginTransactionIfNeeded();
 
         var existingBudget = context.Budgets
             .SingleOrDefault(record => record.BudgetId == budget.BudgetId);
@@ -114,38 +119,33 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
             existingBudget.Currency = budget.Currency.Value;
             existingBudget.Version++;
             SyncBudgetItems(budget, applicationUserId, existingItems, removedItemIds);
+            context.AddAuditRecords(budget.AuditFacts, applicationUserId, auditContext);
             context.SaveChanges();
-            transaction?.Commit();
             ClearChanges();
             return new BudgetSaveResult.Saved(budget);
         }
         catch (DbUpdateException exception) when (IsNamedConstraint(exception, BudgetNameConstraint))
         {
-            transaction?.Rollback();
             ClearChanges();
             return new BudgetSaveResult.DuplicateName();
         }
         catch (PostgresException exception) when (IsNamedConstraint(exception, BudgetNameConstraint))
         {
-            transaction?.Rollback();
             ClearChanges();
             return new BudgetSaveResult.DuplicateName();
         }
         catch (DbUpdateConcurrencyException)
         {
-            transaction?.Rollback();
             ClearChanges();
             return new BudgetSaveResult.StaleState();
         }
         catch (DbUpdateException exception) when (IsNamedConstraint(exception, AllocationBudgetItemConstraint))
         {
-            transaction?.Rollback();
             ClearChanges();
             return new BudgetSaveResult.BudgetItemHasAllocations();
         }
         catch (PostgresException exception) when (IsNamedConstraint(exception, AllocationBudgetItemConstraint))
         {
-            transaction?.Rollback();
             ClearChanges();
             return new BudgetSaveResult.BudgetItemHasAllocations();
         }
@@ -235,40 +235,32 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
             return null;
         }
 
-        var created = Budget.Create(
-            budgetRecord.BudgetId,
-            Name(budgetRecord.Name),
-            Currency(budgetRecord.Currency));
-
-        if (created is not CreateBudgetResult.Created createdBudget)
-        {
-            throw new InvalidOperationException("Stored budget record is invalid.");
-        }
-
-        var budget = createdBudget.Budget;
         var itemRecords = context.BudgetItems
             .AsNoTracking()
             .Where(item => item.BudgetId == budgetId && item.ApplicationUserId == applicationUserId)
             .OrderBy(item => item.CreatedOrder)
             .ToList();
+        var budgetItems = ImmutableArray.CreateBuilder<BudgetItem>(itemRecords.Count);
 
         foreach (var itemRecord in itemRecords)
         {
-            var added = budget.AddBudgetItem(
+            if (BudgetItem.Create(
                 itemRecord.BudgetItemId,
                 Name(itemRecord.Name),
                 Kind(itemRecord.Kind),
-                Money(itemRecord.PlannedAmount));
-
-            if (added is not AddBudgetItemResult.Added addedItem)
+                Money(itemRecord.PlannedAmount)) is not CreateBudgetItemEntityResult.Created createdItem)
             {
                 throw new InvalidOperationException("Stored budget item record is invalid.");
             }
 
-            budget = addedItem.Budget;
+            budgetItems.Add(createdItem.BudgetItem);
         }
 
-        return budget;
+        return Budget.Rehydrate(
+            budgetRecord.BudgetId,
+            Name(budgetRecord.Name),
+            Currency(budgetRecord.Currency),
+            budgetItems.ToImmutable());
     }
 
     private static BudgetRecord ToRecord(Budget budget, Guid applicationUserId)
@@ -340,13 +332,6 @@ public sealed class PostgreSqlBudgetRepository : IBudgetRepository
     private void ClearChanges()
     {
         context.ChangeTracker.Clear();
-    }
-
-    private IDbContextTransaction? BeginTransactionIfNeeded()
-    {
-        return context.Database.CurrentTransaction is null
-            ? context.Database.BeginTransaction()
-            : null;
     }
 
     private static bool IsNamedConstraint(DbUpdateException exception, string constraintName)

@@ -101,8 +101,10 @@ When `PostgreSql` is selected, a connection string is required through
 startup. PostgreSQL persistence uses the durable application-user store and durable
 budget, transaction, allocation, and audit record storage. Business API behaviour and
 response contracts remain the same across supported persistence providers. Audit
-records are scoped to the internal authenticated application user and are retained for
-a future audit timeline API; no public audit API is exposed yet.
+records are built from aggregate-owned semantic audit facts, enriched by persistence
+with the internal authenticated application user, endpoint or operation, request
+correlation ID, and durable-save timestamp, and retained for a future audit timeline
+API; no public audit API is exposed yet.
 
 ### Health and Readiness
 

@@ -588,7 +588,8 @@ Responsibilities:
 
 - Durable audit records.
 - Audit timelines for user-visible changes.
-- Audit metadata for important commands and state changes.
+- Semantic audit facts for important aggregate mutations.
+- Persistence metadata for committed audit records.
 
 Owns:
 
@@ -596,15 +597,18 @@ Owns:
 
 Audit records are scoped to the authenticated identity that owns the affected resource.
 
-Each audit record must include enough information to understand:
+Each stored audit record must include enough information to understand:
 
-- When the change occurred.
-- Who performed the change.
-- What operation was performed.
-- What resource was affected.
-- The meaningful before and after state, where applicable.
+- The semantic action that occurred.
+- The aggregate business state before and after the action, where applicable.
+- Which authenticated application user committed the change.
+- Which API endpoint or operation committed the change.
+- Which correlation ID links records produced by the same request.
+- When the record was committed to durable persistence.
 
-The Audit boundary is an architectural concern. It should not introduce additional domain concepts into the core budgeting model.
+The Audit boundary is an architectural concern. Semantic audit facts may be carried
+by immutable aggregates, but they must not change the core budgeting concepts or
+appear in existing public HTTP response contracts.
 
 When PostgreSQL persistence is selected, successful important write commands create
 durable audit records. The initial audited operations are budget creation and rename;
@@ -612,14 +616,24 @@ budget item creation, rename, planned amount change, and deletion; transaction
 creation and deletion; transaction allocation creation, idempotent allocation to the
 same budget item, and allocation removal.
 
-Audit records store the internal application user that owns the affected resource,
-the internal actor identity for authenticated user-driven commands, the operation
-name, affected resource type and identifier, occurrence time, and focused before and
-after state where applicable. They must not expose owner identity through existing
-budget, budget item, transaction, allocation, or summary response contracts, and they
-must not store wholesale request or response bodies. Transaction audit state records
-the transaction type, date, amount, and currency, but not the free-text transaction
+An aggregate mutation creates an immutable audit fact as part of the mutation result.
+The fact has a stable unique identity, an action, and serialized old and new aggregate
+business values. The old and new values represent the complete aggregate business
+state for that aggregate, not only the affected child entity. Audit serialization must
+exclude audit facts themselves and infrastructure metadata. Transaction audit values
+record transaction type, date, amount, and currency, but not the free-text transaction
 description.
+
+Persistence enriches audit facts with the authenticated internal application user,
+the committing endpoint or operation, a correlation ID shared by records created in
+one request, and an authoritative durable-save timestamp. The business change and its
+audit records must commit or roll back atomically. Persistence must not clear,
+acknowledge, or otherwise mutate audit facts after saving; stable audit fact
+identities guard duplicate record insertion.
+
+Audit records must not expose owner identity through existing budget, budget item,
+transaction, allocation, or summary response contracts, and they must not store
+wholesale request or response bodies.
 
 Rejected, missing, conflicting, or cross-user operations must not create misleading
 successful-change audit records. Audit records are durable storage for future audit

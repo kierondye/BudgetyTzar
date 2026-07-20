@@ -203,7 +203,7 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
         var userKey = "postgres-audit-rollback-user";
         await SeedUserAsync(database.ConnectionString, userId, userKey);
         var interceptor = new BeforeSaveInterceptor(
-            context => HasAdded<AuditRecord>(context, record => record.OperationName == "transaction.create"),
+            context => HasAdded<AuditRecord>(context, record => record.Action == "TransactionCreated"),
             _ => throw new InvalidOperationException("Audit recording failed."));
         await using var context = CreateContext(database.ConnectionString, interceptor);
         var repository = new PostgreSqlTransactionRepository(context, CurrentUser(userKey, database.ConnectionString));
@@ -213,7 +213,7 @@ public sealed class PostgreSqlRepositoryConcurrencyTests
 
         await using var assertionContext = CreateContext(database.ConnectionString);
         Assert.False(await assertionContext.Transactions.AnyAsync(record => record.TransactionId == transaction.TransactionId));
-        Assert.False(await assertionContext.AuditRecords.AnyAsync(record => record.ResourceId == transaction.TransactionId));
+        Assert.False(await assertionContext.AuditRecords.AnyAsync(record => record.Action == "TransactionCreated"));
     }
 
     private static async Task<PostgreSqlTestDatabase> CreateDatabaseAsync()

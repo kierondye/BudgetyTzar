@@ -9,12 +9,14 @@ public sealed class Budget
         Guid budgetId,
         NormalizedName name,
         CurrencyCode currency,
-        ImmutableArray<BudgetItem> budgetItems)
+        ImmutableArray<BudgetItem> budgetItems,
+        ImmutableArray<AuditFact> auditFacts)
     {
         BudgetId = budgetId;
         Name = name;
         Currency = currency;
         BudgetItems = budgetItems;
+        AuditFacts = auditFacts;
     }
 
     public Guid BudgetId { get; }
@@ -25,6 +27,8 @@ public sealed class Budget
 
     public ImmutableArray<BudgetItem> BudgetItems { get; }
 
+    public ImmutableArray<AuditFact> AuditFacts { get; }
+
     public static CreateBudgetResult Create(Guid budgetId, NormalizedName name, CurrencyCode currency)
     {
         if (budgetId == Guid.Empty)
@@ -32,12 +36,23 @@ public sealed class Budget
             return new CreateBudgetResult.InvalidIdentity();
         }
 
-        return new CreateBudgetResult.Created(new Budget(budgetId, name, currency, []));
+        var budget = new Budget(budgetId, name, currency, [], []);
+        return new CreateBudgetResult.Created(budget.WithAuditFact(AuditAction.BudgetCreated, null, budget));
+    }
+
+    internal static Budget Rehydrate(
+        Guid budgetId,
+        NormalizedName name,
+        CurrencyCode currency,
+        ImmutableArray<BudgetItem> budgetItems)
+    {
+        return new Budget(budgetId, name, currency, budgetItems, []);
     }
 
     public RenameBudgetResult Rename(NormalizedName name)
     {
-        return new RenameBudgetResult.Renamed(new Budget(BudgetId, name, Currency, BudgetItems));
+        var budget = new Budget(BudgetId, name, Currency, BudgetItems, AuditFacts);
+        return new RenameBudgetResult.Renamed(WithAuditFact(AuditAction.BudgetRenamed, this, budget));
     }
 
     public AddBudgetItemResult AddBudgetItem(
@@ -57,9 +72,11 @@ public sealed class Budget
         }
 
         var budgetItem = created.BudgetItem;
-        var budget = new Budget(BudgetId, Name, Currency, BudgetItems.Add(budgetItem));
+        var budget = new Budget(BudgetId, Name, Currency, BudgetItems.Add(budgetItem), AuditFacts);
 
-        return new AddBudgetItemResult.Added(budget, budgetItem);
+        return new AddBudgetItemResult.Added(
+            budget.WithAuditFact(AuditAction.BudgetItemCreated, this, budget),
+            budgetItem);
     }
 
     public RenameBudgetItemResult RenameBudgetItem(Guid budgetItemId, NormalizedName name)
@@ -77,7 +94,9 @@ public sealed class Budget
         var renamedBudgetItem = found.BudgetItem.Rename(name);
         var budget = ReplaceBudgetItem(budgetItemId, renamedBudgetItem);
 
-        return new RenameBudgetItemResult.Renamed(budget, renamedBudgetItem);
+        return new RenameBudgetItemResult.Renamed(
+            WithAuditFact(AuditAction.BudgetItemRenamed, this, budget),
+            renamedBudgetItem);
     }
 
     public ChangeBudgetItemPlannedAmountResult ChangeBudgetItemPlannedAmount(Guid budgetItemId, PositiveMoneyAmount plannedAmount)
@@ -90,7 +109,9 @@ public sealed class Budget
         var updatedBudgetItem = found.BudgetItem.ChangePlannedAmount(plannedAmount);
         var budget = ReplaceBudgetItem(budgetItemId, updatedBudgetItem);
 
-        return new ChangeBudgetItemPlannedAmountResult.Changed(budget, updatedBudgetItem);
+        return new ChangeBudgetItemPlannedAmountResult.Changed(
+            WithAuditFact(AuditAction.BudgetItemPlannedAmountChanged, this, budget),
+            updatedBudgetItem);
     }
 
     public RemoveBudgetItemResult RemoveBudgetItem(Guid budgetItemId)
@@ -101,7 +122,8 @@ public sealed class Budget
         }
 
         var budgetItems = BudgetItems.RemoveAll(budgetItem => budgetItem.BudgetItemId == budgetItemId);
-        return new RemoveBudgetItemResult.Removed(new Budget(BudgetId, Name, Currency, budgetItems));
+        var budget = new Budget(BudgetId, Name, Currency, budgetItems, AuditFacts);
+        return new RemoveBudgetItemResult.Removed(WithAuditFact(AuditAction.BudgetItemDeleted, this, budget));
     }
 
     public GetBudgetItemResult GetBudgetItem(Guid budgetItemId)
@@ -132,7 +154,22 @@ public sealed class Budget
                 : existingBudgetItem)
             .ToImmutableArray();
 
-        return new Budget(BudgetId, Name, Currency, budgetItems);
+        return new Budget(BudgetId, Name, Currency, budgetItems, AuditFacts);
+    }
+
+    private Budget WithAuditFact(AuditAction action, Budget? oldValue, Budget? newValue)
+    {
+        var target = newValue ?? this;
+
+        return new Budget(
+            target.BudgetId,
+            target.Name,
+            target.Currency,
+            target.BudgetItems,
+            target.AuditFacts.Add(AuditFact.Create(
+                action,
+                oldValue is null ? null : AuditValueSerializer.Serialize(oldValue),
+                newValue is null ? null : AuditValueSerializer.Serialize(newValue))));
     }
 }
 

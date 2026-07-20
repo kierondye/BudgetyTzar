@@ -106,18 +106,23 @@ user so handlers can coordinate use cases without manually filtering cross-user 
 Shared domain types live under `Domain` because Budgeting, Transactions, Allocations,
 and Reporting use the same ubiquitous language and invariant-protecting values.
 Domain code does not depend on endpoints, repositories, ASP.NET Core, or storage.
+Immutable aggregates may carry semantic `AuditFact` values that describe what the
+aggregate operation did and the aggregate business state before and after it did it.
+Those facts are domain-owned operation results, not persistence metadata.
 
 Reporting reads across boundaries because a budget summary combines budgets, budget
 items, transactions, and allocations. It does not mutate those boundaries or take
 ownership of their data.
 
-Audit is a separate boundary for durable change records. Audit metadata stays out of
-domain entities and public HTTP response contracts. Command handlers express the
+Audit is a separate boundary for durable change records. Aggregates own semantic
+audit facts for audited mutations, while persistence owns durable record enrichment:
+the authenticated application user, the committing endpoint or operation, the request
+correlation ID, and the authoritative save timestamp. Command handlers express the
 requested use case and save through feature-owned persistence contracts; they do not
-construct durable audit records. PostgreSQL persistence observes auditable storage
-changes through the EF Core save pipeline and stores audit records in its own table,
-scoped to the current internal application user and linked to the authenticated actor
-for user-driven commands. The in-memory runtime does not persist audit records.
+construct or pass audit records. PostgreSQL repositories store aggregate audit facts
+in the audit table in the same `SaveChanges` call as the business change. Public HTTP
+response contracts do not expose audit facts or audit records. The in-memory runtime
+does not persist audit records.
 
 ## Repository Map
 
@@ -125,7 +130,7 @@ for user-driven commands. The in-memory runtime does not persist audit records.
 | --- | --- |
 | `src/BudgetyTzar.Api/Program.cs` | Process entry point. Creates and runs the web application. |
 | `src/BudgetyTzar.Api/ApiApplication.cs` | Composition root. Registers services and endpoint groups. |
-| `src/BudgetyTzar.Api/Domain/Entities` | Immutable entities, aggregates, operations, and result types. |
+| `src/BudgetyTzar.Api/Domain/Entities` | Immutable entities, aggregates, semantic audit facts, operations, and result types. |
 | `src/BudgetyTzar.Api/Domain/ValueTypes` | Validated domain values such as names, currencies, money amounts, and kinds. |
 | `src/BudgetyTzar.Api/Features/Audit` | Audit boundary registration and explicit audit metadata shaping. |
 | `src/BudgetyTzar.Api/Features/Identity` | Authentication configuration, authenticated claim resolution, and current-user identity. |
@@ -159,9 +164,9 @@ sequenceDiagram
     Repository->>Store: read under persistence rules
     Repository-->>Endpoint: EntityState<T>
     Endpoint->>Domain: invoke named operation
-    Domain-->>Endpoint: explicit operation result
+    Domain-->>Endpoint: explicit operation result, including semantic audit facts
     Endpoint->>Repository: Save updated EntityState<T>
-    Repository->>Store: check consistency and write atomically
+    Repository->>Store: check consistency and write business rows plus audit records atomically
     Repository-->>Endpoint: explicit persistence result
     Endpoint-->>Client: mapped HTTP response
 ```
@@ -169,7 +174,9 @@ sequenceDiagram
 Handlers coordinate the request. They validate transport input, call domain or
 application operations, pass repository-owned state back to repositories, and map
 explicit outcomes to HTTP responses. They should not know how persistence versions,
-storage locks, database tokens, or durable audit records work.
+storage locks, database tokens, or durable audit records work. Handlers do not create
+or pass audit facts separately; audited facts are part of the immutable aggregate
+returned by the domain operation.
 
 `EntityState<T>` carries opaque repository-owned concurrency state through
 `Get -> domain operation -> Save`. It exists so repositories can enforce stale-write
@@ -229,11 +236,13 @@ Repositories own storage-wide consistency and concurrency state because those ru
 depend on stored data, not only on a single aggregate's in-memory state. Aggregates own
 the invariants they can decide from their own state.
 
-PostgreSQL audit records are generated from explicitly whitelisted EF Core storage
-record changes in the `ApplicationDbContext` save pipeline so the business write and
-its audit record commit or roll back together. Operations that intentionally succeed
-without changing a row, such as idempotent allocation to the same budget item, are
-recorded by the PostgreSQL repository that owns that persistence outcome.
+PostgreSQL audit records are generated from aggregate-owned `AuditFact` values and
+are enriched by persistence with current-user, endpoint or operation, correlation ID,
+and save timestamp metadata. Repositories add those records to the same EF Core
+context before saving so the business write and audit records commit or roll back
+together. Operations that intentionally succeed without changing a row, such as
+idempotent allocation to the same budget item, use a semantic aggregate operation to
+produce an audit fact before persistence stores it.
 
 Persistence contracts sit between feature orchestration and adapters. A new adapter
 must implement the relevant feature contracts without leaking database tokens, storage

@@ -44,6 +44,27 @@ public sealed class BudgetDomainTests
     }
 
     [Fact]
+    public void Mutations_append_immutable_audit_facts_with_complete_budget_values()
+    {
+        var budget = CreateBudget("UK");
+        var budgetItemId = Guid.NewGuid();
+
+        var added = Assert.IsType<AddBudgetItemResult.Added>(
+            budget.AddBudgetItem(budgetItemId, Name("Salary"), BudgetItemKind.Funding, Money("3000.00")));
+
+        Assert.Single(budget.AuditFacts);
+        Assert.Equal(2, added.Budget.AuditFacts.Length);
+
+        var fact = added.Budget.AuditFacts[^1];
+        Assert.NotEqual(Guid.Empty, fact.Id);
+        Assert.Equal(AuditAction.BudgetItemCreated, fact.Action);
+        Assert.Contains(budget.BudgetId.ToString(), fact.OldValue, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(budgetItemId.ToString(), fact.NewValue, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(nameof(Budget.AuditFacts), fact.OldValue, StringComparison.Ordinal);
+        Assert.DoesNotContain(nameof(Budget.AuditFacts), fact.NewValue, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Add_budget_item_rejects_duplicate_normalized_names()
     {
         var budget = CreateBudget("UK");

@@ -57,59 +57,56 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("audit_record_id");
 
-                    b.Property<Guid?>("ActorApplicationUserId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("actor_application_user_id");
-
-                    b.Property<string>("AfterState")
-                        .HasColumnType("jsonb")
-                        .HasColumnName("after_state");
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("action");
 
                     b.Property<Guid>("ApplicationUserId")
                         .HasColumnType("uuid")
                         .HasColumnName("application_user_id");
 
-                    b.Property<string>("BeforeState")
-                        .HasColumnType("jsonb")
-                        .HasColumnName("before_state");
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("correlation_id");
 
-                    b.Property<DateTimeOffset>("OccurredAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("occurred_at_utc");
+                    b.Property<string>("NewValue")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("new_value");
+
+                    b.Property<string>("OldValue")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("old_value");
 
                     b.Property<string>("OperationName")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("operation_name");
 
-                    b.Property<Guid>("ResourceId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("resource_id");
-
-                    b.Property<string>("ResourceType")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("resource_type");
+                    b.Property<DateTimeOffset>("PersistedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("persisted_at_utc");
 
                     b.HasKey("AuditRecordId")
                         .HasName("pk_audit_records");
 
-                    b.HasIndex("ActorApplicationUserId")
-                        .HasDatabaseName("ix_audit_records_actor_application_user_id");
+                    b.HasIndex("ApplicationUserId", "Action")
+                        .HasDatabaseName("ix_audit_records_application_user_id_action");
 
-                    b.HasIndex("ApplicationUserId", "OccurredAtUtc")
-                        .HasDatabaseName("ix_audit_records_application_user_id_occurred_at_utc");
+                    b.HasIndex("ApplicationUserId", "PersistedAtUtc")
+                        .HasDatabaseName("ix_audit_records_application_user_id_persisted_at_utc");
 
-                    b.HasIndex("ApplicationUserId", "ResourceType", "ResourceId")
-                        .HasDatabaseName("ix_audit_records_application_user_id_resource");
+                    b.HasIndex("CorrelationId")
+                        .HasDatabaseName("ix_audit_records_correlation_id");
 
                     b.ToTable("audit_records", "budgetytzar", t =>
                         {
+                            t.HasCheckConstraint("ck_audit_records_action_not_blank", "length(btrim(action)) > 0");
+
+                            t.HasCheckConstraint("ck_audit_records_correlation_id_not_blank", "length(btrim(correlation_id)) > 0");
+
                             t.HasCheckConstraint("ck_audit_records_operation_name_not_blank", "length(btrim(operation_name)) > 0");
-
-                            t.HasCheckConstraint("ck_audit_records_resource_id_not_empty", "resource_id <> '00000000-0000-0000-0000-000000000000'::uuid");
-
-                            t.HasCheckConstraint("ck_audit_records_resource_type_not_blank", "length(btrim(resource_type)) > 0");
                         });
                 });
 
@@ -368,12 +365,6 @@ namespace BudgetyTzar.Api.Persistence.PostgreSql.Migrations
 
             modelBuilder.Entity("BudgetyTzar.Api.Persistence.PostgreSql.AuditRecord", b =>
                 {
-                    b.HasOne("BudgetyTzar.Api.Persistence.PostgreSql.ApplicationUserRecord", null)
-                        .WithMany()
-                        .HasForeignKey("ActorApplicationUserId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_audit_records_actor_application_user_id");
-
                     b.HasOne("BudgetyTzar.Api.Persistence.PostgreSql.ApplicationUserRecord", null)
                         .WithMany()
                         .HasForeignKey("ApplicationUserId")

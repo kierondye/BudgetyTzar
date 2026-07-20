@@ -43,6 +43,27 @@ public sealed class TransactionDomainTests
     }
 
     [Fact]
+    public void Transaction_audit_values_exclude_description_and_audit_facts()
+    {
+        var transaction = CreateTransaction(
+            Guid.NewGuid(),
+            "Sensitive supermarket text",
+            TransactionType.Debit,
+            new DateOnly(2026, 7, 2),
+            Money("42.50"),
+            Currency("GBP"));
+
+        var fact = Assert.Single(transaction.AuditFacts);
+
+        Assert.Equal(AuditAction.TransactionCreated, fact.Action);
+        Assert.Null(fact.OldValue);
+        Assert.NotNull(fact.NewValue);
+        Assert.DoesNotContain("Sensitive supermarket text", fact.NewValue, StringComparison.Ordinal);
+        Assert.DoesNotContain(nameof(Transaction.AuditFacts), fact.NewValue, StringComparison.Ordinal);
+        Assert.Contains(transaction.TransactionId.ToString(), fact.NewValue, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Allocation_uses_full_transaction_amount_and_currency()
     {
         var transaction = CreateTransaction(
@@ -62,6 +83,31 @@ public sealed class TransactionDomainTests
         Assert.Equal(budgetItemId, allocation.BudgetItemId);
         Assert.Same(transaction.Amount, allocation.Amount);
         Assert.Equal(transaction.Currency, allocation.Currency);
+    }
+
+    [Fact]
+    public void Allocation_semantic_operations_create_audit_facts()
+    {
+        var transaction = CreateTransaction(
+            Guid.NewGuid(),
+            "Groceries",
+            TransactionType.Debit,
+            new DateOnly(2026, 7, 2),
+            Money("42.50"),
+            Currency("GBP"));
+        var allocated = Assert.IsType<AllocateTransactionEntityResult.Allocated>(
+            TransactionAllocation.Allocate(transaction, Guid.NewGuid()));
+
+        var idempotent = Assert.IsType<IdempotentTransactionAllocationEntityResult.Allocated>(
+            allocated.Allocation.AllocateIdempotently());
+        var removed = Assert.IsType<RemoveTransactionAllocationEntityResult.Removed>(
+            idempotent.Allocation.Remove());
+
+        Assert.Equal(AuditAction.TransactionAllocationCreated, Assert.Single(allocated.Allocation.AuditFacts).Action);
+        Assert.Equal(AuditAction.TransactionAllocationIdempotent, idempotent.Allocation.AuditFacts[^1].Action);
+        Assert.Equal(AuditAction.TransactionAllocationRemoved, removed.Allocation.AuditFacts[^1].Action);
+        Assert.NotNull(removed.Allocation.AuditFacts[^1].OldValue);
+        Assert.Null(removed.Allocation.AuditFacts[^1].NewValue);
     }
 
     [Fact]
